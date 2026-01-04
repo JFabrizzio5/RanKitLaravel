@@ -5,21 +5,20 @@
 
     RewriteEngine On
 
-    # Handle Authorization Header
+    # Manejar cabecera de autorización
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-    # Handle X-XSRF-Token Header
-    RewriteCond %{HTTP:x-xsrf-token} .
-    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
-
-    # Redirect Trailing Slashes If Not A Folder...
+    # Redirigir si hay barra al final (trailing slash) y no es carpeta
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
-    # Send Requests To Front Controller...
+    # --- AQUÍ ESTÁ LA MAGIA QUE TE FALTA ---
+    # Si el archivo solicitado NO es un directorio (!-d)
     RewriteCond %{REQUEST_FILENAME} !-d
+    # Y si el archivo solicitado NO es un archivo real (!-f)
     RewriteCond %{REQUEST_FILENAME} !-f
+    # ENTOCES envíalo al index.php
     RewriteRule ^ index.php [L]
 </IfModule>
