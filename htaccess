@@ -1,8 +1,20 @@
-Options +SymLinksIfOwnerMatch
-RewriteEngine On
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
 
-# Allow Installatron requests
-RewriteCond %{REQUEST_FILENAME} deleteme\.\w+\.php
-RewriteRule (.*) - [L] 
+    RewriteEngine On
 
-RewriteRule ^ index.php [L]
+    # Manejar Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # --- ESTA ES LA PARTE QUE TE FALTA ---
+    # Si la petición es un archivo (-f) o directorio (-d) REAL, no hagas nada (sirve el archivo)
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    # -------------------------------------
+
+    # Si no es un archivo real, entonces mándalo al index.php
+    RewriteRule ^ index.php [L]
+</IfModule>
