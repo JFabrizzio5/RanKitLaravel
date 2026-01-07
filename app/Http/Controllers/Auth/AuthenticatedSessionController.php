@@ -33,6 +33,11 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // Lógica especial para el administrador del torneo
+        if ($request->user()->email === '18jangel18@gmail.com') {
+            return redirect()->intended(route('tournament.dashboard'));
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
