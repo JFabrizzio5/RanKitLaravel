@@ -1,3 +1,95 @@
+## To do list
+
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Plataforma de Torneos Fortnite</title>
+<style>
+body { font-family: Arial, Helvetica, sans-serif; background:#0f172a; color:#e5e7eb; line-height:1.6; padding:40px; }
+h1, h2, h3 { color:#38bdf8; }
+h1 { font-size:2.4rem; }
+h2 { margin-top:40px; }
+ul { margin-left:20px; }
+li { margin-bottom:6px; }
+code, pre { background:#020617; padding:10px; border-radius:6px; color:#e5e7eb; display:block; overflow-x:auto; }
+.section { margin-bottom:40px; }
+.badge { display:inline-block; background:#1e293b; padding:4px 10px; border-radius:999px; font-size:0.8rem; margin-right:6px; }
+</style>
+</head>
+<body>
+
+
+<h1>🎮 Plataforma de Torneos Fortnite</h1>
+<p>Plataforma web para la gestión de torneos competitivos de <strong>Fortnite</strong>, rankings, perfiles de jugadores y replays, con actualizaciones en tiempo real.</p>
+
+
+<div class="section">
+<h2>🚀 Objetivo</h2>
+<p>Crear un sistema competitivo y escalable que permita organizar torneos, calcular rankings automáticamente y validar resultados mediante replays.</p>
+</div>
+
+
+<div class="section">
+<h2>🔐 Autenticación</h2>
+<ul>
+<li>Login con Google (OAuth)</li>
+<li>Login con correo y contraseña</li>
+<li>Verificación de correo</li>
+<li>Recuperación de contraseña</li>
+<li>Roles: jugador, admin, organizador</li>
+</ul>
+</div>
+
+
+<div class="section">
+<h2>👤 Perfil del Jugador</h2>
+<ul>
+<li>Perfil público</li>
+<li>Cuenta Fortnite vinculada</li>
+<li>Rango y clasificación</li>
+<li>Ranking points</li>
+<li>Historial de torneos</li>
+<li>Estadísticas y logros</li>
+</ul>
+</div>
+
+
+<div class="section">
+<h2>🏆 Torneos</h2>
+<ul>
+<li>Torneos por clasificación</li>
+<li>Tipos: Solo / Duo / Squad</li>
+<li>Reglas personalizadas</li>
+<li>Sistema de inscripción</li>
+<li>Fases y horarios</li>
+<li>Límites por rango</li>
+</ul>
+</div>
+
+
+<div class="section">
+<h2>📊 Ranking</h2>
+<ul>
+<li>Ranking global</li>
+<li>Ranking por temporada</li>
+<li>Ranking por torneo</li>
+<li>Cálculo automático de puntos</li>
+<li>Sistema de desempates</li>
+</ul>
+</div>
+
+
+<div class="section">
+<h2>🔄 Repeticiones (Replays)</h2>
+</html>
+
+
+
+
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">
