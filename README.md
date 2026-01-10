@@ -1,27 +1,5 @@
 ## To do list
 
-
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Plataforma de Torneos Fortnite</title>
-<style>
-body { font-family: Arial, Helvetica, sans-serif; background:#0f172a; color:#e5e7eb; line-height:1.6; padding:40px; }
-h1, h2, h3 { color:#38bdf8; }
-h1 { font-size:2.4rem; }
-h2 { margin-top:40px; }
-ul { margin-left:20px; }
-li { margin-bottom:6px; }
-code, pre { background:#020617; padding:10px; border-radius:6px; color:#e5e7eb; display:block; overflow-x:auto; }
-.section { margin-bottom:40px; }
-.badge { display:inline-block; background:#1e293b; padding:4px 10px; border-radius:999px; font-size:0.8rem; margin-right:6px; }
-</style>
-</head>
-<body>
-
-
 <h1>🎮 Plataforma de Torneos Fortnite</h1>
 <p>Plataforma web para la gestión de torneos competitivos de <strong>Fortnite</strong>, rankings, perfiles de jugadores y replays, con actualizaciones en tiempo real.</p>
 
