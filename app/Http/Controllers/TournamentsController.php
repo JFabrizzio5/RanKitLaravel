@@ -20,8 +20,8 @@ class TournamentsController extends Controller
 
         $tournament = [
             'id' => $id,
-            'title' => 'NEON CITY CHAMPIONSHIP',
-            'game' => 'Valorant',
+            'title' => 'BellzCup',
+            'game' => 'Fortnite',
             'status' => 'En Vivo',
             'hero_image' => 'https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80',
             'prize_pool' => 25000,
