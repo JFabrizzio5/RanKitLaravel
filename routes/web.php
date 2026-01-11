@@ -17,8 +17,13 @@ Route::get('/', function () {
     ]);
 });
 
-
+// Modificación aquí: Lógica condicional dentro de la ruta dashboard
 Route::get('/dashboard', function () {
+    // Si es el usuario específico, redirigir a rankit.profile
+    if (auth()->user()->email === '18jangel18@gmail.com') {
+        return redirect()->route('rankit.profile');
+    }
+
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
@@ -31,11 +36,13 @@ Route::middleware('auth')->group(function () {
     // Podrías añadir un middleware extra 'can:admin' si quisieras más seguridad
     Route::get('/tournament/dashboard', [TournamentController::class, 'index'])->name('tournament.dashboard');
     Route::get('/tournament/widget', [TournamentController::class, 'widget'])->name('tournament.widget');
-   
-}); Route::get('/tournament/{id}', [TournamentsController::class, 'show'])
-->whereNumber('id')
-->name('tournaments.show');
+});
+
+Route::get('/tournament/{id}', [TournamentsController::class, 'show'])
+    ->whereNumber('id')
+    ->name('tournaments.show');
+
 Route::get('/profile/rankit', [ProfilePageController::class, 'show'])
-        ->name('rankit.profile');
+    ->name('rankit.profile');
 
 require __DIR__.'/auth.php';
