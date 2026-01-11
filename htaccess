@@ -17,4 +17,10 @@
 
     # Si no es un archivo real, entonces mándalo al index.php
     RewriteRule ^ index.php [L]
+
+    #Parche de seguridad .env
+
+    <FilesMatch "^\.env|\.git|\.htaccess|\.htpasswd">
+    Require all denied
+    </FilesMatch>
 </IfModule>
