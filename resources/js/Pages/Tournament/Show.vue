@@ -197,7 +197,7 @@ onMounted(() => {
       <div v-if="activeTab === 'bracket'" class="animate-fade-in space-y-10">
         <div class="flex flex-col md:flex-row justify-between items-end gap-4">
           <div>
-            <h2 class="text-3xl font-display font-bold text-white">Playoffs Stage</h2>
+            <h2 class="text-3xl font-display font-bold text-white">Playoffs Stage (Prueba de ahorita)</h2>
             <p class="text-gray-500 text-sm mt-1">Haz clic en un match para ver estadísticas detalladas.</p>
           </div>
 
