@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TournamentController; // Importamos el nuevo controlador
+use App\Http\Controllers\TournamentsController; // Controlador para la vista de detalle del torneo
+use App\Http\Controllers\ProfilePageController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -28,6 +30,11 @@ Route::middleware('auth')->group(function () {
     // Podrías añadir un middleware extra 'can:admin' si quisieras más seguridad
     Route::get('/tournament/dashboard', [TournamentController::class, 'index'])->name('tournament.dashboard');
     Route::get('/tournament/widget', [TournamentController::class, 'widget'])->name('tournament.widget');
-});
+   
+}); Route::get('/tournament/{id}', [TournamentsController::class, 'show'])
+->whereNumber('id')
+->name('tournaments.show');
+Route::get('/profile/rankit', [ProfilePageController::class, 'show'])
+        ->name('rankit.profile');
 
 require __DIR__.'/auth.php';
