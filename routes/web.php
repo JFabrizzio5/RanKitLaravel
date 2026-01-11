@@ -45,4 +45,9 @@ Route::get('/tournament/{id}', [TournamentsController::class, 'show'])
 Route::get('/profile/rankit', [ProfilePageController::class, 'show'])
     ->name('rankit.profile');
 
+Route::get('/BellzCup', function () {
+    return Inertia::render('BellzCup/Index');
+})->name('bellzcup.index');
+
+
 require __DIR__.'/auth.php';
