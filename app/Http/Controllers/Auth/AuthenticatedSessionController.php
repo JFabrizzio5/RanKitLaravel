@@ -35,7 +35,7 @@ class AuthenticatedSessionController extends Controller
 
         // Lógica especial para el administrador del torneo
         if ($request->user()->email === '18jangel18@gmail.com') {
-            return redirect()->intended(route('tournament.dashboard'));
+            return redirect()->intended(route('rankit.profile'));
         }
 
         return redirect()->intended(route('dashboard', absolute: false));
