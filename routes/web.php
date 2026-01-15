@@ -4,6 +4,8 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TournamentController; // Importamos el nuevo controlador
 use App\Http\Controllers\TournamentsController; // Controlador para la vista de detalle del torneo
 use App\Http\Controllers\ProfilePageController;
+use App\Http\Controllers\Auth\GoogleController;
+
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -15,8 +17,10 @@ Route::get('/', function () {
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
     ]);
-});
+})->name('Inicio');
 
+Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('google.redirect');
+Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name('google.callback');
 // Modificación aquí: Lógica condicional dentro de la ruta dashboard
 Route::get('/dashboard', function () {
     // Si es el usuario específico, redirigir a rankit.profile
@@ -26,6 +30,7 @@ Route::get('/dashboard', function () {
 
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
+
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
