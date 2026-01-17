@@ -55,4 +55,55 @@ Route::get('/BellzCup', function () {
 })->name('bellzcup.index');
 
 
+
+
+use App\Http\Controllers\Admin\TournamentParserController;
+
+// Panel de Jangel (Seguro)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/jangel-panel', [TournamentParserController::class, 'index'])->name('jangel.index');
+    Route::post('/tournament-create-quick', [TournamentParserController::class, 'createQuickTournament'])->name('jangel.tournament.create');
+    Route::post('/replay-sync-net', [TournamentParserController::class, 'syncMatchData'])->name('jangel.replay.sync');
+});
+
+// API para los Widgets (Pública para OBS)
+Route::get('/api/tournaments/stats-detailed/{tableName}', [TournamentParserController::class, 'getDetailedStats']);
+
+// Vista del Widget para OBS
+Route::get('/widget/{tableName}', function($tableName) {
+    return view('tournament-widget', ['tableName' => $tableName]);
+});
+
+
+Route::get('/tournaments/stats-detailed/{tableName}', function($tableName) {
+    // Esta Query es el motor de tu panel. Calcula promedios y totales de golpe.
+    return DB::table($tableName)
+        ->select(
+            'player_name',
+            DB::raw('COUNT(DISTINCT match_number) as matches_played'),
+            DB::raw('SUM(kills) as total_kills'),
+            DB::raw('SUM(placement_points) as total_placement_points'),
+            DB::raw('SUM(kill_points) as total_kill_points'),
+            DB::raw('SUM(total_points) as total_points'),
+            DB::raw('ROUND(AVG(rank), 1) as avg_placement'),
+            DB::raw('MAX(rank) as best_placement')
+        )
+        ->groupBy('player_name')
+        ->orderBy('total_points', 'desc')
+        ->get();
+});
+
+
+Route::middleware(['auth'])->group(function () {
+    // Panel de Administración de Jangel
+    Route::get('/admin/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
+    Route::post('/admin/tournaments', [TournamentParserController::class, 'store'])->name('jangel.store');
+    Route::post('/admin/tournaments/{tableName}/upload', [TournamentParserController::class, 'uploadReplay'])->name('jangel.upload');
+      Route::get('/admin/tournaments/{tournament}', [TournamentParserController::class, 'show'])->name('tournaments.show');
+    Route::post('/admin/tournaments/{tournament}/process-replay', [TournamentParserController::class, 'processReplay'])->name('tournaments.process-replay');
+});
+
+// Ruta pública para ver el Leaderboard (Widget OBS)
+Route::get('/api/leaderboard/{tableName}', [TournamentParserController::class, 'getLeaderboard']);
+
 require __DIR__.'/auth.php';

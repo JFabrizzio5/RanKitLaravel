@@ -1,3 +1,103 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --rankit-neon: #bf00ff;
+}
+
+/* Fonts */
+.font-display {
+  font-family: "Chakra Petch", ui-sans-serif, system-ui;
+}
+.font-sans {
+    font-family: "Archivo", ui-sans-serif, system-ui;
+}
+
+/* Utilities */
+.text-neon { color: var(--rankit-neon); }
+.bg-neon { background-color: var(--rankit-neon); }
+.border-neon { border-color: var(--rankit-neon); }
+
+/* Text Stroke Effect */
+.text-stroke {
+    -webkit-text-stroke: 1px var(--rankit-neon);
+    color: transparent;
+}
+
+/* Backgrounds */
+.bg-tech-grid-dark {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+.bg-tech-grid-light {
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+}
+
+/* Components */
+.brutal-card {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border: 1px solid;
+}
+.dark .brutal-card {
+  background: #0a0a0a;
+  border-color: #333;
+}
+html:not(.dark) .brutal-card {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  box-shadow: 4px 4px 0px #00000010;
+}
+.brutal-card:hover {
+  border-color: var(--rankit-neon);
+  transform: translate(-2px, -2px);
+}
+.dark .brutal-card:hover {
+  box-shadow: 0 0 20px rgba(191, 0, 255, 0.15);
+}
+html:not(.dark) .brutal-card:hover {
+  box-shadow: 6px 6px 0px var(--rankit-neon);
+}
+
+.btn-skew {
+  background-color: var(--rankit-neon);
+  color: white;
+  transform: skewX(-10deg);
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.btn-skew:hover {
+  background-color: white;
+  color: black;
+  box-shadow: 0 0 15px var(--rankit-neon);
+}
+html:not(.dark) .btn-skew:hover {
+  background-color: black;
+  color: white;
+  box-shadow: 4px 4px 0px rgba(0,0,0,0.2);
+}
+.btn-content {
+  transform: skewX(10deg);
+}
+
+.brutal-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid #333;
+  padding: 0.5rem 0;
+  font-family: "Archivo", sans-serif;
+  font-weight: 600;
+  outline: none;
+  transition: all 0.3s;
+}
+.dark .brutal-input { color: white; border-color: #333; }
+html:not(.dark) .brutal-input { color: black; border-color: #e5e5e5; }
+.brutal-input:focus { border-color: var(--rankit-neon); padding-left: 0.5rem; box-shadow: none; ring: 0; }
