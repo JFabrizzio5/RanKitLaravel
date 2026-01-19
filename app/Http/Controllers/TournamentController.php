@@ -39,9 +39,17 @@ class TournamentController extends Controller
             ['rank' => 4, 'team' => 'Sin Limites', 'score' => 85, 'wins' => 1],
             ['rank' => 5, 'team' => 'Net Runners', 'score' => 60, 'wins' => 0],
         ];
+        $user = auth()->user();
 
+$totalPoints = 0;
+
+if ($user) {
+  $row = \DB::table('bellzcup_rifapoints')->where('userid', $user->id)->first();
+  $totalPoints = $row?->totalpoints ?? 0;
+}
         return Inertia::render('Tournament/Widget', [
-            'leaderboard' => $leaderboard
+            'leaderboard' => $leaderboard,
+            'totalPoints' => $totalPoints,
         ]);
     }
 }

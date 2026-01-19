@@ -1,5 +1,5 @@
 <?php
-
+use App\Http\Controllers\BellzCupReferralController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TournamentController; // Importamos el nuevo controlador
 use App\Http\Controllers\TournamentsController; // Controlador para la vista de detalle del torneo
@@ -65,6 +65,19 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tournament-create-quick', [TournamentParserController::class, 'createQuickTournament'])->name('jangel.tournament.create');
     Route::post('/replay-sync-net', [TournamentParserController::class, 'syncMatchData'])->name('jangel.replay.sync');
 });
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/bellzcup/referidos/redeem', [BellzCupReferralController::class, 'redeem'])
+        ->name('bellzcup.referidos.redeem');
+});
+Route::middleware(['auth'])->group(function () {
+    Route::post('/bellzcup/viewer/start', [\App\Http\Controllers\BellzCupViewerController::class, 'start'])
+        ->name('bellzcup.viewer.start');
+
+    Route::post('/bellzcup/viewer/heartbeat', [\App\Http\Controllers\BellzCupViewerController::class, 'heartbeat'])
+        ->name('bellzcup.viewer.heartbeat');
+});
+
 
 // API para los Widgets (Pública para OBS)
 Route::get('/api/tournaments/stats-detailed/{tableName}', [TournamentParserController::class, 'getDetailedStats']);
