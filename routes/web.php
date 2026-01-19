@@ -90,7 +90,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
         
         // Crear Torneo
-        Route::post('/tournaments', [TournamentParserController::class, 'store'])->name('jangel.store');
+        Route::post('/tournaments', [TournamentParserController::class, 'store'])->name('jangel.tournament.store');
                 Route::put('/tournaments/{id}', [TournamentParserController::class, 'update'])->name('jangel.tournament.update');
         // Eliminar
         Route::delete('/tournaments/{id}', [TournamentParserController::class, 'destroy'])->name('jangel.tournament.delete');
