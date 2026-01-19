@@ -1,130 +1,184 @@
 <script setup lang="ts">
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { useForm, Head, router } from '@inertiajs/vue3';
-import { ref, onMounted, watch } from 'vue';
-import axios from 'axios';
+import { ref, onMounted, watch, computed } from 'vue'
+import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3'
+import Modal from '@/Components/Modal.vue'
+import axios from 'axios'
 
-const props = defineProps({ tournaments: Array });
+// --- TIPOS Y INTERFACES ---
 
-// --- ESTADOS DE UI ---
-const showModal = ref(false);
-const uploadProgress = ref(0);
-const loadingLeaderboard = ref(false);
-const processingSlot = ref<Record<number, boolean>>({}); // Estado de carga individual por botón
+interface Match {
+    id: number;
+    game_mode: string; 
+    custom_code: string;
+    status: 'pending' | 'processed';
+    created_at: string;
+}
 
-// --- ESTADOS DE DATOS ---
-const selectedTournament = ref<any>(null);
-const leaderboard = ref<any[]>([]);
+interface Tournament {
+    id: number;
+    name: string;
+    twitch_channel?: string; // Nuevo campo
+    matches: Match[];
+}
+
+interface LeaderboardItem {
+    player_name: string;
+    member_names?: string[];
+    games_played: number;
+    total_kills: number;
+    total_points: number;
+    avg_points: number;
+    avg_kills: number;
+    avg_placement: number;
+    best_placement: number;
+}
+
+interface SlotInput {
+    game_mode: number;
+    custom_code: string;
+}
+
+// --- PROPS & SETUP ---
+
+const props = defineProps<{
+    tournaments: Tournament[];
+    laravelVersion?: string;
+    phpVersion?: string;
+}>();
+
+const user = usePage().props.auth.user;
+
+// --- THEME & UTILS ---
+const isDark = ref(true);
+
+function applyTheme(nextDark: boolean) {
+    isDark.value = nextDark;
+    const html = document.documentElement;
+    if (nextDark) {
+        html.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+    } else {
+        html.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+    }
+}
+
+function toggleTheme() {
+    applyTheme(!isDark.value);
+}
+
+// --- LÓGICA DE DATOS ---
+const selectedTournamentId = ref<number | null>(null);
+
+const selectedTournament = computed((): Tournament | undefined => 
+    props.tournaments?.find(t => t.id === selectedTournamentId.value) || props.tournaments?.[0]
+);
+
+const leaderboard = ref<LeaderboardItem[]>([]);
 const selectedMatchId = ref<number | null>(null);
-const slotInputs = ref<Record<number, { game_mode: number, custom_code: string }>>({}); // Inputs independientes
+const slotInputs = ref<Record<number, SlotInput>>({});
+const processingSlot = ref<Record<number, boolean>>({});
 
-// --- FILTROS Y ORDEN ---
-const leaderboardType = ref('players');
-const filterMode = ref('all');
-const sortBy = ref('points');
+// Filtros
+const leaderboardType = ref<'players' | 'teams'>('players');
+const filterMode = ref<string>('all');
+const sortBy = ref<'points' | 'kills'>('points');
+const searchQuery = ref('');
 const expandedRowIndex = ref<number | null>(null);
+const loadingLeaderboard = ref(false);
 
-// Formularios Globales
-const formTournament = useForm({ name: '', expected_matches: 5 });
+// Computed para filtrar la tabla localmente
+const filteredLeaderboard = computed(() => {
+    if (!searchQuery.value) return leaderboard.value;
+    const q = searchQuery.value.toLowerCase();
+    
+    return leaderboard.value.filter(item => {
+        if (leaderboardType.value === 'teams' && item.member_names) {
+            return item.member_names.some(m => m.toLowerCase().includes(q));
+        }
+        return item.player_name.toLowerCase().includes(q);
+    });
+});
 
-// FIX: TypeScript type casting added here for target_match_id and replay
+// Forms
 const formReplay = useForm({ 
     replay: null as File | null, 
     mode: 2, 
     target_match_id: null as number | null 
 });
 
-// Inicializar inputs independientes para cada torneo
+// Formulario para Configuración de Torneo
+const formSettings = useForm({
+    id: null as number | null,
+    name: '',
+    twitch_channel: ''
+});
+
+// Formulario para Editar Match Code
+const formEditMatch = useForm({
+    match_id: null as number | null,
+    custom_code: ''
+});
+
+// Estados UI
+const activeTab = ref<'codes' | 'widget' | 'matches'>('codes');
+const showMatchModal = ref(false);
+const showSettingsModal = ref(false);
+const showEditMatchModal = ref(false);
+const uploadProgress = ref(0);
+
+// --- INICIALIZACIÓN ---
 const initSlotInputs = () => {
     if (props.tournaments) {
-        props.tournaments.forEach((t: any) => {
+        props.tournaments.forEach((t) => {
             if (!slotInputs.value[t.id]) {
                 slotInputs.value[t.id] = { game_mode: 2, custom_code: '' };
             }
         });
-    }
-};
-
-onMounted(initSlotInputs);
-watch(() => props.tournaments, initSlotInputs, { deep: true });
-
-// --- MÉTODOS DE GESTIÓN ---
-
-const createTournament = () => {
-    formTournament.post(route('jangel.store'), { onSuccess: () => formTournament.reset() });
-};
-
-// Crear Slot (AHORA INDEPENDIENTE Y SIN BUGS)
-const createSlot = (tnId: number) => {
-    const input = slotInputs.value[tnId];
-    
-    if (!input || !input.custom_code) {
-        alert("¡Escribe un código para la partida!");
-        return;
-    }
-
-    processingSlot.value[tnId] = true;
-
-    router.post(route('jangel.match.schedule', tnId), input, {
-        onSuccess: () => {
-            slotInputs.value[tnId].custom_code = ''; // Limpiar solo este input
-            processingSlot.value[tnId] = false;
-        },
-        onError: (err) => {
-            processingSlot.value[tnId] = false;
-            alert("Error al crear slot: " + JSON.stringify(err));
-        },
-        preserveScroll: true
-    });
-};
-
-// --- MÉTODOS DE UPLOAD (MODAL) ---
-
-const openUploadModal = (tnId: number, matchId: number | null = null) => {
-    formReplay.reset();
-    formReplay.target_match_id = matchId;
-    selectedTournament.value = props.tournaments?.find((t:any) => t.id === tnId);
-    showModal.value = true;
-    uploadProgress.value = 0;
-};
-
-const submitReplay = () => {
-    if (!selectedTournament.value) return;
-    
-    formReplay.post(route('jangel.match.process', selectedTournament.value.id), {
-        onProgress: (progress) => {
-            uploadProgress.value = progress?.percentage || 0;
-        },
-        onSuccess: () => {
-            showModal.value = false;
-            uploadProgress.value = 0;
-            if (selectedMatchId.value === formReplay.target_match_id) {
-                fetchLeaderboard(selectedTournament.value, selectedMatchId.value);
-            }
-        },
-        onError: (err) => {
-            showModal.value = false;
-            alert("Error al subir: " + JSON.stringify(err));
+        if (!selectedTournamentId.value && props.tournaments.length > 0) {
+            selectedTournamentId.value = props.tournaments[0].id;
         }
-    });
-};
-
-const deleteMatch = (id: number) => {
-    if(confirm("¿Seguro que quieres borrar esta partida y sus datos?")) {
-        router.delete(route('jangel.match.delete', id), {
-            onSuccess: () => {
-                if (selectedMatchId.value === id) fetchLeaderboard(selectedTournament.value, null);
-            },
-            preserveScroll: true
-        });
     }
 };
 
-// --- MÉTODOS DE DATOS Y VISUALIZACIÓN ---
+onMounted(() => {
+    initSlotInputs();
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true;
+    if (savedTheme === 'light') applyTheme(false);
+    else if (savedTheme === 'dark') applyTheme(true);
+    else applyTheme(systemPrefersDark);
 
-const fetchLeaderboard = async (tn: any, matchId: number | null = null) => {
+    if (!document.querySelector('script[src="https://unpkg.com/@phosphor-icons/web"]')) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/@phosphor-icons/web';
+        script.async = true;
+        document.head.appendChild(script);
+    }
+
+    if (selectedTournament.value) {
+        fetchLeaderboard(selectedTournament.value);
+    }
+});
+
+watch(() => props.tournaments, initSlotInputs, { deep: true });
+watch(selectedTournamentId, () => {
+    selectedMatchId.value = null;
+    searchQuery.value = ''; 
+    if (selectedTournament.value) {
+        fetchLeaderboard(selectedTournament.value);
+    }
+});
+
+// --- ACCIONES DE DATOS ---
+
+const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) => {
+    if(!tn) return;
+    
+    // Forzamos la limpieza para que el usuario VEA que está cargando
     loadingLeaderboard.value = true;
-    selectedTournament.value = tn;
+    leaderboard.value = []; 
+    
     selectedMatchId.value = matchId;
     expandedRowIndex.value = null;
 
@@ -144,363 +198,549 @@ const fetchLeaderboard = async (tn: any, matchId: number | null = null) => {
     }
 };
 
-const switchTab = (type: string) => {
-    leaderboardType.value = type;
-    if (selectedTournament.value) fetchLeaderboard(selectedTournament.value, selectedMatchId.value);
-};
+// --- GESTIÓN DE TORNEO ---
 
-const switchMode = (mode: string) => {
-    filterMode.value = mode;
-    if (selectedTournament.value) fetchLeaderboard(selectedTournament.value, selectedMatchId.value);
-};
-
-const toggleSort = () => {
-    sortBy.value = sortBy.value === 'points' ? 'kills' : 'points';
-    if (selectedTournament.value) fetchLeaderboard(selectedTournament.value, selectedMatchId.value);
-};
-
-const toggleRow = (index: number) => {
-    expandedRowIndex.value = expandedRowIndex.value === index ? null : index;
-};
-
-// --- MÉTODOS OBS (NUEVOS) ---
-
-// 1. Link para TABLA GLOBAL (Top 10)
-const copyGlobalObsLink = () => {
+const openSettingsModal = () => {
     if (!selectedTournament.value) return;
-    const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
-    // Limitamos a 10
-    const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10`;
-    
-    const fullUrl = baseUrl + query;
-    navigator.clipboard.writeText(fullUrl);
-    alert(`✅ Link de TABLA COPIADO.\n\nConfiguración: Top 10 ${leaderboardType.value} ordenado por ${sortBy.value}.\nPégalo en OBS.`);
+    formSettings.id = selectedTournament.value.id;
+    formSettings.name = selectedTournament.value.name;
+    formSettings.twitch_channel = selectedTournament.value.twitch_channel || '';
+    showSettingsModal.value = true;
 };
 
-// 2. Link para TRACKER INDIVIDUAL (Jugador/Equipo específico)
-const copyIndividualObsLink = (item: any) => {
-    if (!selectedTournament.value) return;
-    const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
-    let query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}`;
-    
-    let searchTerm = '';
-    if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
-        searchTerm = item.member_names[0]; 
-    } else if (item.player_name) {
-        searchTerm = item.player_name;
-    }
-
-    if (searchTerm) {
-        query += `&search=${encodeURIComponent(searchTerm)}`;
-    }
-
-    const fullUrl = baseUrl + query;
-    navigator.clipboard.writeText(fullUrl);
-    alert(`✅ Link de TRACKER COPIADO para: ${searchTerm}\n\nPégalo en OBS.`);
+const updateTournament = () => {
+    if (!formSettings.id) return;
+    formSettings.put(route('jangel.tournament.update', formSettings.id), {
+        onSuccess: () => {
+            showSettingsModal.value = false;
+        },
+        preserveScroll: true
+    });
 };
 
-// Helpers
-const formatDec = (num: any) => {
-    const n = parseFloat(num);
+const deleteTournament = () => {
+    if (!formSettings.id) return;
+    if (!confirm('¿Estás seguro de ELIMINAR este torneo? Esta acción no se puede deshacer.')) return;
+
+    router.delete(route('jangel.tournament.delete', formSettings.id), {
+        onSuccess: () => {
+            showSettingsModal.value = false;
+            selectedTournamentId.value = null; // Reset selection
+        }
+    });
+};
+
+// --- GESTIÓN DE PARTIDAS (SLOTS & EDIT) ---
+
+const createSlot = () => {
+    const tn = selectedTournament.value;
+    if (!tn) return;
+    const input = slotInputs.value[tn.id];
+    if (!input || !input.custom_code) {
+        alert("¡Escribe un código para la partida!");
+        return;
+    }
+    processingSlot.value[tn.id] = true;
+    router.post(route('jangel.match.schedule', tn.id), input as any, {
+        onSuccess: () => {
+            if(slotInputs.value[tn.id]) slotInputs.value[tn.id].custom_code = ''; 
+            processingSlot.value[tn.id] = false;
+        },
+        onError: (err) => {
+            processingSlot.value[tn.id] = false;
+            alert("Error: " + JSON.stringify(err));
+        },
+        preserveScroll: true
+    });
+};
+
+const openEditMatchModal = (match: Match) => {
+    formEditMatch.match_id = match.id;
+    formEditMatch.custom_code = match.custom_code;
+    showEditMatchModal.value = true;
+};
+
+const updateMatchCode = () => {
+    if (!formEditMatch.match_id) return;
+    formEditMatch.put(route('jangel.match.update', formEditMatch.match_id), {
+        onSuccess: () => {
+            showEditMatchModal.value = false;
+        }
+    });
+};
+
+const deleteMatch = (id: number) => {
+    if(confirm("¿Seguro que quieres borrar esta partida y sus datos?")) {
+        router.delete(route('jangel.match.delete', id), {
+            onSuccess: () => {
+                if (selectedMatchId.value === id && selectedTournament.value) {
+                    fetchLeaderboard(selectedTournament.value, null);
+                }
+            },
+            preserveScroll: true
+        });
+    }
+};
+
+// --- SUBIDA REPLAY ---
+const openUploadModal = (matchId: number | null = null) => {
+    formReplay.reset();
+    formReplay.target_match_id = matchId;
+    showMatchModal.value = true;
+    uploadProgress.value = 0;
+};
+
+const handleFileUpload = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.files && target.files[0]) {
+        formReplay.replay = target.files[0];
+    }
+}
+
+const submitReplay = () => {
+    if (!selectedTournament.value || !formReplay.replay) return;
+    formReplay.post(route('jangel.match.process', selectedTournament.value.id), {
+        onProgress: (progress) => {
+            uploadProgress.value = progress?.percentage || 0;
+        },
+        onSuccess: () => {
+            showMatchModal.value = false;
+            uploadProgress.value = 0;
+            if (selectedMatchId.value === formReplay.target_match_id) {
+                fetchLeaderboard(selectedTournament.value!, selectedMatchId.value);
+            }
+        },
+        onError: (err) => {
+            showMatchModal.value = false;
+            alert("Error al subir: " + JSON.stringify(err));
+        }
+    });
+};
+
+// --- HELPERS VISUALES & OBS ---
+const formatDec = (num: number | string) => {
+    const n = typeof num === 'string' ? parseFloat(num) : num;
     return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '');
 };
 
-const copyWidgetUrl = (tn: any) => {
-    const url = route('api.widget.stats', tn.id); 
-    navigator.clipboard.writeText(url);
-    alert("URL Widget JSON copiada: " + url);
+const copyGlobalObsLink = () => {
+    if (!selectedTournament.value) return;
+    const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
+    let query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10`;
+    if (selectedMatchId.value) query += `&match_id=${selectedMatchId.value}`;
+    if (searchQuery.value) query += `&search=${encodeURIComponent(searchQuery.value)}`;
+    navigator.clipboard.writeText(baseUrl + query);
+    let msg = `✅ Link OBS Copiado!`;
+    if(searchQuery.value) msg += `\nTrackeando: "${searchQuery.value}"`;
+    alert(msg);
 };
 
-const getPublicUrl = (id: number) => `${window.location.origin}/live/${id}`;
-const getObsUrl = (id: number) => `${window.location.origin}/widget/obs/global/${id}`;
+const copyTrackingLink = (targetName: string) => {
+    if (!selectedTournament.value) return;
+    const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
+    const query = `?type=${leaderboardType.value}&mode=all&sort=${sortBy.value}&limit=1&search=${encodeURIComponent(targetName)}`;
+    navigator.clipboard.writeText(baseUrl + query);
+    alert(`✅ Tracking OBS copiado para: ${targetName}`);
+};
+
 </script>
 
 <template>
-    <Head title="Admin Jangel" />
-    <AuthenticatedLayout>
-        <div class="min-h-screen p-6 text-gray-100 bg-black">
-            
-            <!-- CREAR TORNEO -->
-            <div class="flex items-end gap-4 p-4 mb-8 bg-gray-900 border border-indigo-900 rounded">
-                <div class="flex-1">
-                    <label class="block mb-1 text-xs text-gray-400">Nombre Torneo</label>
-                    <input v-model="formTournament.name" type="text" class="w-full text-sm text-white bg-gray-800 border-gray-700 rounded focus:ring-indigo-500">
-                </div>
-                <div class="w-32">
-                    <label class="block mb-1 text-xs text-gray-400">Total Partidas</label>
-                    <input v-model="formTournament.expected_matches" type="number" class="w-full text-sm text-center text-white bg-gray-800 border-gray-700 rounded focus:ring-indigo-500">
-                </div>
-                <button @click="createTournament" :disabled="formTournament.processing" class="px-6 py-2 font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
-                    {{ formTournament.processing ? '...' : 'Crear' }}
-                </button>
-            </div>
+  <Head title="Admin Dashboard - BellzCup">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Archivo:wght@300;400;600;800&display=swap" rel="stylesheet" />
+  </Head>
 
-            <div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
-                <!-- COLUMNA IZQUIERDA: LISTA TORNEOS -->
-                <div class="space-y-6">
-                    <div v-for="tn in (tournaments as any)" :key="tn.id" class="p-4 bg-gray-900 border border-gray-800 rounded">
-                        <div class="flex items-start justify-between mb-2">
-                            <div>
-                                <h3 class="text-lg font-bold text-white">{{ tn.name }}</h3>
-                                <p class="font-mono text-xs text-indigo-400">{{ tn.progress_text }}</p>
-                            </div>
-                            <div class="flex flex-col gap-1 text-right">
-                                <button @click="copyWidgetUrl(tn)" class="text-[10px] text-gray-400 hover:text-white mb-1">🔗 Copiar API</button>
-                                <div class="flex gap-1">
-                                    <a :href="getPublicUrl(tn.id)" target="_blank" class="text-[10px] bg-gray-800 px-2 py-1 rounded hover:text-white border border-gray-700">🌍 Public</a>
-                                    <a :href="getObsUrl(tn.id)" target="_blank" class="text-[10px] bg-gray-800 px-2 py-1 rounded hover:text-white border border-gray-700">📺 OBS</a>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- PANEL CREAR SLOT (AHORA INDEPENDIENTE) -->
-                        <div v-if="slotInputs[tn.id]" class="p-2 mb-3 border border-gray-800 rounded bg-gray-950/50">
-                            <div class="flex gap-2 mb-2">
-                                <select v-model="slotInputs[tn.id].game_mode" class="w-20 text-xs text-white bg-gray-800 border-gray-700 rounded focus:ring-0">
-                                    <option :value="1">Solo</option><option :value="2">Duo</option>
-                                    <option :value="3">Trio</option><option :value="4">Squad</option>
-                                </select>
-                                <input 
-                                    v-model="slotInputs[tn.id].custom_code" 
-                                    @keyup.enter="createSlot(tn.id)"
-                                    placeholder="Código (Ej: A1)" 
-                                    class="flex-1 text-xs text-white bg-gray-800 border-gray-700 rounded focus:ring-indigo-500 focus:border-indigo-500"
-                                >
-                            </div>
-                            <button 
-                                @click="createSlot(tn.id)" 
-                                :disabled="processingSlot[tn.id]"
-                                class="w-full bg-indigo-900/40 text-indigo-200 text-xs py-1.5 rounded hover:bg-indigo-800 border border-indigo-900/50 font-bold transition-all disabled:opacity-50"
-                            >
-                                {{ processingSlot[tn.id] ? 'Creando Slot...' : '+ Agregar Slot' }}
-                            </button>
-                        </div>
-
-                        <!-- LISTA DE PARTIDAS -->
-                        <div class="pr-1 space-y-1 overflow-y-auto max-h-60">
-                            <div v-for="match in tn.matches" :key="match.id" 
-                                class="flex items-center justify-between p-2 transition-colors border rounded cursor-pointer group"
-                                :class="{
-                                    'bg-indigo-900/30 border-indigo-500': selectedMatchId === match.id,
-                                    'bg-yellow-900/10 border-yellow-900/30': match.status === 'pending' && selectedMatchId !== match.id,
-                                    'bg-gray-800/50 border-gray-700': match.status !== 'pending' && selectedMatchId !== match.id
-                                }"
-                                @click="match.status === 'processed' ? fetchLeaderboard(tn, match.id) : null"
-                            >
-                                <div>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-xs font-bold text-gray-300 uppercase">{{ match.game_mode }}</span>
-                                        <span v-if="match.status === 'pending'" class="text-[9px] bg-yellow-600 text-black px-1 rounded font-bold animate-pulse">EN VIVO</span>
-                                        <span v-else class="text-[9px] bg-green-600 text-white px-1 rounded font-bold">LISTO</span>
-                                    </div>
-                                    <div class="mt-1 font-mono text-xs text-gray-500">Code: <span class="font-bold text-white">{{ match.custom_code }}</span></div>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <button v-if="match.status === 'pending'" @click.stop="openUploadModal(tn.id, match.id)" class="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-500 font-bold shadow-lg shadow-blue-900/20">Subir Replay</button>
-                                    <button v-else @click.stop="openUploadModal(tn.id, match.id)" class="text-xs text-gray-500 transition-colors hover:text-white" title="Re-subir (Sobreescribir)">↺</button>
-                                    <button @click.stop="deleteMatch(match.id)" class="text-gray-600 transition-colors hover:text-red-500">✕</button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <button @click="fetchLeaderboard(tn, null)" class="w-full py-2 mt-2 text-xs text-center text-indigo-300 transition-colors bg-gray-800 border border-gray-700 rounded hover:bg-gray-700">Ver Ranking Global</button>
-                    </div>
-                </div>
-
-                <!-- COLUMNA DERECHA: TABLA Y FILTROS -->
-                <div class="lg:col-span-2 bg-gray-900 border border-gray-800 rounded p-6 min-h-[500px] flex flex-col">
-                    
-                    <!-- Header de Tabla -->
-                    <div v-if="selectedTournament" class="flex flex-col gap-4 pb-4 mb-6 border-b border-gray-800">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h2 class="text-xl font-bold text-white">
-                                    {{ selectedMatchId ? 'Resultados de Partida' : selectedTournament.name }} 
-                                </h2>
-                                <p class="text-sm text-gray-400">{{ selectedMatchId ? 'Vista Individual' : 'Ranking Global Acumulado' }}</p>
-                            </div>
-                            <div v-if="selectedMatchId">
-                                <button @click="fetchLeaderboard(selectedTournament, null)" class="px-3 py-1 text-xs font-bold text-white transition-colors bg-indigo-600 rounded hover:bg-indigo-500">
-                                    ← Volver al Global
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- BARRA DE FILTROS -->
-                        <div class="flex flex-wrap items-center justify-between gap-3 p-2 border border-gray-800 rounded-lg bg-gray-950/50">
-                            <div class="flex flex-wrap gap-2">
-                                <!-- Tabs Jugadores/Equipos -->
-                                <div class="flex p-1 bg-gray-900 border border-gray-700 rounded">
-                                    <button @click="switchTab('players')" :class="{'bg-gray-700 text-white': leaderboardType === 'players', 'text-gray-500': leaderboardType !== 'players'}" class="px-3 py-1 text-xs font-bold uppercase transition-all rounded">Jugadores</button>
-                                    <button @click="switchTab('teams')" :class="{'bg-gray-700 text-white': leaderboardType === 'teams', 'text-gray-500': leaderboardType !== 'teams'}" class="px-3 py-1 text-xs font-bold uppercase transition-all rounded">Equipos</button>
-                                </div>
-                                <!-- Botón Ordenar -->
-                                <button @click="toggleSort" class="px-3 py-1 text-xs font-bold text-indigo-300 transition-colors border rounded border-indigo-900/50 hover:bg-indigo-900/20">
-                                    Ordenar: {{ sortBy === 'points' ? 'Puntos 🏆' : 'Kills ⚔️' }}
-                                </button>
-
-                                <!-- NUEVO: BOTÓN WIDGET TABLA GLOBAL -->
-                                <button @click="copyGlobalObsLink" class="flex items-center gap-1 px-3 py-1 text-xs font-bold text-white transition-colors bg-teal-700 border border-teal-500 rounded shadow-lg hover:bg-teal-600 shadow-teal-900/50">
-                                    📺 Tabla OBS
-                                </button>
-                            </div>
-
-                            <!-- Filtros de Modo (Solo visible en Global) -->
-                            <div v-if="!selectedMatchId" class="flex gap-1 overflow-x-auto">
-                                <button 
-                                    v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" 
-                                    :key="m" @click="switchMode(m)"
-                                    :class="{'text-indigo-400 border-indigo-500': filterMode === m, 'text-gray-500 border-transparent': filterMode !== m}"
-                                    class="px-2 py-1 text-xs font-bold uppercase transition-colors border-b-2 hover:text-gray-300"
-                                >
-                                    {{ m === 'all' ? 'Todas' : m }}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Loading State -->
-                    <div v-if="loadingLeaderboard" class="flex items-center justify-center flex-1 text-gray-500">
-                        <div class="w-8 h-8 border-b-2 border-indigo-500 rounded-full animate-spin"></div>
-                    </div>
-
-                    <!-- TABLA COMPLETA (CON EXPANSION) -->
-                    <div v-else-if="selectedTournament" class="overflow-x-auto">
-                        <table class="w-full text-sm text-left border-collapse">
-                            <thead class="sticky top-0 text-xs text-gray-500 uppercase bg-gray-800">
-                                <tr>
-                                    <th class="p-3">Pos</th>
-                                    <th class="p-3">{{ leaderboardType === 'teams' ? 'Equipo' : 'Jugador' }}</th>
-                                    <th class="p-3 text-center">Partidas</th>
-                                    <th class="p-3 text-center cursor-pointer hover:text-white" @click="sortBy = 'kills'; fetchLeaderboard(selectedTournament, selectedMatchId)" :class="{'text-white underline': sortBy==='kills'}">Kills</th>
-                                    <th class="p-3 text-center cursor-pointer hover:text-white" @click="sortBy = 'points'; fetchLeaderboard(selectedTournament, selectedMatchId)" :class="{'text-white underline': sortBy==='points'}">Puntos</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-800">
-                                <template v-for="(item, idx) in leaderboard" :key="idx">
-                                    <!-- FILA PRINCIPAL -->
-                                    <tr @click="toggleRow(idx)" class="transition-colors border-b cursor-pointer hover:bg-gray-800/50 border-gray-800/50">
-                                        <td class="w-12 p-3 font-mono font-bold text-gray-500">
-                                            {{ idx < 3 ? ['🥇','🥈','🥉'][idx] : `#${idx + 1}` }}
-                                        </td>
-                                        
-                                        <!-- CELDA NOMBRE + BOTÓN OBS TRACKER -->
-                                        <td class="p-3 font-bold text-white">
-                                            <div class="flex items-center justify-between gap-4">
-                                                <div>
-                                                    <div v-if="leaderboardType === 'teams'" class="flex flex-wrap gap-1">
-                                                        <span v-for="(m, i) in item.member_names" :key="i" class="px-2 py-0.5 text-[10px] text-indigo-200 rounded bg-indigo-900/40">{{ m }}</span>
-                                                    </div>
-                                                    <div v-else>{{ item.player_name }}</div>
-                                                    <!-- Indicador pequeño -->
-                                                    <div class="text-[9px] text-gray-600 mt-0.5 font-normal">
-                                                        {{ expandedRowIndex === idx ? '▲ Ocultar' : '▼ Detalles' }}
-                                                    </div>
-                                                </div>
-
-                                                <!-- NUEVO BOTÓN TRACKER -->
-                                                <button @click.stop="copyIndividualObsLink(item)" class="text-[10px] font-bold bg-white/5 hover:bg-white/20 text-gray-400 hover:text-indigo-300 border border-gray-700 rounded px-2 py-1 transition-all flex items-center gap-1" title="Copiar Link para OBS">
-                                                    🔍 <span class="hidden sm:inline">Track</span>
-                                                </button>
-                                            </div>
-                                        </td>
-                                        
-                                        <td class="p-3 text-center text-gray-400">{{ item.games_played }}</td>
-                                        <td class="p-3 font-mono font-bold text-center text-red-400">{{ item.total_kills }}</td>
-                                        <td class="p-3 font-mono text-lg font-bold text-center text-green-400">{{ item.total_points }}</td>
-                                    </tr>
-
-                                    <!-- FILA DE DETALLES (EXPANDIBLE) -->
-                                    <tr v-if="expandedRowIndex === idx" class="bg-gray-800/20 animate-fadeIn">
-                                        <td colspan="5" class="p-3">
-                                            <div class="grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
-                                                <div class="p-2 bg-gray-900 border border-gray-700 rounded">
-                                                    <span class="block mb-1 text-gray-500">Puntos Promedio</span>
-                                                    <span class="text-base font-bold text-green-400">{{ formatDec(item.avg_points) }}</span>
-                                                </div>
-                                                <div class="p-2 bg-gray-900 border border-gray-700 rounded">
-                                                    <span class="block mb-1 text-gray-500">Kills Promedio</span>
-                                                    <span class="text-base font-bold text-red-400">{{ formatDec(item.avg_kills) }}</span>
-                                                </div>
-                                                <div class="p-2 bg-gray-900 border border-gray-700 rounded">
-                                                    <span class="block mb-1 text-gray-500">Posición Promedio</span>
-                                                    <span class="text-base font-bold text-yellow-400">#{{ formatDec(item.avg_placement) }}</span>
-                                                </div>
-                                                <div class="p-2 bg-gray-900 border border-gray-700 rounded">
-                                                    <span class="block mb-1 text-gray-500">Mejor Partida</span>
-                                                    <span class="text-base font-bold text-white">#{{ item.best_placement }}</span>
-                                                </div>
-                                                
-                                                <!-- Desglose puntos -->
-                                                <div v-if="item.avg_kill_points" class="p-2 bg-gray-900 border border-gray-700 rounded">
-                                                    <span class="block text-gray-500">Pts por Kill (Avg)</span>
-                                                    <span class="font-bold text-indigo-300">{{ formatDec(item.avg_kill_points) }}</span>
-                                                </div>
-                                                <div v-if="item.avg_placement_points" class="p-2 bg-gray-900 border border-gray-700 rounded">
-                                                    <span class="block text-gray-500">Pts por Top (Avg)</span>
-                                                    <span class="font-bold text-indigo-300">{{ formatDec(item.avg_placement_points) }}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                        <div v-if="leaderboard.length === 0" class="py-10 text-center text-gray-500 border-t border-gray-800">
-                            No hay datos para mostrar con los filtros actuales.
-                        </div>
-                    </div>
-                    
-                    <div v-else class="flex items-center justify-center flex-1 text-gray-500">
-                        Selecciona un torneo o partida para ver datos.
-                    </div>
-                </div>
-            </div>
-
-            <!-- MODAL DE UPLOAD (PROGRESS BAR) -->
-            <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                <div class="p-6 bg-gray-900 border border-gray-700 shadow-2xl rounded-xl w-96">
-                    <h3 class="mb-4 text-lg font-bold text-white">Subir Replay</h3>
-                    
-                    <div v-if="formReplay.target_match_id" class="p-2 mb-4 text-xs text-yellow-200 border rounded bg-yellow-900/20 border-yellow-700/50">
-                        ⚠ Vas a sobreescribir los datos del slot seleccionado.
-                    </div>
-
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block mb-1 text-xs text-gray-400">Archivo .replay</label>
-                            <input type="file" @input="formReplay.replay = ($event.target as any).files[0]" class="block w-full text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded cursor-pointer focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-l file:border-0 file:text-xs file:font-semibold file:bg-indigo-900 file:text-indigo-200 hover:file:bg-indigo-800">
-                        </div>
-                        <div v-if="!formReplay.target_match_id">
-                            <label class="block mb-1 text-xs text-gray-400">Modo (Si es partida nueva)</label>
-                            <select v-model="formReplay.mode" class="w-full text-xs text-white bg-gray-800 border-gray-700 rounded">
-                                <option :value="1">Solo</option><option :value="2">Duo</option>
-                                <option :value="3">Trio</option><option :value="4">Squad</option>
-                            </select>
-                        </div>
-                        
-                        <!-- BARRA DE PROGRESO -->
-                        <div v-if="formReplay.processing" class="space-y-1">
-                            <div class="flex justify-between text-xs text-gray-400">
-                                <span>Subiendo y Procesando...</span>
-                                <span>{{ uploadProgress }}%</span>
-                            </div>
-                            <div class="w-full h-2 bg-gray-700 rounded-full">
-                                <div class="h-2 transition-all duration-300 bg-indigo-500 rounded-full" :style="{ width: uploadProgress + '%' }"></div>
-                            </div>
-                            <p class="text-[10px] text-gray-500 pt-1">No cierres esta ventana. Puede tardar unos minutos.</p>
-                        </div>
-
-                        <div class="flex justify-end gap-2 pt-4 border-t border-gray-800">
-                            <button @click="showModal = false" :disabled="formReplay.processing" class="px-3 py-1 text-sm text-gray-400 transition-colors hover:text-white disabled:opacity-50">Cancelar</button>
-                            <button @click="submitReplay" :disabled="formReplay.processing" class="px-4 py-1 text-sm font-bold text-white transition-colors bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                                {{ formReplay.processing ? 'Procesando...' : (formReplay.target_match_id ? 'Sobreescribir' : 'Procesar') }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
+  <div class="min-h-screen pb-12 font-sans transition-colors duration-300 overflow-x-hidden selection:bg-[var(--rankit-neon)] selection:text-white bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-white">
+    
+    <!-- Top Bar Sticky -->
+    <div class="fixed top-0 left-0 w-full h-14 flex items-center justify-between px-6 lg:px-12 z-[60] border-b transition-colors bg-white border-gray-200 dark:bg-[#0a0a0a] dark:border-white/10">
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
+          <span class="relative flex w-2 h-2">
+            <span class="absolute inline-flex w-full h-full bg-red-400 rounded-full opacity-75 animate-ping"></span>
+            <span class="relative inline-flex w-2 h-2 bg-red-500 rounded-full"></span>
+          </span>
+          <span class="text-xs font-bold tracking-wider uppercase text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
+             {{ selectedTournament?.name || 'Selecciona Torneo' }}
+          </span>
+          <!-- Botón Configuración Torneo -->
+          <button @click="openSettingsModal" class="p-1 hover:text-[var(--rankit-neon)] transition" title="Configurar Torneo">
+             <i class="ph-bold ph-gear"></i>
+          </button>
         </div>
-    </AuthenticatedLayout>
+        <div class="w-px h-4 bg-gray-300 dark:bg-gray-700"></div>
+        <span class="text-sm font-bold text-[var(--rankit-neon)] hidden sm:inline">Admin Mode</span>
+      </div>
+
+      <a :href="selectedTournament ? `/live/${selectedTournament.id}` : '#'" 
+         target="_blank" 
+         class="px-4 py-1 text-[10px] font-bold tracking-wider uppercase btn-skew flex items-center gap-2 group decoration-0">
+        <span class="flex items-center gap-2 btn-content">
+            Ver Público <i class="transition-transform ph-bold ph-arrow-square-out group-hover:scale-110"></i>
+        </span>
+      </a>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="fixed z-50 flex items-center justify-between w-full h-20 px-6 transition-all duration-300 border-b lg:px-12 backdrop-blur-md top-14 bg-white/90 border-gray-200 dark:bg-[#050505]/95 dark:border-white/10">
+      <Link href="/" class="flex items-center gap-3 cursor-pointer group">
+        <svg class="w-8 h-8 text-black dark:text-white group-hover:text-[var(--rankit-neon)] transition-colors" viewBox="0 0 100 100" fill="none">
+          <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="currentColor" />
+          <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="currentColor" />
+          <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--rankit-neon)" />
+        </svg>
+        <span class="text-2xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">BellzCup</span>
+      </Link>
+
+      <div class="flex items-center gap-4">
+        <button @click="toggleTheme" class="p-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-neon dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
+          <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
+          <i v-else class="text-xl ph-fill ph-moon"></i>
+        </button>
+
+        <Link :href="route('logout')" method="post" as="button" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-500 uppercase transition-all border rounded-lg border-red-500/20 hover:bg-red-500 hover:text-white hover:border-red-500 group">
+            <i class="text-lg ph-bold ph-sign-out"></i>
+            <span class="hidden sm:inline">Salir</span>
+        </Link>
+      </div>
+    </nav>
+
+    <main class="grid grid-cols-1 gap-8 px-6 py-8 mx-auto max-w-7xl lg:px-8 lg:grid-cols-12 pt-44">
+      <!-- LEFT COLUMN -->
+      <aside class="space-y-6 lg:col-span-4">
+        
+        <!-- Tournament Selector -->
+        <div class="p-4 brutal-card bg-white dark:bg-[#0a0a0a]">
+             <label class="text-[10px] font-bold uppercase text-gray-500 mb-2 block">Seleccionar Torneo</label>
+             <select v-model="selectedTournamentId" class="w-full text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none">
+                 <option v-for="t in props.tournaments" :key="t.id" :value="t.id">{{ t.name }}</option>
+             </select>
+        </div>
+
+        <!-- MANAGER PANEL -->
+        <div class="overflow-hidden text-left brutal-card bg-white dark:bg-[#0a0a0a]">
+          <div class="p-4 border-b border-gray-200 dark:border-white/10">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-[10px] font-bold uppercase tracking-wider text-[var(--rankit-neon)]">Panel de Control</div>
+                <div class="text-xl italic font-bold uppercase font-display text-black dark:text-white truncate max-w-[200px]">
+                    {{ selectedTournament?.name }}
+                </div>
+              </div>
+              <div class="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded">
+                   <i class="ph-fill ph-eye text-[var(--rankit-neon)]"></i> 
+                   <span>LIVE</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabs -->
+          <div class="flex border-b border-gray-200 dark:border-white/10">
+            <button v-for="tab in ['codes', 'widget', 'matches']" :key="tab" @click="activeTab = tab as any"
+              class="flex-1 py-3 text-[10px] font-bold uppercase tracking-wider text-center transition"
+              :class="activeTab === tab ? 'bg-[var(--rankit-neon)] text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'">
+              {{ tab }}
+            </button>
+          </div>
+
+          <!-- TAB: CODES -->
+          <div v-if="activeTab === 'codes' && selectedTournament && slotInputs[selectedTournament.id]" class="p-4 space-y-3 animate-fade-in">
+            <div class="space-y-4">
+              <div>
+                 <label class="text-[9px] font-bold uppercase text-gray-500 block mb-1">Modo de Juego</label>
+                 <div class="flex gap-2">
+                    <button v-for="m in [1,2,3,4]" :key="m" 
+                        @click="slotInputs[selectedTournament.id].game_mode = m"
+                        class="flex-1 py-2 text-xs font-bold border border-gray-200 dark:border-white/10 hover:border-[var(--rankit-neon)] transition"
+                        :class="slotInputs[selectedTournament.id].game_mode === m ? 'bg-[var(--rankit-neon)] text-white' : 'text-gray-500'">
+                        {{ ['Solo','Duo','Trio','Squad'][m-1] }}
+                    </button>
+                 </div>
+              </div>
+              <div>
+                <label class="text-[9px] font-bold uppercase text-gray-500 block mb-1">Código de Partida</label>
+                <input 
+                    v-model="slotInputs[selectedTournament.id].custom_code" 
+                    type="text" placeholder="Ej: A1, FINAL..." 
+                    class="py-1 font-mono text-sm text-center uppercase brutal-input" 
+                />
+              </div>
+            </div>
+            <button 
+                @click="createSlot"
+                :disabled="processingSlot[selectedTournament.id]"
+                class="w-full py-3 mt-2 text-xs font-bold uppercase btn-skew"
+            >
+              <span class="btn-content">{{ processingSlot[selectedTournament.id] ? 'Creando...' : 'Crear Slot' }}</span>
+            </button>
+          </div>
+
+          <!-- TAB: WIDGET -->
+          <div v-if="activeTab === 'widget'" class="p-4 space-y-4 text-center animate-fade-in">
+            <div class="p-3 border border-gray-300 border-dashed rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-black/20">
+              <div class="text-[10px] uppercase font-bold text-gray-500 mb-2">Tabla OBS Global (Top 10)</div>
+              
+              <div v-if="searchQuery" class="mb-2 bg-yellow-500/20 text-yellow-500 text-[10px] font-bold p-1 rounded">
+                  ⚠️ Filtro activo: "{{ searchQuery }}"
+              </div>
+
+              <button @click="copyGlobalObsLink" class="px-4 py-2 text-[10px] font-bold uppercase border hover:border-[var(--rankit-neon)] transition flex items-center justify-center gap-2 mx-auto text-black dark:text-white border-gray-300 dark:border-gray-600 bg-white dark:bg-black w-full">
+                <i class="ph ph-copy"></i> Copiar Link {{ searchQuery ? '(Filtrado)' : '(General)' }}
+              </button>
+              <p class="text-[9px] text-gray-400 mt-2">Usa el buscador para filtrar qué mostrar en OBS</p>
+            </div>
+          </div>
+
+          <!-- TAB: MATCHES -->
+          <div v-if="activeTab === 'matches' && selectedTournament" class="p-0 animate-fade-in max-h-[400px] overflow-y-auto">
+             <div @click="fetchLeaderboard(selectedTournament!, null)" class="flex items-center gap-3 p-3 transition border-b border-gray-200 cursor-pointer dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5">
+                 <div class="w-8 h-8 flex items-center justify-center bg-[var(--rankit-neon)] text-white rounded-full"><i class="ph ph-globe"></i></div>
+                 <div class="text-xs font-bold text-black dark:text-white">Ranking Global</div>
+             </div>
+
+             <div v-for="match in selectedTournament.matches" :key="match.id" 
+                @click="match.status === 'processed' ? fetchLeaderboard(selectedTournament!, match.id) : null"
+                class="flex items-center justify-between p-3 transition border-b border-gray-200 cursor-pointer group dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5"
+                :class="{'bg-[var(--rankit-neon)]/10': selectedMatchId === match.id}"
+             >
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 flex items-center justify-center text-[10px] font-bold bg-gray-200 dark:bg-gray-800 text-gray-500 border border-black/10 dark:border-white/10">
+                     {{ match.game_mode[0].toUpperCase() }}
+                  </div>
+                  <div>
+                    <div class="font-mono text-xs font-bold text-black uppercase dark:text-white">{{ match.custom_code }}</div>
+                    <div v-if="match.status === 'pending'" class="text-[9px] text-yellow-500 font-bold animate-pulse">EN VIVO</div>
+                    <div v-else class="text-[9px] text-green-500 font-bold">PROCESADA</div>
+                  </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <!-- Botón Editar Código -->
+                    <button @click.stop="openEditMatchModal(match)" class="p-1 hover:text-blue-500" title="Editar Código">
+                        <i class="ph ph-pencil-simple"></i>
+                    </button>
+                    <!-- Botón Subir Replay -->
+                    <button @click.stop="openUploadModal(match.id)" class="p-1 hover:text-[var(--rankit-neon)]" title="Subir Replay">
+                        <i class="ph ph-upload-simple"></i>
+                    </button>
+                    <!-- Botón Eliminar -->
+                    <button @click.stop="deleteMatch(match.id)" class="p-1 hover:text-red-500" title="Eliminar">
+                        <i class="ph ph-trash"></i>
+                    </button>
+                </div>
+              </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER COLUMN -->
+      <div class="space-y-6 lg:col-span-8">
+        
+        <!-- Header & Filters & Search -->
+        <div class="flex flex-col items-center justify-between gap-4 pb-4 border-b border-gray-300 md:flex-row dark:border-gray-800">
+          <div>
+              <h2 class="text-2xl font-bold text-black uppercase font-display dark:text-white">
+                  {{ selectedMatchId ? `Partida Individual` : 'Ranking Global' }}
+              </h2>
+              <p class="text-xs font-bold tracking-wide text-gray-500 uppercase">
+                  {{ filteredLeaderboard.length }} Resultados
+              </p>
+          </div>
+
+          <div class="flex flex-col items-center w-full gap-2 md:flex-row md:w-auto">
+                <!-- Buscador -->
+               <div class="relative w-full md:w-48">
+                   <i class="absolute text-gray-500 -translate-y-1/2 ph ph-magnifying-glass left-2 top-1/2"></i>
+                   <input v-model="searchQuery" type="text" placeholder="Buscar..." class="w-full pl-8 pr-2 py-1 text-[10px] font-bold uppercase bg-gray-200 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded outline-none text-black dark:text-white transition" />
+               </div>
+
+               <!-- Filtros Tipo -->
+               <div class="flex p-1 bg-gray-200 rounded-lg dark:bg-white/5">
+                   <button @click="leaderboardType='players'; fetchLeaderboard(selectedTournament!, selectedMatchId)" :class="leaderboardType==='players'?'bg-white dark:bg-gray-700 shadow text-black dark:text-white':'text-gray-500'" class="px-3 py-1 text-[10px] font-bold uppercase rounded transition">Players</button>
+                   <button @click="leaderboardType='teams'; fetchLeaderboard(selectedTournament!, selectedMatchId)" :class="leaderboardType==='teams'?'bg-white dark:bg-gray-700 shadow text-black dark:text-white':'text-gray-500'" class="px-3 py-1 text-[10px] font-bold uppercase rounded transition">Teams</button>
+               </div>
+               
+               <!-- Sort -->
+               <button @click="sortBy = sortBy==='points'?'kills':'points'; fetchLeaderboard(selectedTournament!, selectedMatchId)" class="px-3 py-1 text-[10px] font-bold uppercase border border-gray-300 dark:border-gray-700 rounded hover:border-[var(--rankit-neon)] transition text-black dark:text-white">
+                   {{ sortBy === 'points' ? 'Pts' : 'Kills' }}
+               </button>
+          </div>
+        </div>
+
+        <!-- LEADERBOARD TABLE (Con Spinner Overlay si carga) -->
+        <div class="brutal-card bg-white dark:bg-[#0a0a0a] min-h-[400px] relative">
+          
+          <!-- Overlay de Carga -->
+          <div v-if="loadingLeaderboard" class="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm">
+             <div class="flex flex-col items-center gap-2">
+                 <div class="w-10 h-10 border-4 border-[var(--rankit-neon)] border-t-transparent rounded-full animate-spin"></div>
+                 <span class="text-[10px] uppercase font-bold text-[var(--rankit-neon)] animate-pulse">Cargando datos...</span>
+             </div>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+              <thead class="text-gray-500 bg-gray-100 dark:bg-white/5 dark:text-gray-400">
+                <tr>
+                  <th class="px-4 py-3 font-bold uppercase text-[10px]">#</th>
+                  <th class="px-4 py-3 font-bold uppercase text-[10px]">Participante</th>
+                  <th class="px-4 py-3 font-bold uppercase text-[10px] text-center">Partidas</th>
+                  <th class="px-4 py-3 font-bold uppercase text-[10px] text-right">Kills</th>
+                  <th class="px-4 py-3 font-bold uppercase text-[10px] text-right">Pts</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 dark:divide-white/5">
+                <template v-for="(item, idx) in filteredLeaderboard" :key="idx">
+                    <tr @click="expandedRowIndex = expandedRowIndex === idx ? null : idx" class="transition cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5">
+                        <td class="px-4 py-3 font-mono font-bold text-gray-500">{{ idx + 1 }}</td>
+                        <td class="px-4 py-3 font-bold text-black dark:text-white">
+                             <div v-if="leaderboardType==='teams'" class="flex flex-wrap gap-1">
+                                 <span v-for="m in item.member_names" :key="m" class="text-[9px] bg-gray-200 dark:bg-white/10 px-1 rounded">{{ m }}</span>
+                             </div>
+                             <div v-else>{{ item.player_name }}</div>
+                        </td>
+                        <td class="px-4 py-3 font-mono text-center text-gray-500">{{ item.games_played }}</td>
+                        <td class="px-4 py-3 font-mono text-right text-red-500">{{ item.total_kills }}</td>
+                        <td class="px-4 py-3 text-right font-bold text-[var(--rankit-neon)] font-mono text-lg">{{ formatDec(item.total_points) }}</td>
+                    </tr>
+                    <tr v-if="expandedRowIndex === idx" class="bg-[var(--rankit-neon)]/5">
+                        <td colspan="5" class="p-4">
+                            <div class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                                <div class="grid flex-1 grid-cols-4 gap-4 text-xs">
+                                    <div><span class="block text-gray-500">Avg Puntos</span> <span class="font-bold">{{ formatDec(item.avg_points) }}</span></div>
+                                    <div><span class="block text-gray-500">Avg Kills</span> <span class="font-bold">{{ formatDec(item.avg_kills) }}</span></div>
+                                    <div><span class="block text-gray-500">Avg Top</span> <span class="font-bold">#{{ formatDec(item.avg_placement) }}</span></div>
+                                    <div><span class="block text-gray-500">Best Top</span> <span class="font-bold">#{{ item.best_placement }}</span></div>
+                                </div>
+                                <button @click.stop="copyTrackingLink(item.player_name)" class="px-3 py-2 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase rounded hover:opacity-80 transition flex items-center gap-2 whitespace-nowrap">
+                                    <i class="ph ph-target"></i> Copiar Tracking OBS
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </template>
+                <tr v-if="filteredLeaderboard.length === 0 && !loadingLeaderboard">
+                    <td colspan="5" class="py-12 text-center text-gray-500">
+                        {{ searchQuery ? 'No hay coincidencias.' : 'No hay datos registrados.' }}
+                    </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- MODAL SETTINGS (Editar Torneo) -->
+    <Modal :show="showSettingsModal" @close="showSettingsModal = false" maxWidth="md">
+        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+            <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Configurar Torneo</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre del Torneo</label>
+                    <input v-model="formSettings.name" type="text" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Canal de Twitch (Opcional)</label>
+                    <div class="flex items-center gap-2 bg-gray-100 dark:bg-white/5 rounded p-2 border border-transparent focus-within:border-[#9146FF]">
+                        <i class="ph-bold ph-twitch-logo text-[#9146FF]"></i>
+                        <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full p-0 text-sm bg-transparent border-none outline-none focus:ring-0" />
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="updateTournament" :disabled="formSettings.processing" class="flex-1 py-3 bg-[var(--rankit-neon)] text-white font-bold uppercase text-xs hover:opacity-90 transition">
+                        Guardar Cambios
+                    </button>
+                    <!-- Solo mostrar botón borrar si no hay partidas -->
+                    <button 
+                        v-if="selectedTournament?.matches.length === 0" 
+                        @click="deleteTournament" 
+                        class="px-4 py-3 text-xs font-bold text-red-500 uppercase transition border bg-red-500/10 border-red-500/50 hover:bg-red-500 hover:text-white"
+                        title="Eliminar Torneo (Solo si está vacío)"
+                    >
+                        <i class="ph-bold ph-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </Modal>
+
+    <!-- MODAL EDIT MATCH CODE -->
+    <Modal :show="showEditMatchModal" @close="showEditMatchModal = false" maxWidth="sm">
+        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+            <h2 class="mb-4 text-lg italic font-bold uppercase font-display">Editar Código</h2>
+            <input v-model="formEditMatch.custom_code" type="text" class="w-full text-center text-xl font-mono uppercase bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-3 outline-none mb-4" />
+            <div class="flex gap-2">
+                <button @click="showEditMatchModal = false" class="flex-1 py-2 text-xs font-bold uppercase border border-gray-300 dark:border-gray-700">Cancelar</button>
+                <button @click="updateMatchCode" :disabled="formEditMatch.processing" class="flex-1 py-2 text-xs font-bold text-white uppercase bg-black dark:bg-white dark:text-black">Guardar</button>
+            </div>
+        </div>
+    </Modal>
+
+    <!-- MODAL UPLOAD -->
+    <Modal :show="showMatchModal" @close="showMatchModal = false" maxWidth="lg">
+      <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+        <div class="flex items-start justify-between mb-6">
+          <div>
+            <h2 class="text-xl italic font-bold uppercase font-display">
+              Subir Replay <span class="text-[var(--rankit-neon)]" v-if="formReplay.target_match_id">Overwrite</span>
+            </h2>
+          </div>
+          <button @click="showMatchModal = false" class="text-gray-500 hover:text-red-500">
+            <i class="text-xl ph ph-x"></i>
+          </button>
+        </div>
+
+        <div class="p-4 mb-4 bg-gray-100 rounded-lg dark:bg-white/5" v-if="!formReplay.target_match_id">
+             <label class="text-[10px] font-bold uppercase text-gray-500 block mb-2">Modo (Si es nueva)</label>
+             <select v-model="formReplay.mode" class="w-full p-2 text-sm bg-white border border-gray-300 rounded dark:bg-black dark:border-gray-700">
+                 <option :value="1">Solo</option><option :value="2">Duo</option>
+                 <option :value="3">Trio</option><option :value="4">Squad</option>
+             </select>
+        </div>
+
+        <div class="bg-[var(--rankit-neon)]/5 border border-[var(--rankit-neon)]/20 p-4">
+          <h3 class="text-sm font-bold uppercase mb-3 flex items-center gap-2 text-[var(--rankit-neon)]">
+            <i class="ph ph-file-arrow-up"></i> Seleccionar Archivo
+          </h3>
+          <div class="space-y-4">
+            <input type="file" @change="handleFileUpload" 
+                class="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-bold file:uppercase file:bg-[var(--rankit-neon)] file:text-white hover:file:bg-black file:cursor-pointer file:transition cursor-pointer bg-gray-100 dark:bg-black/20 border border-gray-200 dark:border-white/10" />
+            
+            <div v-if="formReplay.processing" class="w-full h-2 overflow-hidden bg-gray-200 rounded-full dark:bg-gray-800">
+                <div class="h-full bg-[var(--rankit-neon)] transition-all duration-300" :style="{width: uploadProgress + '%'}"></div>
+            </div>
+
+            <button @click="submitReplay" :disabled="!formReplay.replay || formReplay.processing" class="w-full py-3 text-xs font-bold text-white uppercase transition bg-black dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-50">
+              {{ formReplay.processing ? 'Procesando...' : 'Procesar Replay' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  </div>
 </template>
+
+<style>
+/* Estilos Globales */
+:root { --rankit-neon: #bf00ff; }
+.font-display { font-family: "Chakra Petch", sans-serif; }
+.font-sans { font-family: "Archivo", sans-serif; }
+.brutal-card { position: relative; transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94); border: 1px solid; }
+.dark .brutal-card { background: #0a0a0a; border-color: #333; }
+html:not(.dark) .brutal-card { background: #ffffff; border-color: #e5e5e5; box-shadow: 4px 4px 0px #00000010; }
+.brutal-card:hover { border-color: var(--rankit-neon); transform: translate(-4px, -4px); }
+.dark .brutal-card:hover { box-shadow: 6px 6px 0px var(--rankit-neon); }
+html:not(.dark) .brutal-card:hover { box-shadow: 6px 6px 0px var(--rankit-neon), 6px 6px 0px 2px black; }
+.brutal-input { width: 100%; background: transparent; border-bottom: 2px solid #333; padding: 0.5rem 0; font-family: "Archivo", sans-serif; font-weight: 600; outline: none; transition: all 0.3s; }
+.dark .brutal-input { color: white; border-color: #333; }
+html:not(.dark) .brutal-input { color: black; border-color: #e5e5e5; }
+.brutal-input:focus { border-color: var(--rankit-neon); padding-left: 0.5rem; }
+.btn-skew { background-color: var(--rankit-neon); color: white; transform: skewX(-10deg); transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.btn-skew:hover { background-color: white; color: black; box-shadow: 0 0 15px var(--rankit-neon); }
+html:not(.dark) .btn-skew:hover { background-color: black; color: white; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); }
+.btn-content { transform: skewX(10deg); }
+.animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+</style>
