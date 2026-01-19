@@ -1,15 +1,17 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\TournamentController; // Importamos el nuevo controlador
-use App\Http\Controllers\TournamentsController; // Controlador para la vista de detalle del torneo
-use App\Http\Controllers\ProfilePageController;
 use App\Http\Controllers\Auth\GoogleController;
-
+use App\Http\Controllers\Admin\TournamentParserController; // Admin Nuevo
+use App\Http\Controllers\Public\PublicTournamentController; // Publico Nuevo
+use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
+use App\Http\Controllers\TournamentController; // Dashboard Viejo
+use App\Http\Controllers\ProfilePageController; // Rankit
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// --- PAGINA DE INICIO ---
 Route::get('/', function () {
     return Inertia::render('Inicio', [
         'canLogin' => Route::has('login'),
@@ -19,91 +21,91 @@ Route::get('/', function () {
     ]);
 })->name('Inicio');
 
+// --- AUTH SOCIAL ---
 Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('google.redirect');
 Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name('google.callback');
-// Modificación aquí: Lógica condicional dentro de la ruta dashboard
-Route::get('/dashboard', function () {
-    // Si es el usuario específico, redirigir a rankit.profile
-    if (auth()->user()->email === '18jangel18@gmail.com') {
-        return redirect()->route('rankit.profile');
-    }
 
+// --- DASHBOARD USUARIO ---
+Route::get('/dashboard', function () {
+    if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
+        return redirect()->route('jangel.indexdos');
+    }
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
+// --- RUTAS RESTAURADAS (LO QUE FALTABA) ---
 
-Route::middleware('auth')->group(function () {
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+// 1. Perfil Rankit
+Route::get('/profile/rankit', [ProfilePageController::class, 'show'])->name('rankit.profile');
 
-    // Rutas del Torneo Especial (Solo accesibles si estás logueado)
-    // Podrías añadir un middleware extra 'can:admin' si quisieras más seguridad
-    Route::get('/tournament/dashboard', [TournamentController::class, 'index'])->name('tournament.dashboard');
-    Route::get('/tournament/widget', [TournamentController::class, 'widget'])->name('tournament.widget');
-});
-
-Route::get('/tournament/{id}', [TournamentsController::class, 'show'])
-    ->whereNumber('id')
-    ->name('tournaments.show');
-
-Route::get('/profile/rankit', [ProfilePageController::class, 'show'])
-    ->name('rankit.profile');
-
+// 2. Copa Bellz
 Route::get('/BellzCup', function () {
     return Inertia::render('BellzCup/Index');
 })->name('bellzcup.index');
 
+// 3. Listado Público de Torneos (Original)
+Route::get('/tournaments', [TournamentsController::class, 'index'])->name('tournaments.index');
 
+// 4. Detalle de Torneo (Original)
+Route::get('/tournament/{id}', [TournamentsController::class, 'show'])
+    ->whereNumber('id')
+    ->name('tournaments.show');
 
-
-use App\Http\Controllers\Admin\TournamentParserController;
-
-// Panel de Jangel (Seguro)
-Route::middleware(['auth'])->group(function () {
-    Route::get('/jangel-panel', [TournamentParserController::class, 'index'])->name('jangel.index');
-    Route::post('/tournament-create-quick', [TournamentParserController::class, 'createQuickTournament'])->name('jangel.tournament.create');
-    Route::post('/replay-sync-net', [TournamentParserController::class, 'syncMatchData'])->name('jangel.replay.sync');
-});
-
-// API para los Widgets (Pública para OBS)
-Route::get('/api/tournaments/stats-detailed/{tableName}', [TournamentParserController::class, 'getDetailedStats']);
-
-// Vista del Widget para OBS
-Route::get('/widget/{tableName}', function($tableName) {
-    return view('tournament-widget', ['tableName' => $tableName]);
+// 5. Dashboard/Widget Usuario (Original)
+Route::middleware('auth')->group(function () {
+    Route::get('/tournament/dashboard', [TournamentController::class, 'index'])->name('tournament.dashboard');
+    Route::get('/tournament/widget', [TournamentController::class, 'widget'])->name('tournament.widget');
 });
 
 
-Route::get('/tournaments/stats-detailed/{tableName}', function($tableName) {
-    // Esta Query es el motor de tu panel. Calcula promedios y totales de golpe.
-    return DB::table($tableName)
-        ->select(
-            'player_name',
-            DB::raw('COUNT(DISTINCT match_number) as matches_played'),
-            DB::raw('SUM(kills) as total_kills'),
-            DB::raw('SUM(placement_points) as total_placement_points'),
-            DB::raw('SUM(kill_points) as total_kill_points'),
-            DB::raw('SUM(total_points) as total_points'),
-            DB::raw('ROUND(AVG(rank), 1) as avg_placement'),
-            DB::raw('MAX(rank) as best_placement')
-        )
-        ->groupBy('player_name')
-        ->orderBy('total_points', 'desc')
-        ->get();
+// --- RUTAS NUEVAS (SISTEMA JANGEL / LIVE) ---
+
+// 1. Vista "Live" Nueva (Auto-actualizable)
+Route::get('/live/{id}', [PublicTournamentController::class, 'show'])->name('public.live');
+Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])->name('api.public.data');
+
+// 2. Widgets OBS Nuevos
+Route::get('/widget/obs/global/{id}', [PublicTournamentController::class, 'widgetGlobal'])->name('widget.obs.global');
+Route::get('/widget/obs/player/{id}/{playerName}', [PublicTournamentController::class, 'widgetPlayer'])->name('widget.obs.player');
+Route::get('/api/widget/{id}/stats', [PublicTournamentController::class, 'getWidgetStats'])->name('api.widget.stats');
+
+
+// --- RUTAS AUTENTICADAS (PERFIL Y ADMIN) ---
+Route::middleware('auth')->group(function () {
+    // Perfil
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // --- PANEL ADMIN JANGEL (RUTAS CORREGIDAS) ---
+    // Usamos los nombres exactos que tiene tu Vue para que no crashee
+    
+    Route::prefix('admin')->group(function () {
+        // Vista Principal
+        Route::get('/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
+        
+        // Crear Torneo
+        Route::post('/tournaments', [TournamentParserController::class, 'store'])->name('jangel.store');
+                Route::put('/tournaments/{id}', [TournamentParserController::class, 'update'])->name('jangel.tournament.update');
+        // Eliminar
+        Route::delete('/tournaments/{id}', [TournamentParserController::class, 'destroy'])->name('jangel.tournament.delete');
+        
+        // Crear Slot (Código)
+        Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');
+        
+        // Procesar Replay (Nombre restaurado para compatibilidad con Vue)
+        // Antes era: jangel.match.process, pero tu Vue usa: tournaments.process-replay
+        Route::post('/tournaments/{id}/process-replay', [TournamentParserController::class, 'processReplay'])->name('tournaments.process-replay');
+        Route::post('/matches/process/{id}', [TournamentParserController::class, 'processReplay'])->name('jangel.match.process'); // Alias por si acaso
+        
+        // Eliminar Partida
+        Route::delete('/match/{matchId}', [TournamentParserController::class, 'deleteMatch'])->name('jangel.match.delete');
+        
+        // API Leaderboard (Nombre restaurado)
+        Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
+        Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
+    });
 });
-
-
-Route::middleware(['auth'])->group(function () {
-    // Panel de Administración de Jangel
-    Route::get('/admin/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
-    Route::post('/admin/tournaments', [TournamentParserController::class, 'store'])->name('jangel.store');
-    Route::post('/admin/tournaments/{tableName}/upload', [TournamentParserController::class, 'uploadReplay'])->name('jangel.upload');
-      Route::get('/admin/tournaments/{tournament}', [TournamentParserController::class, 'show'])->name('tournaments.show');
-    Route::post('/admin/tournaments/{tournament}/process-replay', [TournamentParserController::class, 'processReplay'])->name('tournaments.process-replay');
-});
-
-// Ruta pública para ver el Leaderboard (Widget OBS)
-Route::get('/api/leaderboard/{tableName}', [TournamentParserController::class, 'getLeaderboard']);
-
+Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
+    ->name('api.public.data');
 require __DIR__.'/auth.php';
