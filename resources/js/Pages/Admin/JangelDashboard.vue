@@ -441,8 +441,14 @@ const copyTrackingLink = (targetName: string) => {
             <div class="flex items-center justify-between">
               <div>
                 <div class="text-[10px] font-bold uppercase tracking-wider text-[var(--rankit-neon)]">Panel de Control</div>
-                <div class="text-xl italic font-bold uppercase font-display text-black dark:text-white truncate max-w-[200px]">
-                    {{ selectedTournament?.name }}
+                <div class="flex items-center gap-2">
+                    <div class="text-xl italic font-bold uppercase font-display text-black dark:text-white truncate max-w-[200px]">
+                        {{ selectedTournament?.name }}
+                    </div>
+                    <!-- Shortcut to Settings -->
+                    <button @click="openSettingsModal" class="text-gray-400 hover:text-[var(--rankit-neon)] transition" title="Editar Información">
+                        <i class="ph-bold ph-pencil-simple"></i>
+                    </button>
                 </div>
               </div>
               <div class="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded">

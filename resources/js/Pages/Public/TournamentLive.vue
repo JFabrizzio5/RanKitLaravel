@@ -30,7 +30,7 @@ interface TournamentInfo {
     id?: number;
     name?: string;
     progress?: string;
-    twitch_channel?: string; // Nuevo campo para el stream
+    twitch_channel?: string;
 }
 
 interface LiveDataResponse {
@@ -41,7 +41,7 @@ interface LiveDataResponse {
 
 // --- PROPS ---
 const props = defineProps<{
-  tournament?: TournamentInfo; // Data inicial opcional (SSG/Inertia load)
+  tournament?: TournamentInfo; 
   sponsors?: any[];
   targetDate?: number;
 }>();
@@ -62,28 +62,35 @@ function applyTheme(nextDark: boolean) {
 }
 function toggleTheme() { applyTheme(!isDark.value); }
 
-// --- LOGICA DE DATOS (Fuente D) ---
+// --- LOGICA DE DATOS ---
 const matches = ref<PublicMatch[]>([]);
 const ranking = ref<PublicRankingItem[]>([]);
 const tournamentData = ref<TournamentInfo>(props.tournament || {});
 const progressText = ref("Cargando...");
-const isLoading = ref(true);
-const viewerCount = ref(1240); // Mock inicial
+const isLoading = ref(true); // Estado de carga inicial/manual
+const viewerCount = ref(1240); 
 
 // Tabs y Filtros
 const activeTab = ref<'resultados' | 'partidas' | 'reglas'>('resultados');
 const selectedMatchId = ref<number | null>(null);
 const leaderboardType = ref<'players' | 'teams'>('players');
-const filterMode = ref<string>('all'); // Nuevo: Filtro de modalidad
+const filterMode = ref<string>('all'); 
 const sortBy = ref<'points' | 'kills'>('points');
 const expandedRowIndex = ref<number | null>(null);
 
 let pollInterval: number | undefined;
 
-const loadData = async () => {
+// Función principal de carga
+// showSpinner: true para acciones del usuario (clicks), false para polling automático
+const loadData = async (showSpinner = false) => {
     try {
         const id = props.tournament?.id || tournamentData.value.id;
         if(!id) return;
+
+        if (showSpinner) {
+            isLoading.value = true;
+            expandedRowIndex.value = null; // Colapsar filas al filtrar
+        }
 
         // Simular fluctuación de viewers
         viewerCount.value = Math.max(1000, viewerCount.value + Math.floor(Math.random() * 21) - 10);
@@ -91,7 +98,7 @@ const loadData = async () => {
         const url = `/api/live/${id}/data`;
         const params: any = {
             type: leaderboardType.value,
-            mode: filterMode.value, // Usar filtro dinámico
+            mode: filterMode.value, 
             sort: sortBy.value
         };
         if (selectedMatchId.value) params.match_id = selectedMatchId.value;
@@ -104,14 +111,16 @@ const loadData = async () => {
         if(res.data.tournament) {
             tournamentData.value.name = res.data.tournament.name;
             progressText.value = res.data.tournament.progress || '';
-            // Actualizar canal twitch si cambia dinámicamente
             tournamentData.value.twitch_channel = res.data.tournament.twitch_channel; 
         }
         
     } catch (e) { 
         console.error("Error polling data:", e); 
     } finally {
-        isLoading.value = false;
+        // Solo quitamos el spinner si estaba activo, el polling no lo activa
+        if (showSpinner) isLoading.value = false;
+        // Si era la carga inicial (mounted), también lo quitamos
+        if (isLoading.value && !showSpinner) isLoading.value = false; 
     }
 };
 
@@ -123,11 +132,18 @@ const formatDec = (num: number | string) => {
     return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '');
 };
 
-const toggleMatchFilter = (matchId: number) => {
+// Acciones de Usuario (activan spinner)
+const changeFilter = (type: 'type' | 'mode' | 'sort', value: string) => {
+    if (type === 'type') leaderboardType.value = value as any;
+    if (type === 'mode') filterMode.value = value;
+    if (type === 'sort') sortBy.value = value as any;
+    
+    loadData(true); // true = Mostrar Spinner
+};
+
+const toggleMatchFilter = (matchId: number | null) => {
     selectedMatchId.value = selectedMatchId.value === matchId ? null : matchId;
-    expandedRowIndex.value = null; 
-    isLoading.value = true;
-    loadData();
+    loadData(true);
 };
 
 const copyObsLink = () => {
@@ -135,12 +151,9 @@ const copyObsLink = () => {
     if (!id) return;
     
     const baseUrl = `${window.location.origin}/widget/obs/global/${id}`;
-    // Construir query string con TODOS los filtros actuales
     const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10${selectedMatchId.value ? `&match_id=${selectedMatchId.value}` : ''}`;
     
     navigator.clipboard.writeText(baseUrl + query);
-    
-    // Feedback visual más detallado
     alert(`✅ Link OBS Copiado!\n\nConfiguración:\n• Modo: ${filterMode.value.toUpperCase()}\n• Vista: ${leaderboardType.value.toUpperCase()}\n• Orden: ${sortBy.value.toUpperCase()}\n• Match: ${selectedMatchId.value ? '#' + selectedMatchId.value : 'Global'}`);
 };
 
@@ -149,20 +162,16 @@ const copyPublicLink = () => {
     alert("✅ Enlace público copiado al portapapeles.");
 }
 
-// --- TWITCH ---
 const getTwitchUrl = (channel: string) => {
     const parent = window.location.hostname;
     return `https://player.twitch.tv/?channel=${channel}&parent=${parent}&muted=false`;
 };
 
 onMounted(() => {
-  // Init Theme
   const savedTheme = localStorage.getItem('theme');
-  const systemPrefersDark = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true;
   if (savedTheme === 'light') applyTheme(false);
   else applyTheme(true);
 
-  // Init Phosphor Icons
   if (!document.querySelector('script[src="https://unpkg.com/@phosphor-icons/web"]')) {
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/@phosphor-icons/web';
@@ -170,9 +179,9 @@ onMounted(() => {
     document.head.appendChild(script);
   }
 
-  // Start Polling
-  loadData();
-  pollInterval = window.setInterval(loadData, 10000); // 10s poll (más rápido para sentirlo live)
+  loadData(true); // Carga inicial con spinner
+  // Polling actualizado a 4 minutos (240000ms)
+  pollInterval = window.setInterval(() => loadData(false), 240000); 
 });
 
 onUnmounted(() => {
@@ -205,7 +214,7 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <!-- STREAM SECTION (Si existe canal de Twitch) -->
+    <!-- STREAM SECTION -->
     <div v-if="tournamentData.twitch_channel" class="pt-20 bg-black">
         <div class="w-full aspect-video max-w-7xl mx-auto lg:aspect-[21/9] xl:aspect-[24/9] max-h-[60vh] relative group">
             <iframe
@@ -215,7 +224,6 @@ onUnmounted(() => {
                 scrolling="no"
                 class="w-full h-full"
             ></iframe>
-            <!-- Botón para cerrar/colapsar visualmente (opcional) -->
             <div class="absolute bottom-4 right-4 bg-black/80 text-white px-2 py-1 text-[10px] uppercase font-bold rounded pointer-events-none opacity-0 group-hover:opacity-100 transition">
                 Viendo a {{ tournamentData.twitch_channel }}
             </div>
@@ -238,8 +246,15 @@ onUnmounted(() => {
             {{ progressText }}
           </span>
           
-          <!-- Viewers Indicator -->
-          <span class="flex items-center gap-2 text-[10px] font-bold text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-black/50 px-2 py-1 rounded backdrop-blur">
+          <!-- BOTÓN ACTUALIZAR MANUAL -->
+          <button @click="loadData(true)" class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold text-white uppercase bg-[var(--rankit-neon)] hover:opacity-80 transition btn-skew group">
+             <span class="flex items-center gap-2 btn-content">
+                <i class="transition-transform duration-500 ph-bold ph-arrows-clockwise group-hover:rotate-180"></i>
+                Actualizar
+             </span>
+          </button>
+
+          <span class="flex items-center gap-2 text-[10px] font-bold text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-black/50 px-2 py-1 rounded backdrop-blur ml-auto sm:ml-0">
               <i class="ph-fill ph-users text-[var(--rankit-neon)]"></i>
               {{ viewerCount.toLocaleString() }} viewers
           </span>
@@ -257,30 +272,22 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <!-- Navigation Tabs -->
+    <!-- Tabs -->
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
-        <button
-          v-for="tab in ['resultados', 'partidas', 'reglas']"
-          :key="tab"
-          @click="switchTab(tab as any)"
+        <button v-for="tab in ['resultados', 'partidas', 'reglas']" :key="tab" @click="switchTab(tab as any)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
-          :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'"
-        >
+          :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'">
           {{ tab }}
         </button>
       </div>
     </div>
 
     <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 min-h-[600px]">
-      
-      <!-- === RESULTADOS EN VIVO === -->
       <div v-if="activeTab === 'resultados'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
         
-        <!-- Sidebar: Info y Filtros -->
+        <!-- Sidebar -->
         <aside class="space-y-6 lg:col-span-4">
-            
-            <!-- TARJETA INFO & ID (Restaurada) -->
             <div class="brutal-card p-4 bg-white dark:bg-[#0a0a0a]">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-xs font-bold tracking-widest text-gray-500 uppercase">Info Torneo</h3>
@@ -291,38 +298,26 @@ onUnmounted(() => {
                         <span class="text-[10px] uppercase font-bold text-gray-500">ID Pública</span>
                         <span class="font-mono text-sm font-bold">{{ tournamentData.id || '---' }}</span>
                     </div>
-                    <!-- BOTON OBS -->
                     <button @click="copyObsLink" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase btn-skew flex items-center justify-center gap-2 group">
-                        <span class="flex items-center gap-2 btn-content">
-                             <i class="text-lg ph-bold ph-broadcast"></i>
-                             Copiar Tabla OBS
-                        </span>
+                        <span class="flex items-center gap-2 btn-content"><i class="text-lg ph-bold ph-broadcast"></i> Copiar Tabla OBS</span>
                     </button>
-                    <p class="text-[9px] text-center text-gray-400">
-                        *El link se copiará con los filtros (Modo, Tipo) que tengas seleccionados abajo.
-                    </p>
+                    <p class="text-[9px] text-center text-gray-400">*El link copia los filtros seleccionados.</p>
                 </div>
             </div>
 
-            <!-- LISTA DE PARTIDAS -->
+            <!-- Matches List -->
             <div>
                 <h3 class="mb-4 text-xs font-bold tracking-widest text-gray-500 uppercase">Historial de Partidas</h3>
-                
-                <div 
-                    @click="selectedMatchId = null; loadData()"
+                <div @click="toggleMatchFilter(null)" 
                     class="flex items-center justify-between p-4 mb-3 transition cursor-pointer brutal-card hover:bg-gray-50 dark:hover:bg-white/5"
-                    :class="!selectedMatchId ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/5' : ''"
-                >
+                    :class="!selectedMatchId ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/5' : ''">
                     <span class="text-sm font-bold">Ranking Global Acumulado</span>
                     <i class="text-xl ph ph-globe"></i>
                 </div>
-
                 <div class="space-y-2 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
-                    <div v-for="match in matches" :key="match.id" 
-                        @click="toggleMatchFilter(match.id)"
+                    <div v-for="match in matches" :key="match.id" @click="toggleMatchFilter(match.id)"
                         class="relative p-3 overflow-hidden transition cursor-pointer brutal-card hover:bg-gray-50 dark:hover:bg-white/5 group"
-                        :class="selectedMatchId === match.id ? 'border-[var(--rankit-neon)]' : ''"
-                    >
+                        :class="selectedMatchId === match.id ? 'border-[var(--rankit-neon)]' : ''">
                         <div class="relative z-10 flex items-center justify-between">
                             <div>
                                 <div class="text-[10px] font-bold text-gray-500 uppercase">{{ match.mode }}</div>
@@ -338,47 +333,37 @@ onUnmounted(() => {
             </div>
         </aside>
 
-        <!-- Main: Tabla Leaderboard -->
+        <!-- Main Leaderboard -->
         <div class="lg:col-span-8">
-            
-            <!-- BARRA DE HERRAMIENTAS SUPERIOR -->
             <div class="flex flex-col md:flex-row gap-4 justify-between items-center mb-6 p-4 brutal-card bg-white dark:bg-[#0a0a0a]">
-                
-                <!-- Filtro Players/Teams -->
                 <div class="flex p-1 bg-gray-200 rounded-lg dark:bg-white/5">
-                    <button @click="leaderboardType='players'; loadData()" :class="leaderboardType==='players'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Jugadores</button>
-                    <button @click="leaderboardType='teams'; loadData()" :class="leaderboardType==='teams'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Equipos</button>
+                    <button @click="changeFilter('type', 'players')" :class="leaderboardType==='players'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Jugadores</button>
+                    <button @click="changeFilter('type', 'teams')" :class="leaderboardType==='teams'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Equipos</button>
                 </div>
-
-                <!-- Filtro MODALIDAD (Nuevo) -->
                 <div class="flex max-w-full gap-1 p-1 overflow-x-auto bg-gray-200 rounded-lg dark:bg-white/5">
-                     <button 
-                        v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" 
-                        :key="m"
-                        @click="filterMode=m; loadData()"
+                     <button v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" :key="m" @click="changeFilter('mode', m)"
                         :class="filterMode===m ? 'bg-[var(--rankit-neon)] text-white shadow' : 'text-gray-500 hover:text-black dark:hover:text-white'"
-                        class="px-3 py-1 text-[10px] font-bold uppercase rounded transition whitespace-nowrap"
-                     >
+                        class="px-3 py-1 text-[10px] font-bold uppercase rounded transition whitespace-nowrap">
                         {{ m }}
                      </button>
                 </div>
-                
-                <!-- Sort -->
-                <button @click="sortBy= sortBy==='points'?'kills':'points'; loadData()" class="text-xs font-bold text-[var(--rankit-neon)] hover:underline uppercase flex items-center gap-1">
+                <button @click="changeFilter('sort', sortBy==='points'?'kills':'points')" class="text-xs font-bold text-[var(--rankit-neon)] hover:underline uppercase flex items-center gap-1">
                     <i class="ph-bold" :class="sortBy==='points' ? 'ph-trophy' : 'ph-sword'"></i>
                     {{ sortBy }}
                 </button>
             </div>
 
-            <!-- TABLA -->
-            <div class="brutal-card bg-white dark:bg-[#0a0a0a] min-h-[400px]">
-                 <div v-if="isLoading" class="flex items-center justify-center h-64">
+            <div class="brutal-card bg-white dark:bg-[#0a0a0a] min-h-[400px] relative">
+                 
+                 <!-- LOADING OVERLAY -->
+                 <div v-if="isLoading" class="absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200 bg-white/80 dark:bg-black/80 backdrop-blur-sm">
                     <div class="flex flex-col items-center gap-3">
                         <div class="w-10 h-10 border-4 border-[var(--rankit-neon)] border-t-transparent rounded-full animate-spin"></div>
-                        <span class="text-[10px] font-bold uppercase text-gray-400">Actualizando datos...</span>
+                        <span class="text-[10px] font-bold uppercase text-[var(--rankit-neon)] animate-pulse">Actualizando datos...</span>
                     </div>
                  </div>
-                 <div v-else class="overflow-x-auto">
+
+                 <div class="overflow-x-auto">
                     <table class="w-full text-sm text-left">
                         <thead class="text-gray-500 bg-gray-100 dark:bg-white/5 dark:text-gray-400">
                             <tr>
@@ -403,31 +388,18 @@ onUnmounted(() => {
                                     <td class="p-4 font-mono text-right text-red-500">{{ item.total_kills }}</td>
                                     <td class="p-4 text-right font-mono text-xl font-bold text-[var(--rankit-neon)]">{{ formatDec(item.total_points) }}</td>
                                 </tr>
-                                <!-- Expansión -->
                                 <tr v-if="expandedRowIndex === idx" class="bg-[var(--rankit-neon)]/5">
                                     <td colspan="5" class="p-4">
                                         <div class="grid grid-cols-2 gap-4 text-xs md:grid-cols-4">
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded">
-                                                <span class="block text-gray-500 uppercase text-[9px]">Media Puntos</span>
-                                                <span class="text-lg font-bold">{{ formatDec(item.avg_points) }}</span>
-                                            </div>
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded">
-                                                <span class="block text-gray-500 uppercase text-[9px]">Media Kills</span>
-                                                <span class="text-lg font-bold text-red-500">{{ formatDec(item.avg_kills) }}</span>
-                                            </div>
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded">
-                                                <span class="block text-gray-500 uppercase text-[9px]">Media Top</span>
-                                                <span class="text-lg font-bold text-yellow-500">#{{ formatDec(item.avg_placement) }}</span>
-                                            </div>
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded">
-                                                <span class="block text-gray-500 uppercase text-[9px]">Mejor Top</span>
-                                                <span class="text-lg font-bold text-white">#{{ item.best_placement }}</span>
-                                            </div>
+                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Puntos</span><span class="text-lg font-bold">{{ formatDec(item.avg_points) }}</span></div>
+                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Kills</span><span class="text-lg font-bold text-red-500">{{ formatDec(item.avg_kills) }}</span></div>
+                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Top</span><span class="text-lg font-bold text-yellow-500">#{{ formatDec(item.avg_placement) }}</span></div>
+                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Mejor Top</span><span class="text-lg font-bold text-white">#{{ item.best_placement }}</span></div>
                                         </div>
                                     </td>
                                 </tr>
                             </template>
-                            <tr v-if="ranking.length === 0">
+                            <tr v-if="ranking.length === 0 && !isLoading">
                                 <td colspan="5" class="py-12 text-center text-gray-500">No hay datos disponibles con los filtros actuales.</td>
                             </tr>
                         </tbody>
@@ -437,7 +409,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- === REGLAS === -->
+      <!-- Reglas -->
       <div v-if="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
           <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Generales</h3>
@@ -454,7 +426,7 @@ onUnmounted(() => {
 </template>
 
 <style>
-/* Estilos Fuente C conservados */
+/* Estilos Fuente C */
 :root { --rankit-neon: #bf00ff; }
 .font-display { font-family: "Chakra Petch", sans-serif; }
 .font-sans { font-family: "Archivo", sans-serif; }

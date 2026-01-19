@@ -86,6 +86,9 @@ Route::middleware('auth')->group(function () {
         
         // Crear Torneo
         Route::post('/tournaments', [TournamentParserController::class, 'store'])->name('jangel.store');
+                Route::put('/tournaments/{id}', [TournamentParserController::class, 'update'])->name('jangel.tournament.update');
+        // Eliminar
+        Route::delete('/tournaments/{id}', [TournamentParserController::class, 'destroy'])->name('jangel.tournament.delete');
         
         // Crear Slot (Código)
         Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');
