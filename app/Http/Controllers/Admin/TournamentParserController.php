@@ -36,7 +36,8 @@ class TournamentParserController extends Controller
                 $table->string('match_id')->unique();
                 $table->string('game_mode')->default('solo');
                 $table->string('map_name')->nullable();
-                $table->json('raw_data')->nullable();
+                $table->string('custom_code')->nullable(); // NUEVO: Código de partida personalizada
+                $table->json('raw_data')->nullable(); // Si es null, es una partida programada/pendiente
                 $table->timestamps();
             });
         }
@@ -76,6 +77,9 @@ class TournamentParserController extends Controller
             if (!Schema::hasColumn('tournament_matches', 'game_mode')) {
                 $table->string('game_mode')->default('solo')->after('match_id');
             }
+            if (!Schema::hasColumn('tournament_matches', 'custom_code')) {
+                $table->string('custom_code')->nullable()->after('map_name');
+            }
         });
     }
 
@@ -89,8 +93,12 @@ class TournamentParserController extends Controller
             $tn->matches = DB::table('tournament_matches')
                 ->where('tournament_id', $tn->id)
                 ->orderBy('created_at', 'desc')
-                ->select('id', 'match_id', 'game_mode', 'created_at')
-                ->get();
+                ->select('id', 'match_id', 'game_mode', 'custom_code', 'raw_data', 'created_at') // Select raw_data to check status
+                ->get()
+                ->map(function($match) {
+                    $match->status = is_null($match->raw_data) ? 'pending' : 'processed';
+                    return $match;
+                });
         }
 
         return Inertia::render('Admin/JangelDashboard', [
@@ -112,6 +120,29 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Torneo creado correctamente.');
     }
 
+    // NUEVO: Crear partida programada solo con código
+    public function storeScheduledMatch(Request $request, $tournamentId)
+    {
+        $request->validate([
+            'custom_code' => 'required|string|max:50',
+            'game_mode' => 'required|integer'
+        ]);
+
+        $this->ensureDatabaseIsReady();
+
+        DB::table('tournament_matches')->insert([
+            'tournament_id' => $tournamentId,
+            'match_id' => 'pending_' . uniqid(),
+            'game_mode' => $this->getModeName((int)$request->game_mode),
+            'custom_code' => $request->custom_code,
+            'raw_data' => null, // Indica que aún no tiene replay
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Partida programada creada. Comparte el código con los jugadores.');
+    }
+
     public function show($id)
     {
         $this->ensureDatabaseIsReady();
@@ -123,7 +154,6 @@ class TournamentParserController extends Controller
 
         return Inertia::render('Admin/TournamentDetail', [
             'tournament' => $tournament,
-            // Por defecto vista global de jugadores solo
             'rankingsSolo' => $this->getGlobalRanking($id, 'solo', 'players'),
             'recentMatches' => DB::table('tournament_matches')
                 ->where('tournament_id', $id)
@@ -155,12 +185,14 @@ class TournamentParserController extends Controller
         
         $request->validate([
             'replay' => 'required|file',
-            'mode' => 'required|integer' // 1=Solo, 2=Duo, 3=Trio, 4=Squad
+            'mode' => 'required|integer', // 1=Solo, 2=Duo, 3=Trio, 4=Squad
+            'target_match_id' => 'nullable|integer' // ID de la partida programada si existe
         ]);
 
         try {
             $file = $request->file('replay');
             $mode = (int)$request->input('mode');
+            $targetMatchId = $request->input('target_match_id');
 
             // API Externa
             $response = Http::timeout(120)
@@ -183,28 +215,44 @@ class TournamentParserController extends Controller
             DB::beginTransaction();
 
             $matchUid = $data['fileName'] ?? uniqid('match_');
+            $currentMatchId = null;
 
-            // Insertar Partida
-            $matchId = DB::table('tournament_matches')->insertGetId([
-                'tournament_id' => $id,
-                'match_id' => $matchUid . '_' . time(),
-                'game_mode' => $this->getModeName($mode),
-                'map_name' => 'Island',
-                'raw_data' => json_encode($data),
-                'updated_at' => now(),
-                'created_at' => now(),
-            ]);
+            if ($targetMatchId) {
+                // ACTUALIZAR partida existente (programada)
+                DB::table('tournament_matches')->where('id', $targetMatchId)->update([
+                    'match_id' => $matchUid . '_' . time(),
+                    'raw_data' => json_encode($data),
+                    'updated_at' => now(),
+                ]);
+                $currentMatchId = $targetMatchId;
+
+                // Limpiar stats viejas por si acaso (re-subida)
+                DB::table('player_match_stats')->where('tournament_match_id', $targetMatchId)->delete();
+                DB::table('team_match_stats')->where('tournament_match_id', $targetMatchId)->delete();
+
+            } else {
+                // CREAR nueva partida
+                $currentMatchId = DB::table('tournament_matches')->insertGetId([
+                    'tournament_id' => $id,
+                    'match_id' => $matchUid . '_' . time(),
+                    'game_mode' => $this->getModeName($mode),
+                    'map_name' => 'Island',
+                    'raw_data' => json_encode($data),
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]);
+            }
 
             // --- PROCESAR JUGADORES ---
             $players = $data['playerLeaderboard'] ?? [];
             foreach ($players as $p) {
-                // FILTRO DE BOTS: Si es bot o se llama "Unknown", lo saltamos
                 if (($p['isBot'] ?? false) || ($p['playerName'] ?? '') === 'Unknown') {
                     continue;
                 }
 
+                // Guardamos más detalles en extra_stats para los promedios
                 DB::table('player_match_stats')->insert([
-                    'tournament_match_id' => $matchId,
+                    'tournament_match_id' => $currentMatchId,
                     'player_name' => $p['playerName'] ?? 'Unknown',
                     'placement' => $p['leaderboardRank'] ?? 0,
                     'kills' => $p['kills'] ?? 0,
@@ -213,6 +261,9 @@ class TournamentParserController extends Controller
                     'extra_stats' => json_encode([
                         'teamId' => $p['teamId'] ?? -1,
                         'totalPoints' => $p['totalPoints'] ?? 0,
+                        'killPoints' => $p['killPoints'] ?? 0,
+                        'placementPoints' => $p['placementPoints'] ?? 0,
+                        'knocks' => $p['knocks'] ?? 0,
                     ]),
                     'updated_at' => now(),
                     'created_at' => now(),
@@ -224,8 +275,6 @@ class TournamentParserController extends Controller
             foreach ($teams as $t) {
                 $members = $t['memberNames'] ?? [];
                 
-                // FILTRO DE BOTS EN EQUIPOS: Si el equipo está compuesto solo por Unknowns, saltar
-                // O si contiene "Unknown", puedes decidir saltarlo. Aquí saltamos si TODOS son Unknown.
                 $isValidTeam = false;
                 foreach($members as $m) {
                     if ($m !== 'Unknown') $isValidTeam = true;
@@ -236,7 +285,7 @@ class TournamentParserController extends Controller
                 $signature = md5(json_encode($members));
 
                 DB::table('team_match_stats')->insert([
-                    'tournament_match_id' => $matchId,
+                    'tournament_match_id' => $currentMatchId,
                     'team_id_in_match' => $t['teamId'],
                     'rank' => $t['rank'] ?? ($t['leaderboardRank'] ?? 999),
                     'member_names' => json_encode($members),
@@ -249,7 +298,7 @@ class TournamentParserController extends Controller
             }
 
             DB::commit();
-            return back()->with('success', "Partida ({$this->getModeName($mode)}) procesada correctamente.");
+            return back()->with('success', "Replay procesada correctamente.");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -268,19 +317,57 @@ class TournamentParserController extends Controller
         };
     }
 
-    // API Endpoint mejorado para aceptar filtros
     public function getLeaderboard(Request $request, $tournamentId)
     {
         $type = $request->query('type', 'players'); // 'players' | 'teams'
-        $mode = $request->query('mode', 'all'); // 'all', 'solo', 'duo', 'trio', 'squad'
-        $matchId = $request->query('match_id'); // null para global, ID para partida específica
+        $mode = $request->query('mode', 'all'); 
+        $matchId = $request->query('match_id'); 
+        $sortBy = $request->query('sort', 'points'); // 'points' | 'kills'
 
-        return $this->getGlobalRanking($tournamentId, $mode, $type, $matchId);
+        return $this->getGlobalRanking($tournamentId, $mode, $type, $matchId, $sortBy);
     }
 
-    protected function getGlobalRanking($tournamentId, $mode = 'all', $viewType = 'players', $matchId = null)
+    // NUEVO: Endpoint para Widget
+    public function getWidgetStats(Request $request, $tournamentId)
     {
-        // 1. Ranking de EQUIPOS
+        // Retorna JSON simplificado para widgets
+        $stats = $this->getGlobalRanking($tournamentId, 'all', 'players', null, 'points');
+        
+        return response()->json([
+            'tournament_name' => DB::table('tournaments')->where('id', $tournamentId)->value('name'),
+            'top_players' => $stats->take(10), // Solo top 10
+        ]);
+    }
+
+    // NUEVO: Endpoint público para ver partidas y códigos
+    public function getPublicMatches($tournamentId)
+    {
+        $this->ensureDatabaseIsReady();
+        
+        $matches = DB::table('tournament_matches')
+            ->where('tournament_id', $tournamentId)
+            ->orderBy('created_at', 'desc')
+            ->select('id', 'game_mode', 'custom_code', 'raw_data', 'created_at')
+            ->get()
+            ->map(function($m) {
+                return [
+                    'id' => $m->id,
+                    'mode' => $m->game_mode,
+                    'code' => $m->custom_code ?? 'Sin código',
+                    'status' => is_null($m->raw_data) ? 'Pendiente (En Curso)' : 'Finalizada',
+                    'date' => $m->created_at
+                ];
+            });
+
+        return response()->json($matches);
+    }
+
+    protected function getGlobalRanking($tournamentId, $mode = 'all', $viewType = 'players', $matchId = null, $sortBy = 'points')
+    {
+        // Determinar columna de ordenamiento
+        $orderByCol = ($sortBy === 'kills') ? 'total_kills' : 'total_points';
+        $secondaryOrder = ($sortBy === 'kills') ? 'total_points' : 'total_kills';
+
         if ($viewType === 'teams') {
             $query = DB::table('team_match_stats')
                 ->join('tournament_matches', 'team_match_stats.tournament_match_id', '=', 'tournament_matches.id')
@@ -290,23 +377,20 @@ class TournamentParserController extends Controller
                     DB::raw('MIN(member_names) as members_json'), 
                     DB::raw('COUNT(*) as games_played'),
                     DB::raw('SUM(total_kills) as total_kills'),
+                    DB::raw('AVG(total_kills) as avg_kills'),
                     DB::raw('MIN(rank) as best_placement'),
-                    DB::raw('SUM(total_points) as total_points')
+                    DB::raw('AVG(rank) as avg_placement'),
+                    DB::raw('SUM(total_points) as total_points'),
+                    DB::raw('AVG(total_points) as avg_points')
                 );
 
-            // Filtrar por partida específica si se solicita
-            if ($matchId) {
-                $query->where('tournament_matches.id', $matchId);
-            } 
-            // Si es global y hay filtro de modo
-            elseif ($mode !== 'all') {
-                $query->where('tournament_matches.game_mode', $mode);
-            }
+            if ($matchId) $query->where('tournament_matches.id', $matchId);
+            elseif ($mode !== 'all') $query->where('tournament_matches.game_mode', $mode);
 
             return $query
                 ->groupBy('team_signature')
-                ->orderByDesc('total_points')
-                ->orderByDesc('total_kills')
+                ->orderByDesc($orderByCol)
+                ->orderByDesc($secondaryOrder)
                 ->get()
                 ->map(function($team) {
                     $team->member_names = json_decode($team->members_json);
@@ -314,34 +398,39 @@ class TournamentParserController extends Controller
                 });
         }
 
-        // 2. Ranking de JUGADORES (Individual)
+        // Jugadores Individuales (Con Promedios Detallados)
         $query = DB::table('player_match_stats')
             ->join('tournament_matches', 'player_match_stats.tournament_match_id', '=', 'tournament_matches.id')
             ->where('tournament_matches.tournament_id', $tournamentId)
-            // Filtro de seguridad para eliminar Bots "Unknown" en la consulta
             ->where('player_name', '!=', 'Unknown')
             ->select(
                 'player_name',
                 DB::raw('COUNT(*) as games_played'),
+                // Totales
                 DB::raw('SUM(kills) as total_kills'),
+                DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as total_points'),
+                DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.killPoints") AS DECIMAL(10,2))) as total_kill_points'),
+                DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.placementPoints") AS DECIMAL(10,2))) as total_placement_points'),
+                DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.knocks") AS DECIMAL(10,2))) as total_knocks'),
+                // Promedios
+                DB::raw('AVG(kills) as avg_kills'),
+                DB::raw('AVG(placement) as avg_placement'),
+                DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as avg_points'),
+                DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.killPoints") AS DECIMAL(10,2))) as avg_kill_points'),
+                DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.placementPoints") AS DECIMAL(10,2))) as avg_placement_points'),
+                DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.knocks") AS DECIMAL(10,2))) as avg_knocks'),
+                
                 DB::raw('SUM(damage_done) as total_damage'),
-                DB::raw('MIN(placement) as best_placement'),
-                DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as total_points')
+                DB::raw('MIN(placement) as best_placement')
             );
 
-        // Filtrar por partida específica
-        if ($matchId) {
-            $query->where('tournament_matches.id', $matchId);
-        }
-        // Filtrar por modo si no es "todos"
-        elseif ($mode !== 'all') {
-            $query->where('tournament_matches.game_mode', $mode);
-        }
+        if ($matchId) $query->where('tournament_matches.id', $matchId);
+        elseif ($mode !== 'all') $query->where('tournament_matches.game_mode', $mode);
 
         return $query
             ->groupBy('player_name')
-            ->orderByDesc('total_points')
-            ->orderByDesc('total_kills')
+            ->orderByDesc($orderByCol)
+            ->orderByDesc($secondaryOrder)
             ->get();
     }
 }
