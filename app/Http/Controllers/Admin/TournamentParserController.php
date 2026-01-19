@@ -22,6 +22,7 @@ class TournamentParserController extends Controller
         if (!Schema::hasTable('tournaments')) {
             Schema::create('tournaments', function (Blueprint $table) {
                 $table->id();
+                $table->unsignedBigInteger('user_id')->nullable(); // Guardamos quién creó el torneo
                 $table->string('name');
                 $table->string('slug')->nullable();
                 $table->string('twitch_channel')->nullable(); // Canal de Twitch opcional
@@ -29,11 +30,14 @@ class TournamentParserController extends Controller
             });
         } else {
              // Parche caliente para tabla existente
-             if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
-                Schema::table('tournaments', function (Blueprint $table) {
+             Schema::table('tournaments', function (Blueprint $table) {
+                if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
                     $table->string('twitch_channel')->nullable();
-                });
-             }
+                }
+                if (!Schema::hasColumn('tournaments', 'user_id')) {
+                    $table->unsignedBigInteger('user_id')->nullable();
+                }
+             });
         }
 
         // 2. Tabla de Partidas (Matches)
@@ -116,6 +120,8 @@ class TournamentParserController extends Controller
 
     public function store(Request $request)
     {
+        $this->ensureDatabaseIsReady(); // Asegurar que exista la columna user_id
+
         // CORRECCIÓN: Agregamos validación y guardado de 'twitch_channel' al crear
         $request->validate([
             'name' => 'required|string|max:255',
@@ -124,7 +130,8 @@ class TournamentParserController extends Controller
         
         DB::table('tournaments')->insert([
             'name' => $request->name,
-            'twitch_channel' => $request->twitch_channel, // Aquí se guarda el user de twitch
+            'twitch_channel' => $request->twitch_channel, 
+            'user_id' => auth()->id(), // Guardar ID del creador actual
             'created_at' => now(),
             'updated_at' => now(),
         ]);
