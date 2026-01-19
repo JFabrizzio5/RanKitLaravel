@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Str; // Importante para generar slugs
 use Inertia\Inertia;
 
 class TournamentParserController extends Controller
@@ -28,7 +29,7 @@ class TournamentParserController extends Controller
                 $table->timestamps();
             });
         } else {
-             // Parche caliente para tabla existente
+             // Parche caliente para tabla existente: Agrega twitch_channel si falta
              if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
                 Schema::table('tournaments', function (Blueprint $table) {
                     $table->string('twitch_channel')->nullable();
@@ -81,14 +82,16 @@ class TournamentParserController extends Controller
         }
 
         // Parches en caliente (por si la tabla ya existía sin estas columnas)
-        Schema::table('tournament_matches', function (Blueprint $table) {
-            if (!Schema::hasColumn('tournament_matches', 'game_mode')) {
-                $table->string('game_mode')->default('solo');
-            }
-            if (!Schema::hasColumn('tournament_matches', 'custom_code')) {
-                $table->string('custom_code')->nullable();
-            }
-        });
+        if (Schema::hasTable('tournament_matches')) {
+            Schema::table('tournament_matches', function (Blueprint $table) {
+                if (!Schema::hasColumn('tournament_matches', 'game_mode')) {
+                    $table->string('game_mode')->default('solo');
+                }
+                if (!Schema::hasColumn('tournament_matches', 'custom_code')) {
+                    $table->string('custom_code')->nullable();
+                }
+            });
+        }
     }
 
     public function index()
@@ -116,18 +119,28 @@ class TournamentParserController extends Controller
 
     public function store(Request $request)
     {
-        // CORRECCIÓN: Agregamos validación y guardado de 'twitch_channel' al crear
         $request->validate([
             'name' => 'required|string|max:255',
             'twitch_channel' => 'nullable|string|max:100'
         ]);
         
-        DB::table('tournaments')->insert([
+        $data = [
             'name' => $request->name,
-            'twitch_channel' => $request->twitch_channel, // Aquí se guarda el user de twitch
+            'twitch_channel' => $request->twitch_channel,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+
+        // --- FIX CRÍTICO: Rellenar columnas legacy si existen ---
+        // Si tu DB antigua tiene 'table_name' o 'slug' como obligatorios, esto lo soluciona
+        if (Schema::hasColumn('tournaments', 'table_name')) {
+            $data['table_name'] = Str::slug($request->name) . '_' . time(); 
+        }
+        if (Schema::hasColumn('tournaments', 'slug')) {
+            $data['slug'] = Str::slug($request->name);
+        }
+
+        DB::table('tournaments')->insert($data);
 
         return back()->with('success', 'Torneo creado correctamente.');
     }
@@ -145,9 +158,13 @@ class TournamentParserController extends Controller
             'updated_at' => now(),
         ];
 
-        // Solo actualizamos si el campo existe en la BD (por seguridad)
         if (Schema::hasColumn('tournaments', 'twitch_channel')) {
             $data['twitch_channel'] = $request->twitch_channel;
+        }
+
+        // También actualizamos slug/table_name si existen al editar
+        if (Schema::hasColumn('tournaments', 'slug')) {
+            $data['slug'] = Str::slug($request->name);
         }
 
         DB::table('tournaments')->where('id', $id)->update($data);
