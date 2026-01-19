@@ -4,147 +4,92 @@ import { Head, Link } from '@inertiajs/vue3';
 </script>
 
 <template>
-    <Head title="Dashboard - BellzCup" />
+    <Head title="BellzCup - Dashboard" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <h2 class="font-display font-bold text-xl text-gray-800 dark:text-white leading-tight uppercase">
-                Panel Principal
-            </h2>
-        </template>
+        <!-- Contenedor Principal Centrado -->
+        <div class="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            
+            <!-- Elementos de fondo decorativos (Opcional, para dar profundidad) -->
+            <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-[var(--rankit-neon)]/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-        <div class="py-12">
-            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <!-- Tarjeta Principal "BellzCup" -->
+            <div class="brutal-card w-full max-w-5xl bg-[#0a0a0a] border border-gray-800 overflow-hidden relative group">
                 
-                <div class="brutal-card bg-white dark:bg-[#0a0a0a] overflow-hidden">
+                <!-- Imagen de Fondo con Efectos -->
+                <div class="relative h-[400px] md:h-[500px] overflow-hidden">
+                    <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80" 
+                         class="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-[1.5s] ease-out grayscale mix-blend-luminosity" />
                     
-                    <div class="relative h-72 bg-gray-900 overflow-hidden group">
-                         <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80" 
-                              class="w-full h-full object-cover opacity-50 group-hover:scale-105 transition duration-700 grayscale mix-blend-multiply" />
-                         
-                         <div class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent"></div>
-                         
-                         <div class="absolute bottom-0 left-0 p-8 w-full">
-                            <div class="flex justify-between items-end">
-                                <div>
-                                    <span class="inline-block py-1 px-3 bg-[var(--rankit-neon)] text-white text-[10px] font-bold uppercase tracking-widest mb-3 btn-skew">
-                                        <span class="btn-content">Torneo Oficial</span>
-                                    </span>
-                                    <h3 class="text-5xl md:text-6xl font-display font-black text-white uppercase italic tracking-tighter mb-2">
-                                        Bellz<span class="text-[var(--rankit-neon)]">Cup</span>
-                                    </h3>
-                                    <p class="text-gray-300 max-w-xl text-sm md:text-base border-l-4 border-[var(--rankit-neon)] pl-4 font-light">
-                                        La competencia definitiva. Consulta los brackets, resultados en vivo y estadísticas de tu equipo favorito.
-                                    </p>
-                                </div>
-                                
-                                <div class="hidden md:block text-right">
-                                    <div class="text-[10px] font-bold uppercase text-gray-400 tracking-widest mb-1">Estado</div>
-                                    <div class="flex items-center gap-2 justify-end">
-                                        <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_#ef4444]"></span>
-                                        <span class="text-white font-bold uppercase tracking-wider">En Vivo</span>
-                                    </div>
-                                </div>
-                            </div>
-                         </div>
-                    </div>
+                    <!-- Overlay Gradiente -->
+                    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
 
-                    <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
-                        <div>
-                             <h4 class="text-xl font-bold text-black dark:text-white uppercase font-display mb-6 border-b border-gray-200 dark:border-gray-800 pb-2">
-                                Resumen del Evento
-                             </h4>
-                             <ul class="space-y-4">
-                                <li class="flex items-center gap-4 group">
-                                    <div class="w-10 h-10 rounded bg-gray-100 dark:bg-white/5 flex items-center justify-center text-[var(--rankit-neon)] group-hover:bg-[var(--rankit-neon)] group-hover:text-white transition">
-                                        <i class="ph-fill ph-trophy text-xl"></i>
-                                    </div>
-                                    <div>
-                                        <div class="text-[10px] uppercase font-bold text-gray-500">Prize Pool</div>
-                                        <div class="text-sm font-bold text-black dark:text-white">$25,000 USD</div>
-                                    </div>
-                                </li>
-                                <li class="flex items-center gap-4 group">
-                                    <div class="w-10 h-10 rounded bg-gray-100 dark:bg-white/5 flex items-center justify-center text-[var(--rankit-neon)] group-hover:bg-[var(--rankit-neon)] group-hover:text-white transition">
-                                        <i class="ph-fill ph-users text-xl"></i>
-                                    </div>
-                                    <div>
-                                        <div class="text-[10px] uppercase font-bold text-gray-500">Equipos</div>
-                                        <div class="text-sm font-bold text-black dark:text-white">16 Participantes</div>
-                                    </div>
-                                </li>
-                             </ul>
-                        </div>
+                    <!-- Contenido Sobre la Imagen -->
+                    <div class="absolute bottom-0 left-0 w-full p-8 md:p-12 flex flex-col md:flex-row items-end justify-between gap-8">
                         
-                        <div class="flex flex-col gap-4">
-                            <Link :href="route('tournaments.show', 1)" class="w-full py-5 text-center btn-skew font-bold text-white uppercase tracking-widest text-sm group">
-                                <span class="btn-content flex items-center justify-center gap-2">
-                                    Ver Torneo Completo <i class="ph-bold ph-arrow-right group-hover:translate-x-1 transition"></i>
+                        <!-- Texto Principal -->
+                        <div class="relative z-10 max-w-2xl">
+                            <div class="flex items-center gap-3 mb-4">
+                                <span class="bg-[var(--rankit-neon)] text-white text-[10px] font-bold uppercase px-3 py-1 btn-skew tracking-widest">
+                                    <span class="btn-content">Evento Principal</span>
+                                </span>
+                                <span class="flex items-center gap-2 text-[10px] font-bold uppercase text-red-500 tracking-widest bg-black/50 px-3 py-1 border border-red-500/30 backdrop-blur-sm">
+                                    <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_red]"></span>
+                                    En Vivo
+                                </span>
+                            </div>
+
+                            <h1 class="text-6xl md:text-8xl font-display font-black text-white uppercase italic tracking-tighter leading-[0.9] mb-4">
+                                Bellz<span class="text-stroke text-transparent">Cup</span>
+                            </h1>
+
+                            <p class="text-gray-300 font-light text-sm md:text-lg border-l-2 border-[var(--rankit-neon)] pl-4 max-w-lg leading-relaxed drop-shadow-md">
+                                La competencia de alto nivel ha comenzado. Consulta los brackets, estadísticas en tiempo real y el rendimiento de los equipos.
+                            </p>
+                        </div>
+
+                        <!-- Botón de Acción -->
+                        <div class="relative z-10 w-full md:w-auto">
+                            <!-- Enlace al detalle del torneo -->
+                            <!-- Ajusta el ID '1' al ID real de tu torneo si lo tienes dinámico -->
+                            <Link :href="route('tournaments.show', 1)" class="w-full md:w-auto btn-skew px-8 py-5 text-center group block">
+                                <span class="btn-content flex flex-col items-center">
+                                    <span class="text-xl font-bold uppercase tracking-widest flex items-center gap-2">
+                                        Ver Torneo <i class="ph-bold ph-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                                    </span>
+                                    <span class="text-[10px] opacity-70 uppercase tracking-wider mt-1">Acceder al Panel</span>
                                 </span>
                             </Link>
-                            
-                            <p class="text-center text-[10px] text-gray-500 uppercase tracking-wider mt-2">
-                                Acceso para jugadores y espectadores
-                            </p>
                         </div>
                     </div>
                 </div>
 
+                <!-- Footer de la Tarjeta (Datos Rápidos) -->
+                <div class="bg-black/80 border-t border-white/10 p-6 grid grid-cols-2 md:grid-cols-4 gap-4 backdrop-blur-md">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Prize Pool</span>
+                        <span class="text-xl text-white font-display font-bold">$25,000</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Equipos</span>
+                        <span class="text-xl text-white font-display font-bold">16 / 16</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Formato</span>
+                        <span class="text-xl text-white font-display font-bold">Battle Royale</span>
+                    </div>
+                    <div class="flex flex-col justify-center">
+                         <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider mb-1">Patrocinado por</div>
+                         <div class="flex gap-2 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+                             <!-- Logos placeholder pequeños -->
+                             <div class="w-6 h-6 bg-white rounded-full"></div>
+                             <div class="w-6 h-6 bg-white rounded-full"></div>
+                             <div class="w-6 h-6 bg-white rounded-full"></div>
+                         </div>
+                    </div>
+                </div>
             </div>
+
         </div>
     </AuthenticatedLayout>
 </template>
-
-<style scoped>
-/* ESTILOS COPIADOS DE TU PROYECTO PARA MANTENER LA CONSISTENCIA */
-:root { --rankit-neon: #bf00ff; }
-.font-display { font-family: "Chakra Petch", sans-serif; }
-
-/* Brutal Card Style */
-.brutal-card {
-  border: 1px solid;
-  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.dark .brutal-card {
-  background: #0a0a0a;
-  border-color: #333;
-}
-html:not(.dark) .brutal-card {
-  background: #ffffff;
-  border-color: #e5e5e5;
-  box-shadow: 4px 4px 0px #00000010;
-}
-.brutal-card:hover {
-  border-color: var(--rankit-neon);
-  transform: translate(-2px, -2px);
-}
-.dark .brutal-card:hover {
-  box-shadow: 0 0 20px rgba(191, 0, 255, 0.15);
-}
-html:not(.dark) .brutal-card:hover {
-  box-shadow: 6px 6px 0px var(--rankit-neon);
-}
-
-/* Button Skew Style */
-.btn-skew {
-  background-color: var(--rankit-neon);
-  transform: skewX(-10deg);
-  transition: all 0.2s;
-  display: inline-block;
-  cursor: pointer;
-}
-.btn-skew:hover {
-  background-color: white;
-  color: black;
-  box-shadow: 0 0 15px var(--rankit-neon);
-}
-html:not(.dark) .btn-skew:hover {
-  background-color: black;
-  color: white;
-  box-shadow: 4px 4px 0px rgba(0,0,0,0.2);
-}
-.btn-content {
-  display: inline-block;
-  transform: skewX(10deg);
-}
-</style>
