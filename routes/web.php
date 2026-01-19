@@ -36,8 +36,13 @@ Route::get('/dashboard', function () {
 // --- RUTAS RESTAURADAS (LO QUE FALTABA) ---
 
 // 1. Perfil Rankit
-Route::get('/profile/rankit', [ProfilePageController::class, 'show'])->name('rankit.profile');
-
+Route::get('/profile/rankit', function () {
+    if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
+        return redirect()->route('jangel.indexdos');
+    }
+    // Llama al controlador original manteniendo la inyección de dependencias
+    return app()->call([ProfilePageController::class, 'show']);
+})->name('rankit.profile');
 // 2. Copa Bellz
 Route::get('/BellzCup', function () {
     return Inertia::render('BellzCup/Index');
