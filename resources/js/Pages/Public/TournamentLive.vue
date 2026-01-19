@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import axios from 'axios';
 
 const props = defineProps({ tournament: Object });
@@ -10,7 +10,7 @@ const stats = ref<any>({ matches: [], ranking: [] });
 const progressText = ref("Cargando...");
 const isLoading = ref(true);
 
-// --- ESTADOS DE FILTROS (Igual que Admin) ---
+// --- ESTADOS DE FILTROS ---
 const selectedMatchId = ref<number | null>(null);
 const leaderboardType = ref('players'); // 'players' | 'teams'
 const filterMode = ref('all');          // 'all', 'solo', 'duo'...
@@ -23,7 +23,6 @@ const loadData = async () => {
     try {
         const url = `/api/live/${props.tournament?.id}/data`;
         
-        // Enviamos TODOS los filtros al backend
         const params: any = {
             type: leaderboardType.value,
             mode: filterMode.value,
@@ -53,7 +52,7 @@ const toggleMatchFilter = (matchId: number) => {
     } else {
         selectedMatchId.value = matchId; 
     }
-    expandedRowIndex.value = null; // Colapsar filas al cambiar vista
+    expandedRowIndex.value = null; 
     isLoading.value = true;
     loadData();
 };
@@ -89,6 +88,40 @@ const toggleRow = (index: number) => {
     expandedRowIndex.value = expandedRowIndex.value === index ? null : index;
 };
 
+// --- MÉTODOS OBS ---
+
+// 1. Link para TABLA GLOBAL (Top 10)
+const copyGlobalObsLink = () => {
+    const baseUrl = `${window.location.origin}/widget/obs/global/${props.tournament?.id}`;
+    // Limitamos a 10 para que no sea una lista infinita en OBS
+    const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10`;
+    
+    const fullUrl = baseUrl + query;
+    navigator.clipboard.writeText(fullUrl);
+    alert(`✅ Link de TABLA COPIADO.\n\nConfiguración: Top 10 ${leaderboardType.value} ordenado por ${sortBy.value}.\nPégalo en OBS.`);
+};
+
+// 2. Link para TRACKER INDIVIDUAL (Jugador/Equipo específico)
+const copyIndividualObsLink = (item: any) => {
+    const baseUrl = `${window.location.origin}/widget/obs/global/${props.tournament?.id}`;
+    let query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}`;
+    
+    let searchTerm = '';
+    if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
+        searchTerm = item.member_names[0]; 
+    } else if (item.player_name) {
+        searchTerm = item.player_name;
+    }
+
+    if (searchTerm) {
+        query += `&search=${encodeURIComponent(searchTerm)}`;
+    }
+
+    const fullUrl = baseUrl + query;
+    navigator.clipboard.writeText(fullUrl);
+    alert(`✅ Link de TRACKER COPIADO para: ${searchTerm}\n\nPégalo en OBS.`);
+};
+
 // Helper formateo decimales
 const formatDec = (num: any) => {
     const n = parseFloat(num);
@@ -97,7 +130,8 @@ const formatDec = (num: any) => {
 
 onMounted(() => {
     loadData();
-    pollInterval = setInterval(loadData, 30000); 
+    // INTERVALO DE 90 SEGUNDOS (1.5 Minutos) para reducir carga
+    pollInterval = setInterval(loadData, 90000); 
 });
 
 onUnmounted(() => clearInterval(pollInterval));
@@ -158,20 +192,25 @@ onUnmounted(() => clearInterval(pollInterval));
             <div class="lg:col-span-8">
                 <div class="flex flex-col gap-4 p-4 mb-4 border border-gray-800 shadow-xl bg-gray-900/80 rounded-xl backdrop-blur-sm">
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <div class="flex gap-2">
+                        <div class="flex flex-wrap gap-2">
                             <div class="flex p-1 bg-black border border-gray-700 rounded">
                                 <button @click="switchTab('players')" :class="{'bg-gray-700 text-white': leaderboardType === 'players', 'text-gray-500': leaderboardType !== 'players'}" class="px-3 py-1 text-xs font-bold uppercase transition-all rounded">Jugadores</button>
                                 <button @click="switchTab('teams')" :class="{'bg-gray-700 text-white': leaderboardType === 'teams', 'text-gray-500': leaderboardType !== 'teams'}" class="px-3 py-1 text-xs font-bold uppercase transition-all rounded">Equipos</button>
                             </div>
+                            
                             <button @click="toggleSort" class="px-3 py-1 text-xs font-bold text-indigo-300 transition-colors border rounded border-indigo-900/50 hover:bg-indigo-900/20 bg-indigo-900/10">
                                 {{ sortBy === 'points' ? 'Por Puntos 🏆' : 'Por Kills ⚔️' }}
                             </button>
+
+                            <button @click="copyGlobalObsLink" class="flex items-center gap-1 px-3 py-1 text-xs font-bold text-white transition-colors bg-teal-700 border border-teal-500 rounded shadow-lg hover:bg-teal-600 shadow-teal-900/50">
+                                📺 Tabla OBS
+                            </button>
                         </div>
 
-                        <div v-if="!selectedMatchId" class="flex gap-1">
+                        <div v-if="!selectedMatchId" class="flex gap-1 overflow-x-auto">
                             <button v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" :key="m" @click="switchMode(m)"
                                 :class="filterMode === m ? 'text-indigo-400 border-indigo-500' : 'text-gray-500 border-transparent'"
-                                class="px-2 py-1 text-[10px] font-bold uppercase border-b-2 hover:text-gray-300 transition-colors"
+                                class="px-2 py-1 text-[10px] font-bold uppercase border-b-2 hover:text-gray-300 transition-colors whitespace-nowrap"
                             >
                                 {{ m === 'all' ? 'Todas' : m }}
                             </button>
@@ -202,15 +241,25 @@ onUnmounted(() => clearInterval(pollInterval));
                                             <span v-if="idx < 3" class="text-base">{{ ['🥇','🥈','🥉'][idx] }}</span>
                                             <span v-else class="font-bold text-indigo-400 opacity-60">#{{ idx + 1 }}</span>
                                         </td>
+                                        
                                         <td class="p-3 font-bold text-white">
-                                            <div v-if="leaderboardType === 'teams'" class="flex flex-wrap gap-1">
-                                                <span v-for="(m, i) in item.member_names" :key="i" class="px-1.5 py-0.5 text-[9px] text-indigo-200 rounded bg-indigo-900/30 border border-indigo-500/20">{{ m }}</span>
-                                            </div>
-                                            <div v-else>{{ item.player_name }}</div>
-                                            <div class="text-[9px] text-gray-600 mt-0.5 font-normal group-hover:text-indigo-400 transition-colors">
-                                                {{ expandedRowIndex === idx ? '▲ Ocultar detalles' : '▼ Ver promedios' }}
+                                            <div class="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <div v-if="leaderboardType === 'teams'" class="flex flex-wrap gap-1">
+                                                        <span v-for="(m, i) in item.member_names" :key="i" class="px-1.5 py-0.5 text-[9px] text-indigo-200 rounded bg-indigo-900/30 border border-indigo-500/20">{{ m }}</span>
+                                                    </div>
+                                                    <div v-else>{{ item.player_name }}</div>
+                                                    <div class="text-[9px] text-gray-600 mt-0.5 font-normal group-hover:text-indigo-400 transition-colors">
+                                                        {{ expandedRowIndex === idx ? '▲ Ocultar detalles' : '▼ Ver promedios' }}
+                                                    </div>
+                                                </div>
+                                                
+                                                <button @click.stop="copyIndividualObsLink(item)" class="text-[10px] font-bold bg-white/5 hover:bg-white/20 text-gray-400 hover:text-indigo-300 border border-gray-700 rounded px-2 py-1 transition-all flex items-center gap-1" title="Copiar Link para OBS">
+                                                    🔍 <span class="hidden sm:inline">Track</span>
+                                                </button>
                                             </div>
                                         </td>
+                                        
                                         <td class="p-3 font-mono text-xs text-center text-gray-500">{{ item.games_played }}</td>
                                         <td class="p-3 font-mono text-center text-red-400">{{ item.total_kills }}</td>
                                         <td class="p-3 font-mono text-lg font-bold text-right text-yellow-400">{{ formatDec(item.total_points) }}</td>

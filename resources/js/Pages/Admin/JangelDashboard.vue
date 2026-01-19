@@ -163,6 +163,42 @@ const toggleRow = (index: number) => {
     expandedRowIndex.value = expandedRowIndex.value === index ? null : index;
 };
 
+// --- MÉTODOS OBS (NUEVOS) ---
+
+// 1. Link para TABLA GLOBAL (Top 10)
+const copyGlobalObsLink = () => {
+    if (!selectedTournament.value) return;
+    const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
+    // Limitamos a 10
+    const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10`;
+    
+    const fullUrl = baseUrl + query;
+    navigator.clipboard.writeText(fullUrl);
+    alert(`✅ Link de TABLA COPIADO.\n\nConfiguración: Top 10 ${leaderboardType.value} ordenado por ${sortBy.value}.\nPégalo en OBS.`);
+};
+
+// 2. Link para TRACKER INDIVIDUAL (Jugador/Equipo específico)
+const copyIndividualObsLink = (item: any) => {
+    if (!selectedTournament.value) return;
+    const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
+    let query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}`;
+    
+    let searchTerm = '';
+    if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
+        searchTerm = item.member_names[0]; 
+    } else if (item.player_name) {
+        searchTerm = item.player_name;
+    }
+
+    if (searchTerm) {
+        query += `&search=${encodeURIComponent(searchTerm)}`;
+    }
+
+    const fullUrl = baseUrl + query;
+    navigator.clipboard.writeText(fullUrl);
+    alert(`✅ Link de TRACKER COPIADO para: ${searchTerm}\n\nPégalo en OBS.`);
+};
+
 // Helpers
 const formatDec = (num: any) => {
     const n = parseFloat(num);
@@ -292,7 +328,7 @@ const getObsUrl = (id: number) => `${window.location.origin}/widget/obs/global/$
 
                         <!-- BARRA DE FILTROS -->
                         <div class="flex flex-wrap items-center justify-between gap-3 p-2 border border-gray-800 rounded-lg bg-gray-950/50">
-                            <div class="flex gap-2">
+                            <div class="flex flex-wrap gap-2">
                                 <!-- Tabs Jugadores/Equipos -->
                                 <div class="flex p-1 bg-gray-900 border border-gray-700 rounded">
                                     <button @click="switchTab('players')" :class="{'bg-gray-700 text-white': leaderboardType === 'players', 'text-gray-500': leaderboardType !== 'players'}" class="px-3 py-1 text-xs font-bold uppercase transition-all rounded">Jugadores</button>
@@ -301,6 +337,11 @@ const getObsUrl = (id: number) => `${window.location.origin}/widget/obs/global/$
                                 <!-- Botón Ordenar -->
                                 <button @click="toggleSort" class="px-3 py-1 text-xs font-bold text-indigo-300 transition-colors border rounded border-indigo-900/50 hover:bg-indigo-900/20">
                                     Ordenar: {{ sortBy === 'points' ? 'Puntos 🏆' : 'Kills ⚔️' }}
+                                </button>
+
+                                <!-- NUEVO: BOTÓN WIDGET TABLA GLOBAL -->
+                                <button @click="copyGlobalObsLink" class="flex items-center gap-1 px-3 py-1 text-xs font-bold text-white transition-colors bg-teal-700 border border-teal-500 rounded shadow-lg hover:bg-teal-600 shadow-teal-900/50">
+                                    📺 Tabla OBS
                                 </button>
                             </div>
 
@@ -342,16 +383,28 @@ const getObsUrl = (id: number) => `${window.location.origin}/widget/obs/global/$
                                         <td class="w-12 p-3 font-mono font-bold text-gray-500">
                                             {{ idx < 3 ? ['🥇','🥈','🥉'][idx] : `#${idx + 1}` }}
                                         </td>
+                                        
+                                        <!-- CELDA NOMBRE + BOTÓN OBS TRACKER -->
                                         <td class="p-3 font-bold text-white">
-                                            <div v-if="leaderboardType === 'teams'" class="flex flex-wrap gap-1">
-                                                <span v-for="(m, i) in item.member_names" :key="i" class="px-2 py-0.5 text-[10px] text-indigo-200 rounded bg-indigo-900/40">{{ m }}</span>
-                                            </div>
-                                            <div v-else>{{ item.player_name }}</div>
-                                            <!-- Indicador pequeño -->
-                                            <div class="text-[9px] text-gray-600 mt-0.5 font-normal">
-                                                {{ expandedRowIndex === idx ? '▲ Ocultar' : '▼ Detalles' }}
+                                            <div class="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <div v-if="leaderboardType === 'teams'" class="flex flex-wrap gap-1">
+                                                        <span v-for="(m, i) in item.member_names" :key="i" class="px-2 py-0.5 text-[10px] text-indigo-200 rounded bg-indigo-900/40">{{ m }}</span>
+                                                    </div>
+                                                    <div v-else>{{ item.player_name }}</div>
+                                                    <!-- Indicador pequeño -->
+                                                    <div class="text-[9px] text-gray-600 mt-0.5 font-normal">
+                                                        {{ expandedRowIndex === idx ? '▲ Ocultar' : '▼ Detalles' }}
+                                                    </div>
+                                                </div>
+
+                                                <!-- NUEVO BOTÓN TRACKER -->
+                                                <button @click.stop="copyIndividualObsLink(item)" class="text-[10px] font-bold bg-white/5 hover:bg-white/20 text-gray-400 hover:text-indigo-300 border border-gray-700 rounded px-2 py-1 transition-all flex items-center gap-1" title="Copiar Link para OBS">
+                                                    🔍 <span class="hidden sm:inline">Track</span>
+                                                </button>
                                             </div>
                                         </td>
+                                        
                                         <td class="p-3 text-center text-gray-400">{{ item.games_played }}</td>
                                         <td class="p-3 font-mono font-bold text-center text-red-400">{{ item.total_kills }}</td>
                                         <td class="p-3 font-mono text-lg font-bold text-center text-green-400">{{ item.total_points }}</td>
