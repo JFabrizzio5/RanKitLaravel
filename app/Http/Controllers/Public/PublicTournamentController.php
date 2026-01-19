@@ -67,15 +67,17 @@ class PublicTournamentController extends Controller
                 ];
             });
 
-        // 4. Calcular Ranking (USANDO LA LÓGICA COMPLETA)
+        // 4. Calcular Ranking
         $ranking = $this->getFullRanking($id, $mode, $type, $matchId, $sortBy);
 
         $expected = $tournament->expected_matches ?? 5;
 
+        // CORRECCIÓN: Usamos `?? null` para evitar error 500 si la columna twitch_channel no existe
         return response()->json([
             'tournament' => [
                 'name' => $tournament->name,
-                'progress' => "Partida $matchesProcessed / {$expected}"
+                'progress' => "Partida $matchesProcessed / {$expected}",
+                'twitch_channel' => $tournament->twitch_channel ?? null 
             ],
             'matches' => $matchesList,
             'ranking' => $ranking
@@ -90,12 +92,12 @@ class PublicTournamentController extends Controller
         return Inertia::render('Widgets/ObsGlobal', ['tournamentId' => (int)$id]);
     }
 
-    // Mantenemos este por retrocompatibilidad, pero redirige a la misma vista lógica si quisieras
+    // Mantenemos este por retrocompatibilidad
     public function widgetPlayer($id, $playerName)
     {
-        return Inertia::render('Widgets/ObsGlobal', [ // Usamos el mismo componente potente
+        return Inertia::render('Widgets/ObsGlobal', [ 
             'tournamentId' => (int)$id, 
-            'defaultSearch' => $playerName // Pasamos el nombre como búsqueda por defecto
+            'defaultSearch' => $playerName 
         ]);
     }
 
@@ -107,7 +109,7 @@ class PublicTournamentController extends Controller
         $sortBy = $request->query('sort', 'points'); // points | kills
         $type = $request->query('type', 'players'); // players | teams
         $limit = $request->query('limit', 10); // Cantidad de filas
-        $search = $request->query('search'); // Para trackear específico (nombre o parte del nombre)
+        $search = $request->query('search'); // Para trackear específico
         
         // 2. Obtener Ranking con Filtros
         $ranking = $this->getFullRanking($id, $mode, $type, null, $sortBy);
@@ -116,7 +118,7 @@ class PublicTournamentController extends Controller
         if ($search) {
             $found = $ranking->first(function($item) use ($search, $type) {
                 if ($type === 'teams') {
-                    // Busca si el texto de búsqueda está en alguno de los nombres del equipo
+                    // Busca coincidencia parcial en miembros
                     foreach ($item->member_names as $member) {
                         if (stripos($member, $search) !== false) return true;
                     }
@@ -126,7 +128,6 @@ class PublicTournamentController extends Controller
                 return stripos($item->player_name, $search) !== false;
             });
 
-            // Retornamos un array con un solo elemento si se encuentra, o vacío
             return response()->json($found ? [$found] : []);
         }
         
@@ -134,7 +135,7 @@ class PublicTournamentController extends Controller
         return response()->json($ranking->take((int)$limit)->values());
     }
 
-    // --- LÓGICA CENTRAL DE CÁLCULO (ADMIN PARITY) ---
+    // --- LÓGICA CENTRAL DE CÁLCULO ---
     
     protected function getFullRanking($tournamentId, $mode = 'all', $viewType = 'players', $matchId = null, $sortBy = 'points')
     {
@@ -172,7 +173,7 @@ class PublicTournamentController extends Controller
                 });
         }
 
-        // --- VISTA JUGADORES (CON EXTRA STATS Y PROMEDIOS) ---
+        // --- VISTA JUGADORES ---
         $query = DB::table('player_match_stats')
             ->join('tournament_matches', 'player_match_stats.tournament_match_id', '=', 'tournament_matches.id')
             ->where('tournament_matches.tournament_id', $tournamentId)

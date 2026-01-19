@@ -24,8 +24,16 @@ class TournamentParserController extends Controller
                 $table->id();
                 $table->string('name');
                 $table->string('slug')->nullable();
+                $table->string('twitch_channel')->nullable(); // Canal de Twitch opcional
                 $table->timestamps();
             });
+        } else {
+             // Parche caliente para tabla existente
+             if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
+                Schema::table('tournaments', function (Blueprint $table) {
+                    $table->string('twitch_channel')->nullable();
+                });
+             }
         }
 
         // 2. Tabla de Partidas (Matches)
@@ -72,13 +80,13 @@ class TournamentParserController extends Controller
             });
         }
 
-        // Parches en caliente
+        // Parches en caliente (por si la tabla ya existía sin estas columnas)
         Schema::table('tournament_matches', function (Blueprint $table) {
             if (!Schema::hasColumn('tournament_matches', 'game_mode')) {
-                $table->string('game_mode')->default('solo')->after('match_id');
+                $table->string('game_mode')->default('solo');
             }
             if (!Schema::hasColumn('tournament_matches', 'custom_code')) {
-                $table->string('custom_code')->nullable()->after('map_name');
+                $table->string('custom_code')->nullable();
             }
         });
     }
@@ -93,7 +101,7 @@ class TournamentParserController extends Controller
             $tn->matches = DB::table('tournament_matches')
                 ->where('tournament_id', $tn->id)
                 ->orderBy('created_at', 'desc')
-                ->select('id', 'match_id', 'game_mode', 'custom_code', 'raw_data', 'created_at') // Select raw_data to check status
+                ->select('id', 'match_id', 'game_mode', 'custom_code', 'raw_data', 'created_at') 
                 ->get()
                 ->map(function($match) {
                     $match->status = is_null($match->raw_data) ? 'pending' : 'processed';
@@ -108,11 +116,15 @@ class TournamentParserController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate(['name' => 'required|string|max:255']);
+        // CORRECCIÓN: Agregamos validación y guardado de 'twitch_channel' al crear
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'twitch_channel' => 'nullable|string|max:100'
+        ]);
         
         DB::table('tournaments')->insert([
             'name' => $request->name,
-            'slug' => \Illuminate\Support\Str::slug($request->name),
+            'twitch_channel' => $request->twitch_channel, // Aquí se guarda el user de twitch
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -120,7 +132,43 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Torneo creado correctamente.');
     }
 
-    // NUEVO: Crear partida programada solo con código
+    // Actualizar Torneo (Nombre y Twitch)
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'twitch_channel' => 'nullable|string|max:100'
+        ]);
+
+        $data = [
+            'name' => $request->name,
+            'updated_at' => now(),
+        ];
+
+        // Solo actualizamos si el campo existe en la BD (por seguridad)
+        if (Schema::hasColumn('tournaments', 'twitch_channel')) {
+            $data['twitch_channel'] = $request->twitch_channel;
+        }
+
+        DB::table('tournaments')->where('id', $id)->update($data);
+
+        return back()->with('success', 'Torneo actualizado.');
+    }
+
+    // Eliminar Torneo (Solo si está vacío)
+    public function destroy($id)
+    {
+        $matchCount = DB::table('tournament_matches')->where('tournament_id', $id)->count();
+
+        if ($matchCount > 0) {
+            return back()->with('error', 'No se puede eliminar un torneo que tiene partidas registradas. Elimina las partidas primero.');
+        }
+
+        DB::table('tournaments')->where('id', $id)->delete();
+        return back()->with('success', 'Torneo eliminado.');
+    }
+
+    // Crear partida programada solo con código
     public function storeScheduledMatch(Request $request, $tournamentId)
     {
         $request->validate([
@@ -135,7 +183,7 @@ class TournamentParserController extends Controller
             'match_id' => 'pending_' . uniqid(),
             'game_mode' => $this->getModeName((int)$request->game_mode),
             'custom_code' => $request->custom_code,
-            'raw_data' => null, // Indica que aún no tiene replay
+            'raw_data' => null, 
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -143,24 +191,19 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Partida programada creada. Comparte el código con los jugadores.');
     }
 
-    public function show($id)
+    // Editar código de partida existente
+    public function updateMatch(Request $request, $id)
     {
-        $this->ensureDatabaseIsReady();
-        $tournament = DB::table('tournaments')->where('id', $id)->first();
-
-        if (!$tournament) {
-            return redirect()->route('jangel.indexdos')->with('error', 'Torneo no encontrado.');
-        }
-
-        return Inertia::render('Admin/TournamentDetail', [
-            'tournament' => $tournament,
-            'rankingsSolo' => $this->getGlobalRanking($id, 'solo', 'players'),
-            'recentMatches' => DB::table('tournament_matches')
-                ->where('tournament_id', $id)
-                ->orderBy('created_at', 'desc')
-                ->limit(10)
-                ->get()
+        $request->validate([
+            'custom_code' => 'required|string|max:50'
         ]);
+
+        DB::table('tournament_matches')->where('id', $id)->update([
+            'custom_code' => $request->custom_code,
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Código de partida actualizado.');
     }
 
     public function deleteMatch($matchId)
@@ -185,8 +228,8 @@ class TournamentParserController extends Controller
         
         $request->validate([
             'replay' => 'required|file',
-            'mode' => 'required|integer', // 1=Solo, 2=Duo, 3=Trio, 4=Squad
-            'target_match_id' => 'nullable|integer' // ID de la partida programada si existe
+            'mode' => 'required|integer', 
+            'target_match_id' => 'nullable|integer' 
         ]);
 
         try {
@@ -226,7 +269,7 @@ class TournamentParserController extends Controller
                 ]);
                 $currentMatchId = $targetMatchId;
 
-                // Limpiar stats viejas por si acaso (re-subida)
+                // Limpiar stats viejas
                 DB::table('player_match_stats')->where('tournament_match_id', $targetMatchId)->delete();
                 DB::table('team_match_stats')->where('tournament_match_id', $targetMatchId)->delete();
 
@@ -250,7 +293,6 @@ class TournamentParserController extends Controller
                     continue;
                 }
 
-                // Guardamos más detalles en extra_stats para los promedios
                 DB::table('player_match_stats')->insert([
                     'tournament_match_id' => $currentMatchId,
                     'player_name' => $p['playerName'] ?? 'Unknown',
@@ -327,10 +369,9 @@ class TournamentParserController extends Controller
         return $this->getGlobalRanking($tournamentId, $mode, $type, $matchId, $sortBy);
     }
 
-    // NUEVO: Endpoint para Widget
+    // Endpoint para Widget Admin
     public function getWidgetStats(Request $request, $tournamentId)
     {
-        // Retorna JSON simplificado para widgets
         $stats = $this->getGlobalRanking($tournamentId, 'all', 'players', null, 'points');
         
         return response()->json([
@@ -339,7 +380,7 @@ class TournamentParserController extends Controller
         ]);
     }
 
-    // NUEVO: Endpoint público para ver partidas y códigos
+    // Endpoint público para ver partidas y códigos en Admin
     public function getPublicMatches($tournamentId)
     {
         $this->ensureDatabaseIsReady();
@@ -364,7 +405,6 @@ class TournamentParserController extends Controller
 
     protected function getGlobalRanking($tournamentId, $mode = 'all', $viewType = 'players', $matchId = null, $sortBy = 'points')
     {
-        // Determinar columna de ordenamiento
         $orderByCol = ($sortBy === 'kills') ? 'total_kills' : 'total_points';
         $secondaryOrder = ($sortBy === 'kills') ? 'total_points' : 'total_kills';
 
@@ -398,7 +438,7 @@ class TournamentParserController extends Controller
                 });
         }
 
-        // Jugadores Individuales (Con Promedios Detallados)
+        // Jugadores Individuales
         $query = DB::table('player_match_stats')
             ->join('tournament_matches', 'player_match_stats.tournament_match_id', '=', 'tournament_matches.id')
             ->where('tournament_matches.tournament_id', $tournamentId)

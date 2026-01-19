@@ -17,7 +17,7 @@ interface Match {
 interface Tournament {
     id: number;
     name: string;
-    twitch_channel?: string; // Nuevo campo
+    twitch_channel?: string;
     matches: Match[];
 }
 
@@ -81,17 +81,15 @@ const processingSlot = ref<Record<number, boolean>>({});
 
 // Filtros
 const leaderboardType = ref<'players' | 'teams'>('players');
-const filterMode = ref<string>('all');
+const filterMode = ref<string>('all'); 
 const sortBy = ref<'points' | 'kills'>('points');
 const searchQuery = ref('');
 const expandedRowIndex = ref<number | null>(null);
 const loadingLeaderboard = ref(false);
 
-// Computed para filtrar la tabla localmente
 const filteredLeaderboard = computed(() => {
     if (!searchQuery.value) return leaderboard.value;
     const q = searchQuery.value.toLowerCase();
-    
     return leaderboard.value.filter(item => {
         if (leaderboardType.value === 'teams' && item.member_names) {
             return item.member_names.some(m => m.toLowerCase().includes(q));
@@ -107,17 +105,21 @@ const formReplay = useForm({
     target_match_id: null as number | null 
 });
 
-// Formulario para Configuración de Torneo
 const formSettings = useForm({
     id: null as number | null,
     name: '',
     twitch_channel: ''
 });
 
-// Formulario para Editar Match Code
 const formEditMatch = useForm({
     match_id: null as number | null,
     custom_code: ''
+});
+
+// Formulario CREAR TORNEO (ACTUALIZADO CON TWITCH)
+const formCreateTournament = useForm({
+    name: '',
+    twitch_channel: '' // Agregado campo twitch
 });
 
 // Estados UI
@@ -125,6 +127,7 @@ const activeTab = ref<'codes' | 'widget' | 'matches'>('codes');
 const showMatchModal = ref(false);
 const showSettingsModal = ref(false);
 const showEditMatchModal = ref(false);
+const showCreateModal = ref(false); 
 const uploadProgress = ref(0);
 
 // --- INICIALIZACIÓN ---
@@ -165,6 +168,7 @@ watch(() => props.tournaments, initSlotInputs, { deep: true });
 watch(selectedTournamentId, () => {
     selectedMatchId.value = null;
     searchQuery.value = ''; 
+    filterMode.value = 'all'; 
     if (selectedTournament.value) {
         fetchLeaderboard(selectedTournament.value);
     }
@@ -174,12 +178,11 @@ watch(selectedTournamentId, () => {
 
 const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) => {
     if(!tn) return;
-    
-    // Forzamos la limpieza para que el usuario VEA que está cargando
+    if (matchId) selectedMatchId.value = matchId;
+    else selectedMatchId.value = null;
+
     loadingLeaderboard.value = true;
     leaderboard.value = []; 
-    
-    selectedMatchId.value = matchId;
     expandedRowIndex.value = null;
 
     try {
@@ -187,7 +190,7 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
             tournamentId: tn.id, 
             match_id: matchId,
             type: leaderboardType.value,
-            mode: filterMode.value,
+            mode: filterMode.value, 
             sort: sortBy.value 
         }));
         leaderboard.value = res.data;
@@ -199,6 +202,17 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
 };
 
 // --- GESTIÓN DE TORNEO ---
+
+// Crear Torneo (ACTUALIZADO)
+const createTournament = () => {
+    formCreateTournament.post(route('jangel.tournament.store'), {
+        onSuccess: () => {
+            showCreateModal.value = false;
+            formCreateTournament.reset();
+            // Inertia recargará y el watcher actualizará la lista
+        }
+    });
+};
 
 const openSettingsModal = () => {
     if (!selectedTournament.value) return;
@@ -225,7 +239,7 @@ const deleteTournament = () => {
     router.delete(route('jangel.tournament.delete', formSettings.id), {
         onSuccess: () => {
             showSettingsModal.value = false;
-            selectedTournamentId.value = null; // Reset selection
+            selectedTournamentId.value = null; 
         }
     });
 };
@@ -317,7 +331,7 @@ const submitReplay = () => {
     });
 };
 
-// --- HELPERS VISUALES & OBS ---
+// --- HELPERS ---
 const formatDec = (num: number | string) => {
     const n = typeof num === 'string' ? parseFloat(num) : num;
     return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '');
@@ -330,9 +344,7 @@ const copyGlobalObsLink = () => {
     if (selectedMatchId.value) query += `&match_id=${selectedMatchId.value}`;
     if (searchQuery.value) query += `&search=${encodeURIComponent(searchQuery.value)}`;
     navigator.clipboard.writeText(baseUrl + query);
-    let msg = `✅ Link OBS Copiado!`;
-    if(searchQuery.value) msg += `\nTrackeando: "${searchQuery.value}"`;
-    alert(msg);
+    alert(`✅ Link OBS Copiado!`);
 };
 
 const copyTrackingLink = (targetName: string) => {
@@ -363,8 +375,8 @@ const copyTrackingLink = (targetName: string) => {
           <span class="text-xs font-bold tracking-wider uppercase text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
              {{ selectedTournament?.name || 'Selecciona Torneo' }}
           </span>
-          <!-- Botón Configuración Torneo -->
-          <button @click="openSettingsModal" class="p-1 hover:text-[var(--rankit-neon)] transition" title="Configurar Torneo">
+          <!-- Botón Configuración (Aquí está el ELIMINAR) -->
+          <button @click="openSettingsModal" class="p-1 hover:text-[var(--rankit-neon)] transition" title="Configurar / Eliminar Torneo">
              <i class="ph-bold ph-gear"></i>
           </button>
         </div>
@@ -409,12 +421,18 @@ const copyTrackingLink = (targetName: string) => {
       <!-- LEFT COLUMN -->
       <aside class="space-y-6 lg:col-span-4">
         
-        <!-- Tournament Selector -->
+        <!-- Tournament Selector & CREATE BUTTON -->
         <div class="p-4 brutal-card bg-white dark:bg-[#0a0a0a]">
              <label class="text-[10px] font-bold uppercase text-gray-500 mb-2 block">Seleccionar Torneo</label>
-             <select v-model="selectedTournamentId" class="w-full text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none">
-                 <option v-for="t in props.tournaments" :key="t.id" :value="t.id">{{ t.name }}</option>
-             </select>
+             <div class="flex gap-2">
+                 <select v-model="selectedTournamentId" class="w-full text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none">
+                     <option v-for="t in props.tournaments" :key="t.id" :value="t.id">{{ t.name }}</option>
+                 </select>
+                 <!-- BOTÓN CREAR -->
+                 <button @click="showCreateModal = true" class="px-3 text-white transition bg-black rounded dark:bg-white dark:text-black hover:opacity-80" title="Crear Nuevo Torneo">
+                     <i class="ph-bold ph-plus"></i>
+                 </button>
+             </div>
         </div>
 
         <!-- MANAGER PANEL -->
@@ -515,15 +533,12 @@ const copyTrackingLink = (targetName: string) => {
                 </div>
                 
                 <div class="flex gap-2">
-                    <!-- Botón Editar Código -->
                     <button @click.stop="openEditMatchModal(match)" class="p-1 hover:text-blue-500" title="Editar Código">
                         <i class="ph ph-pencil-simple"></i>
                     </button>
-                    <!-- Botón Subir Replay -->
                     <button @click.stop="openUploadModal(match.id)" class="p-1 hover:text-[var(--rankit-neon)]" title="Subir Replay">
                         <i class="ph ph-upload-simple"></i>
                     </button>
-                    <!-- Botón Eliminar -->
                     <button @click.stop="deleteMatch(match.id)" class="p-1 hover:text-red-500" title="Eliminar">
                         <i class="ph ph-trash"></i>
                     </button>
@@ -537,40 +552,51 @@ const copyTrackingLink = (targetName: string) => {
       <div class="space-y-6 lg:col-span-8">
         
         <!-- Header & Filters & Search -->
-        <div class="flex flex-col items-center justify-between gap-4 pb-4 border-b border-gray-300 md:flex-row dark:border-gray-800">
-          <div>
-              <h2 class="text-2xl font-bold text-black uppercase font-display dark:text-white">
-                  {{ selectedMatchId ? `Partida Individual` : 'Ranking Global' }}
-              </h2>
-              <p class="text-xs font-bold tracking-wide text-gray-500 uppercase">
-                  {{ filteredLeaderboard.length }} Resultados
-              </p>
+        <div class="flex flex-col gap-4 pb-4 border-b border-gray-300 dark:border-gray-800">
+          <div class="flex flex-col items-start justify-between md:flex-row md:items-center">
+              <div>
+                  <h2 class="text-2xl font-bold text-black uppercase font-display dark:text-white">
+                      {{ selectedMatchId ? `Partida Individual` : 'Ranking Global' }}
+                  </h2>
+                  <p class="text-xs font-bold tracking-wide text-gray-500 uppercase">
+                      {{ filteredLeaderboard.length }} Resultados
+                  </p>
+              </div>
+
+              <!-- Filtro de Modalidad Global -->
+              <div v-if="!selectedMatchId" class="flex flex-wrap gap-1 mt-2 md:mt-0">
+                 <button 
+                    v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" 
+                    :key="m"
+                    @click="filterMode=m; fetchLeaderboard(selectedTournament!, null)"
+                    :class="filterMode===m ? 'bg-[var(--rankit-neon)] text-white shadow' : 'bg-gray-200 dark:bg-white/5 text-gray-500 hover:text-black dark:hover:text-white'"
+                    class="px-3 py-1 text-[10px] font-bold uppercase rounded transition whitespace-nowrap"
+                 >
+                    {{ m }}
+                 </button>
+              </div>
           </div>
 
-          <div class="flex flex-col items-center w-full gap-2 md:flex-row md:w-auto">
-                <!-- Buscador -->
+          <div class="flex flex-col items-center w-full gap-2 md:flex-row md:w-auto md:ml-auto">
                <div class="relative w-full md:w-48">
                    <i class="absolute text-gray-500 -translate-y-1/2 ph ph-magnifying-glass left-2 top-1/2"></i>
                    <input v-model="searchQuery" type="text" placeholder="Buscar..." class="w-full pl-8 pr-2 py-1 text-[10px] font-bold uppercase bg-gray-200 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded outline-none text-black dark:text-white transition" />
                </div>
 
-               <!-- Filtros Tipo -->
                <div class="flex p-1 bg-gray-200 rounded-lg dark:bg-white/5">
                    <button @click="leaderboardType='players'; fetchLeaderboard(selectedTournament!, selectedMatchId)" :class="leaderboardType==='players'?'bg-white dark:bg-gray-700 shadow text-black dark:text-white':'text-gray-500'" class="px-3 py-1 text-[10px] font-bold uppercase rounded transition">Players</button>
                    <button @click="leaderboardType='teams'; fetchLeaderboard(selectedTournament!, selectedMatchId)" :class="leaderboardType==='teams'?'bg-white dark:bg-gray-700 shadow text-black dark:text-white':'text-gray-500'" class="px-3 py-1 text-[10px] font-bold uppercase rounded transition">Teams</button>
                </div>
                
-               <!-- Sort -->
                <button @click="sortBy = sortBy==='points'?'kills':'points'; fetchLeaderboard(selectedTournament!, selectedMatchId)" class="px-3 py-1 text-[10px] font-bold uppercase border border-gray-300 dark:border-gray-700 rounded hover:border-[var(--rankit-neon)] transition text-black dark:text-white">
                    {{ sortBy === 'points' ? 'Pts' : 'Kills' }}
                </button>
           </div>
         </div>
 
-        <!-- LEADERBOARD TABLE (Con Spinner Overlay si carga) -->
+        <!-- LEADERBOARD TABLE -->
         <div class="brutal-card bg-white dark:bg-[#0a0a0a] min-h-[400px] relative">
           
-          <!-- Overlay de Carga -->
           <div v-if="loadingLeaderboard" class="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm">
              <div class="flex flex-col items-center gap-2">
                  <div class="w-10 h-10 border-4 border-[var(--rankit-neon)] border-t-transparent rounded-full animate-spin"></div>
@@ -631,7 +657,35 @@ const copyTrackingLink = (targetName: string) => {
       </div>
     </main>
 
-    <!-- MODAL SETTINGS (Editar Torneo) -->
+    <!-- MODAL CREAR TORNEO (ACTUALIZADO CON TWITCH) -->
+    <Modal :show="showCreateModal" @close="showCreateModal = false" maxWidth="sm">
+        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+            <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Nuevo Torneo</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre</label>
+                    <input v-model="formCreateTournament.name" type="text" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" placeholder="Ej: Torneo Verano 2025" />
+                </div>
+                <!-- CAMPO TWITCH AGREGADO -->
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Canal de Twitch (Opcional)</label>
+                    <div class="flex items-center gap-2 bg-gray-100 dark:bg-white/5 rounded p-2 border border-transparent focus-within:border-[#9146FF]">
+                        <i class="ph-bold ph-twitch-logo text-[#9146FF]"></i>
+                        <input v-model="formCreateTournament.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full p-0 text-sm bg-transparent border-none outline-none focus:ring-0" />
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="showCreateModal = false" class="flex-1 py-3 text-xs font-bold uppercase border border-gray-300 dark:border-gray-700">Cancelar</button>
+                    <button @click="createTournament" :disabled="formCreateTournament.processing" class="flex-1 py-3 bg-[var(--rankit-neon)] text-white font-bold uppercase text-xs hover:opacity-90 transition">
+                        Crear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </Modal>
+
+    <!-- MODAL SETTINGS (Editar / Eliminar) -->
     <Modal :show="showSettingsModal" @close="showSettingsModal = false" maxWidth="md">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Configurar Torneo</h2>
@@ -646,13 +700,14 @@ const copyTrackingLink = (targetName: string) => {
                         <i class="ph-bold ph-twitch-logo text-[#9146FF]"></i>
                         <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full p-0 text-sm bg-transparent border-none outline-none focus:ring-0" />
                     </div>
+                    <p class="text-[9px] text-gray-500 mt-1">Si lo agregas, se mostrará el stream en la página pública.</p>
                 </div>
 
                 <div class="flex gap-2 pt-2">
                     <button @click="updateTournament" :disabled="formSettings.processing" class="flex-1 py-3 bg-[var(--rankit-neon)] text-white font-bold uppercase text-xs hover:opacity-90 transition">
                         Guardar Cambios
                     </button>
-                    <!-- Solo mostrar botón borrar si no hay partidas -->
+                    <!-- BOTÓN ELIMINAR (Solo si no tiene partidas) -->
                     <button 
                         v-if="selectedTournament?.matches.length === 0" 
                         @click="deleteTournament" 
@@ -661,6 +716,9 @@ const copyTrackingLink = (targetName: string) => {
                     >
                         <i class="ph-bold ph-trash"></i>
                     </button>
+                    <div v-else class="flex items-center justify-center px-4 text-gray-400 border border-gray-200 cursor-not-allowed dark:border-gray-800" title="No puedes borrar un torneo con partidas">
+                        <i class="ph-bold ph-trash"></i>
+                    </div>
                 </div>
             </div>
         </div>

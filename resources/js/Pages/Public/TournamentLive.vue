@@ -30,6 +30,7 @@ interface TournamentInfo {
     id?: number;
     name?: string;
     progress?: string;
+    twitch_channel?: string; // Nuevo campo para el stream
 }
 
 interface LiveDataResponse {
@@ -103,6 +104,8 @@ const loadData = async () => {
         if(res.data.tournament) {
             tournamentData.value.name = res.data.tournament.name;
             progressText.value = res.data.tournament.progress || '';
+            // Actualizar canal twitch si cambia dinámicamente
+            tournamentData.value.twitch_channel = res.data.tournament.twitch_channel; 
         }
         
     } catch (e) { 
@@ -145,6 +148,12 @@ const copyPublicLink = () => {
     navigator.clipboard.writeText(window.location.href);
     alert("✅ Enlace público copiado al portapapeles.");
 }
+
+// --- TWITCH ---
+const getTwitchUrl = (channel: string) => {
+    const parent = window.location.hostname;
+    return `https://player.twitch.tv/?channel=${channel}&parent=${parent}&muted=false`;
+};
 
 onMounted(() => {
   // Init Theme
@@ -196,8 +205,25 @@ onUnmounted(() => {
       </div>
     </nav>
 
+    <!-- STREAM SECTION (Si existe canal de Twitch) -->
+    <div v-if="tournamentData.twitch_channel" class="pt-20 bg-black">
+        <div class="w-full aspect-video max-w-7xl mx-auto lg:aspect-[21/9] xl:aspect-[24/9] max-h-[60vh] relative group">
+            <iframe
+                :src="getTwitchUrl(tournamentData.twitch_channel)"
+                frameborder="0"
+                allowfullscreen="true"
+                scrolling="no"
+                class="w-full h-full"
+            ></iframe>
+            <!-- Botón para cerrar/colapsar visualmente (opcional) -->
+            <div class="absolute bottom-4 right-4 bg-black/80 text-white px-2 py-1 text-[10px] uppercase font-bold rounded pointer-events-none opacity-0 group-hover:opacity-100 transition">
+                Viendo a {{ tournamentData.twitch_channel }}
+            </div>
+        </div>
+    </div>
+
     <!-- HERO SECTION -->
-    <header class="relative min-h-[500px] h-auto flex items-end pt-24 overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]">
+    <header class="relative min-h-[500px] h-auto flex items-end overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
       <div class="absolute inset-0 z-0 pointer-events-none">
         <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80" class="w-full h-full object-cover opacity-20 dark:opacity-30 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear grayscale mix-blend-multiply dark:mix-blend-overlay" />
         <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
