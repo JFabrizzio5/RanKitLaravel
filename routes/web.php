@@ -43,6 +43,7 @@ Route::get('/profile/rankit', function () {
     // Llama al controlador original manteniendo la inyección de dependencias
     return app()->call([ProfilePageController::class, 'show']);
 })->name('rankit.profile');
+
 // 2. Copa Bellz
 Route::get('/BellzCup', function () {
     return Inertia::render('BellzCup/Index');
@@ -91,12 +92,17 @@ Route::middleware('auth')->group(function () {
         
         // Crear Torneo
         Route::post('/tournaments', [TournamentParserController::class, 'store'])->name('jangel.tournament.store');
-                Route::put('/tournaments/{id}', [TournamentParserController::class, 'update'])->name('jangel.tournament.update');
-        // Eliminar
+        Route::put('/tournaments/{id}', [TournamentParserController::class, 'update'])->name('jangel.tournament.update');
+        
+        // Eliminar Torneo
         Route::delete('/tournaments/{id}', [TournamentParserController::class, 'destroy'])->name('jangel.tournament.delete');
         
         // Crear Slot (Código)
         Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');
+
+        // --- RUTA QUE FALTABA (SOLUCIÓN AL ERROR ZIGGY) ---
+        // Actualizar partida (Editar código)
+        Route::put('/match/{id}', [TournamentParserController::class, 'updateMatch'])->name('jangel.match.update');
         
         // Procesar Replay (Nombre restaurado para compatibilidad con Vue)
         // Antes era: jangel.match.process, pero tu Vue usa: tournaments.process-replay
@@ -111,6 +117,5 @@ Route::middleware('auth')->group(function () {
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
     });
 });
-Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
-    ->name('api.public.data');
+
 require __DIR__.'/auth.php';
