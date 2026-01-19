@@ -157,6 +157,26 @@ const copyObsLink = () => {
     alert(`✅ Link OBS Copiado!\n\nConfiguración:\n• Modo: ${filterMode.value.toUpperCase()}\n• Vista: ${leaderboardType.value.toUpperCase()}\n• Orden: ${sortBy.value.toUpperCase()}\n• Match: ${selectedMatchId.value ? '#' + selectedMatchId.value : 'Global'}`);
 };
 
+// Función para copiar link de Tracking individual
+const copyTrackingLink = (item: PublicRankingItem) => {
+    const id = props.tournament?.id || tournamentData.value.id;
+    if (!id) return;
+
+    let targetName = item.player_name;
+    // Si es equipos, usamos el primer nombre de miembro para buscar
+    if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
+        targetName = item.member_names[0];
+    }
+
+    if (!targetName) return;
+
+    const baseUrl = `${window.location.origin}/widget/obs/global/${id}`;
+    const query = `?type=${leaderboardType.value}&mode=all&sort=${sortBy.value}&limit=1&search=${encodeURIComponent(targetName)}`;
+    
+    navigator.clipboard.writeText(baseUrl + query);
+    alert(`✅ Tracking OBS copiado para: ${targetName}`);
+};
+
 const copyPublicLink = () => {
     navigator.clipboard.writeText(window.location.href);
     alert("✅ Enlace público copiado al portapapeles.");
@@ -390,11 +410,16 @@ onUnmounted(() => {
                                 </tr>
                                 <tr v-if="expandedRowIndex === idx" class="bg-[var(--rankit-neon)]/5">
                                     <td colspan="5" class="p-4">
-                                        <div class="grid grid-cols-2 gap-4 text-xs md:grid-cols-4">
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Puntos</span><span class="text-lg font-bold">{{ formatDec(item.avg_points) }}</span></div>
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Kills</span><span class="text-lg font-bold text-red-500">{{ formatDec(item.avg_kills) }}</span></div>
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Top</span><span class="text-lg font-bold text-yellow-500">#{{ formatDec(item.avg_placement) }}</span></div>
-                                            <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Mejor Top</span><span class="text-lg font-bold text-white">#{{ item.best_placement }}</span></div>
+                                        <div class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                                            <div class="grid flex-1 w-full grid-cols-2 gap-4 text-xs md:grid-cols-4 md:w-auto">
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Puntos</span><span class="text-lg font-bold">{{ formatDec(item.avg_points) }}</span></div>
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Kills</span><span class="text-lg font-bold text-red-500">{{ formatDec(item.avg_kills) }}</span></div>
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Top</span><span class="text-lg font-bold text-yellow-500">#{{ formatDec(item.avg_placement) }}</span></div>
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Mejor Top</span><span class="text-lg font-bold text-white">#{{ item.best_placement }}</span></div>
+                                            </div>
+                                            <button @click.stop="copyTrackingLink(item)" class="px-3 py-2 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase rounded hover:opacity-80 transition flex items-center gap-2 whitespace-nowrap w-full md:w-auto justify-center">
+                                                <i class="ph ph-target"></i> Copiar Tracking OBS
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
