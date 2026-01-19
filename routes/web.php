@@ -117,5 +117,6 @@ Route::middleware('auth')->group(function () {
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
     });
 });
-
+Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
+    ->name('api.public.data');
 require __DIR__.'/auth.php';
