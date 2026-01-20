@@ -296,10 +296,32 @@ const deleteMatch = (id: number) => {
     }
 };
 
-// --- SUBIDA REPLAY ---
+// --- SUBIDA REPLAY (CORREGIDO) ---
 const openUploadModal = (matchId: number | null = null) => {
-    formReplay.reset();
+    formReplay.reset(); // Esto resetea mode a 2 por defecto
     formReplay.target_match_id = matchId;
+    
+    // --- FIX: Si es una partida existente, detectamos su modo y lo asignamos ---
+    if (matchId && selectedTournament.value) {
+        const match = selectedTournament.value.matches.find(m => m.id === matchId);
+        
+        if (match) {
+            // Mapeamos el string de la DB al entero que requiere la API
+            const modeMap: Record<string, number> = { 
+                'solo': 1, 
+                'duo': 2, 
+                'trio': 3, 
+                'squad': 4 
+            };
+            
+            // Si encontramos el modo, lo asignamos. Si no, se queda en 2 por defecto.
+            if (modeMap[match.game_mode]) {
+                formReplay.mode = modeMap[match.game_mode];
+            }
+        }
+    }
+    // --------------------------------------------------------------------------
+
     showMatchModal.value = true;
     uploadProgress.value = 0;
 };
