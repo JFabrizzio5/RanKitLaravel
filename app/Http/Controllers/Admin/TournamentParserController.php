@@ -42,11 +42,11 @@ class TournamentParserController extends Controller
             Schema::create('tournament_matches', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('tournament_id');
-                $table->string('match_id')->unique();
+                $table->string('match_id')->unique(); // Aquí guardaremos la firma única
                 $table->string('game_mode')->default('solo');
                 $table->string('map_name')->nullable();
-                $table->string('custom_code')->nullable(); // NUEVO: Código de partida personalizada
-                $table->json('raw_data')->nullable(); // Si es null, es una partida programada/pendiente
+                $table->string('custom_code')->nullable(); 
+                $table->json('raw_data')->nullable(); 
                 $table->timestamps();
             });
         }
@@ -81,7 +81,7 @@ class TournamentParserController extends Controller
             });
         }
 
-        // Parches en caliente (por si la tabla ya existía sin estas columnas)
+        // Parches en caliente
         if (Schema::hasTable('tournament_matches')) {
             Schema::table('tournament_matches', function (Blueprint $table) {
                 if (!Schema::hasColumn('tournament_matches', 'game_mode')) {
@@ -131,8 +131,6 @@ class TournamentParserController extends Controller
             'updated_at' => now(),
         ];
 
-        // --- FIX CRÍTICO: Rellenar columnas legacy si existen ---
-        // Si tu DB antigua tiene 'table_name' o 'slug' como obligatorios, esto lo soluciona
         if (Schema::hasColumn('tournaments', 'table_name')) {
             $data['table_name'] = Str::slug($request->name) . '_' . time(); 
         }
@@ -145,7 +143,6 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Torneo creado correctamente.');
     }
 
-    // Actualizar Torneo (Nombre y Twitch)
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -162,7 +159,6 @@ class TournamentParserController extends Controller
             $data['twitch_channel'] = $request->twitch_channel;
         }
 
-        // También actualizamos slug/table_name si existen al editar
         if (Schema::hasColumn('tournaments', 'slug')) {
             $data['slug'] = Str::slug($request->name);
         }
@@ -172,7 +168,6 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Torneo actualizado.');
     }
 
-    // Eliminar Torneo (Solo si está vacío)
     public function destroy($id)
     {
         $matchCount = DB::table('tournament_matches')->where('tournament_id', $id)->count();
@@ -185,7 +180,6 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Torneo eliminado.');
     }
 
-    // Crear partida programada solo con código
     public function storeScheduledMatch(Request $request, $tournamentId)
     {
         $request->validate([
@@ -208,7 +202,6 @@ class TournamentParserController extends Controller
         return back()->with('success', 'Partida programada creada. Comparte el código con los jugadores.');
     }
 
-    // Editar código de partida existente
     public function updateMatch(Request $request, $id)
     {
         $request->validate([
@@ -239,6 +232,7 @@ class TournamentParserController extends Controller
         }
     }
 
+    // --- LÓGICA DE PROCESAMIENTO INTELIGENTE ---
     public function processReplay(Request $request, $id)
     {
         $this->ensureDatabaseIsReady();
@@ -274,36 +268,58 @@ class TournamentParserController extends Controller
 
             DB::beginTransaction();
 
-            $matchUid = $data['fileName'] ?? uniqid('match_');
+            // 1. GENERAR FIRMA ÚNICA DEL CONTENIDO
+            // Como el 'fileName' es temporal (tmpyuqkYO.tmp), no sirve para identificar duplicados.
+            // Usamos el contenido del 'teamLeaderboard' para crear un hash único de esta partida.
+            $contentSignature = md5(json_encode($data['teamLeaderboard'] ?? []));
+            $matchUid = 'sig_' . $contentSignature;
+            
             $currentMatchId = null;
 
+            // 2. DETECCIÓN DE DUPLICADOS O ACTUALIZACIÓN
             if ($targetMatchId) {
-                // ACTUALIZAR partida existente (programada)
-                DB::table('tournament_matches')->where('id', $targetMatchId)->update([
-                    'match_id' => $matchUid . '_' . time(),
-                    'raw_data' => json_encode($data),
-                    'updated_at' => now(),
-                ]);
+                // Caso A: Overwrite explícito (usuario seleccionó una partida para subir)
                 $currentMatchId = $targetMatchId;
-
-                // Limpiar stats viejas
-                DB::table('player_match_stats')->where('tournament_match_id', $targetMatchId)->delete();
-                DB::table('team_match_stats')->where('tournament_match_id', $targetMatchId)->delete();
-
-            } else {
-                // CREAR nueva partida
-                $currentMatchId = DB::table('tournament_matches')->insertGetId([
-                    'tournament_id' => $id,
-                    'match_id' => $matchUid . '_' . time(),
-                    'game_mode' => $this->getModeName($mode),
-                    'map_name' => 'Island',
+                
+                DB::table('tournament_matches')->where('id', $currentMatchId)->update([
+                    'match_id' => $matchUid, // Actualizamos la firma
                     'raw_data' => json_encode($data),
                     'updated_at' => now(),
-                    'created_at' => now(),
                 ]);
+            } else {
+                // Caso B: Subida nueva -> BUSCAR SI YA EXISTE POR FIRMA
+                $duplicateMatch = DB::table('tournament_matches')
+                    ->where('tournament_id', $id)
+                    ->where('match_id', $matchUid) // Buscamos por la firma de contenido
+                    ->first();
+
+                if ($duplicateMatch) {
+                    // ¡ES DUPLICADA! Usamos la existente para no sumar puntos dobles
+                    $currentMatchId = $duplicateMatch->id;
+                    DB::table('tournament_matches')->where('id', $currentMatchId)->update([
+                        'raw_data' => json_encode($data),
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    // ES NUEVA DE VERDAD
+                    $currentMatchId = DB::table('tournament_matches')->insertGetId([
+                        'tournament_id' => $id,
+                        'match_id' => $matchUid,
+                        'game_mode' => $this->getModeName($mode),
+                        'map_name' => 'Island',
+                        'raw_data' => json_encode($data),
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]);
+                }
             }
 
-            // --- PROCESAR JUGADORES ---
+            // 3. LIMPIEZA DE DATOS VIEJOS (Crucial para no duplicar puntos dentro de la misma partida)
+            DB::table('player_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
+            DB::table('team_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
+
+            // 4. INSERTAR DATOS (Solo la "primera parte" si así lo prefieres, pero esto es estándar)
+            // Usamos playerLeaderboard para estadísticas individuales detalladas
             $players = $data['playerLeaderboard'] ?? [];
             foreach ($players as $p) {
                 if (($p['isBot'] ?? false) || ($p['playerName'] ?? '') === 'Unknown') {
@@ -319,7 +335,7 @@ class TournamentParserController extends Controller
                     'damage_taken' => 0,
                     'extra_stats' => json_encode([
                         'teamId' => $p['teamId'] ?? -1,
-                        'totalPoints' => $p['totalPoints'] ?? 0,
+                        'totalPoints' => $p['totalPoints'] ?? 0, // Puntos totales ya calculados por el parser
                         'killPoints' => $p['killPoints'] ?? 0,
                         'placementPoints' => $p['placementPoints'] ?? 0,
                         'knocks' => $p['knocks'] ?? 0,
@@ -329,7 +345,7 @@ class TournamentParserController extends Controller
                 ]);
             }
 
-            // --- PROCESAR EQUIPOS ---
+            // Usamos teamLeaderboard para estadísticas de equipo
             $teams = $data['teamLeaderboard'] ?? [];
             foreach ($teams as $t) {
                 $members = $t['memberNames'] ?? [];
@@ -357,6 +373,11 @@ class TournamentParserController extends Controller
             }
 
             DB::commit();
+            
+            // Mensaje informativo dependiendo de si fue actualización o creación
+            if (isset($duplicateMatch)) {
+                return back()->with('success', "Replay ACTUALIZADA (Se detectó duplicado por contenido).");
+            }
             return back()->with('success', "Replay procesada correctamente.");
 
         } catch (\Exception $e) {
