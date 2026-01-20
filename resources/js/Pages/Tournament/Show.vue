@@ -83,6 +83,25 @@ async function viewerStart() {
   const data = await res.json()
   viewerSessionId.value = data.session_id ?? null
 }
+async function viewerStopServer() {
+  if (!viewerSessionId.value) return
+
+  try {
+    await fetch(route('bellzcup.viewer.stop'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ session_id: viewerSessionId.value }),
+    })
+  } catch (e) {
+    // best-effort
+  }
+}
 
 async function viewerHeartbeat() {
   if (!viewerEnabled.value) return
@@ -112,11 +131,12 @@ function viewerStop() {
     viewerInterval = null
   }
 
-  // best-effort último ping
-  try { viewerHeartbeat() } catch (e) {}
+  // best-effort: manda stop al server para desactivar sesión
+  viewerStopServer()
 
   viewerSessionId.value = null
 }
+
 
 const switchTab = (tab: string) => {
   activeTab.value = tab
@@ -126,7 +146,7 @@ const switchTab = (tab: string) => {
       if (!viewerInterval) {
         viewerInterval = setInterval(() => {
           viewerHeartbeat()
-        }, 20_000)
+        }, 120_000)
       }
     })
   } else {

@@ -5,7 +5,7 @@ use App\Http\Controllers\TournamentController; // Importamos el nuevo controlado
 use App\Http\Controllers\TournamentsController; // Controlador para la vista de detalle del torneo
 use App\Http\Controllers\ProfilePageController;
 use App\Http\Controllers\Auth\GoogleController;
-
+use App\Http\Controllers\BellzCupViewerController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -71,11 +71,14 @@ Route::middleware(['auth'])->group(function () {
         ->name('bellzcup.referidos.redeem');
 });
 Route::middleware(['auth'])->group(function () {
-    Route::post('/bellzcup/viewer/start', [\App\Http\Controllers\BellzCupViewerController::class, 'start'])
+    Route::post('/bellzcup/viewer/start', [BellzCupViewerController::class, 'start'])
         ->name('bellzcup.viewer.start');
 
-    Route::post('/bellzcup/viewer/heartbeat', [\App\Http\Controllers\BellzCupViewerController::class, 'heartbeat'])
+    Route::post('/bellzcup/viewer/heartbeat', [BellzCupViewerController::class, 'heartbeat'])
         ->name('bellzcup.viewer.heartbeat');
+
+    Route::post('/bellzcup/viewer/stop', [BellzCupViewerController::class, 'stop'])
+        ->name('bellzcup.viewer.stop');
 });
 
 

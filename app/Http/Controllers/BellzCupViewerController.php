@@ -18,12 +18,20 @@ class BellzCupViewerController extends Controller
 
     /**
      * Cada cuántos segundos se otorga 1 punto
-     * 60 = 1 min (para pruebas). En prod puedes poner 600 = 10 min.
+     * 60 = 1 min (pruebas). En prod puedes poner 600 = 10 min.
      */
     private const POINT_SECONDS = 60;
 
     /**
-     * Crea un insert nuevo al entrar a "comunidad"
+     * Anti-trampa / anti-sleep:
+     * Si el navegador estuvo dormido mucho tiempo, capea el delta máximo por ping.
+     * Ajusta o ponlo en null si no quieres cap.
+     */
+    private const MAX_DELTA_SECONDS = 300; // 5 min
+
+    /**
+     * START: crea o reinicia UNA sola sesión por usuario (O(1))
+     * Tabla requerida: bellzcup_viewer_sessions (UNIQUE userid)
      */
     public function start(Request $request)
     {
@@ -34,20 +42,45 @@ class BellzCupViewerController extends Controller
             return response()->json(['message' => 'Viewer points aún no activos'], 403);
         }
 
-        $id = DB::table('bellzcup_viewerpoints')->insertGetId([
-            'userid'         => $userId,
-            'tiempo_inicial' => $now,
-            'tiempo_final'   => $now,
-            'point_boole'    => 0,
-            'created_at'     => $now,
-            'updated_at'     => $now,
-        ]);
+        // Upsert (1 fila por usuario)
+        DB::statement(
+            "INSERT INTO bellzcup_viewer_sessions
+                (userid, started_at, last_ping_at, acc_seconds, active, created_at, updated_at)
+             VALUES
+                (?, ?, ?, 0, 1, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                started_at   = VALUES(started_at),
+                last_ping_at = VALUES(last_ping_at),
+                acc_seconds  = 0,
+                active       = 1,
+                updated_at   = VALUES(updated_at)",
+            [
+                $userId,
+                $now->toDateTimeString(),
+                $now->toDateTimeString(),
+                $now->toDateTimeString(),
+                $now->toDateTimeString(),
+            ]
+        );
 
-        return response()->json(['session_id' => $id]);
+        // Obtener session_id
+        $row = DB::selectOne(
+            "SELECT id FROM bellzcup_viewer_sessions WHERE userid = ? LIMIT 1",
+            [$userId]
+        );
+
+        return response()->json(['session_id' => (int) ($row->id ?? 0)]);
     }
 
     /**
-     * Cada X segundos actualiza tiempo_final y si ya juntó >= POINT_SECONDS, otorga 1 punto
+     * HEARTBEAT O(1):
+     * - Bloquea solo la fila de sesión del usuario
+     * - Calcula delta, acumula segundos, decide puntos, guarda overflow
+     * - Upsert en rifapoints sumando puntos
+     *
+     * Tablas requeridas:
+     * - bellzcup_viewer_sessions (UNIQUE userid)
+     * - bellzcup_rifapoints (UNIQUE userid recomendado)
      */
     public function heartbeat(Request $request)
     {
@@ -63,147 +96,129 @@ class BellzCupViewerController extends Controller
             return response()->json(['message' => 'Viewer points aún no activos'], 403);
         }
 
-        $awarded = false;
+        // username para rifapoints (solo si se otorgan puntos)
+        $username = null;
 
-        DB::transaction(function () use ($userId, $sessionId, $now, &$awarded) {
+        $awardedPoints = 0;
 
-            // 1) Sesión actual (debe ser del usuario)
-            $current = DB::table('bellzcup_viewerpoints')
-                ->where('id', $sessionId)
-                ->where('userid', $userId)
-                ->lockForUpdate()
-                ->first();
+        DB::transaction(function () use ($userId, $sessionId, $now, &$awardedPoints, &$username) {
 
-            if (!$current) {
-                logger()->warning('viewer heartbeat: session not found', [
-                    'userId' => $userId,
-                    'sessionId' => $sessionId,
-                ]);
+            // 1) Lock de la sesión (1 fila)
+            $pointSeconds = (int) self::POINT_SECONDS;
+            $maxDelta = (int) self::MAX_DELTA_SECONDS;
+
+            // Nota: usamos LEAST(delta, maxDelta) para capear.
+            $session = DB::selectOne(
+                "SELECT
+                    id,
+                    userid,
+                    last_ping_at,
+                    acc_seconds,
+                    LEAST(GREATEST(0, TIMESTAMPDIFF(SECOND, last_ping_at, ?)), ?) AS delta_seconds,
+                    (acc_seconds + LEAST(GREATEST(0, TIMESTAMPDIFF(SECOND, last_ping_at, ?)), ?)) AS acc_total,
+                    FLOOR((acc_seconds + LEAST(GREATEST(0, TIMESTAMPDIFF(SECOND, last_ping_at, ?)), ?)) / ?) AS award_points,
+                    MOD((acc_seconds + LEAST(GREATEST(0, TIMESTAMPDIFF(SECOND, last_ping_at, ?)), ?)), ?) AS acc_remainder
+                 FROM bellzcup_viewer_sessions
+                 WHERE id = ?
+                   AND userid = ?
+                   AND active = 1
+                 FOR UPDATE",
+                [
+                    $now->toDateTimeString(), $maxDelta,
+                    $now->toDateTimeString(), $maxDelta,
+                    $now->toDateTimeString(), $maxDelta, $pointSeconds,
+                    $now->toDateTimeString(), $maxDelta, $pointSeconds,
+                    $sessionId,
+                    $userId,
+                ]
+            );
+
+            if (!$session) {
+                // sesión inválida o inactiva
                 return;
             }
 
-            // Ya otorgada => no hacer nada
-            if ((int) $current->point_boole === 1) {
-                logger()->info('viewer heartbeat: already awarded', [
-                    'userId' => $userId,
-                    'sessionId' => $sessionId,
-                ]);
+            $awardedPoints = (int) ($session->award_points ?? 0);
+            $accRemainder  = (int) ($session->acc_remainder ?? 0);
+
+            // 2) Update de la sesión (siempre)
+            DB::statement(
+                "UPDATE bellzcup_viewer_sessions
+                 SET last_ping_at = ?,
+                     acc_seconds  = ?,
+                     updated_at   = ?
+                 WHERE id = ?
+                   AND userid = ?
+                   AND active = 1",
+                [
+                    $now->toDateTimeString(),
+                    $accRemainder,
+                    $now->toDateTimeString(),
+                    $sessionId,
+                    $userId,
+                ]
+            );
+
+            // 3) Si no hay puntos, termina
+            if ($awardedPoints <= 0) {
                 return;
             }
 
-            // 2) Actualizar tiempo_final del actual
-            DB::table('bellzcup_viewerpoints')
-                ->where('id', $sessionId)
-                ->update([
-                    'tiempo_final' => $now,
-                    'updated_at'   => $now,
-                ]);
+            // 4) username (solo si hay puntos)
+            $u = DB::selectOne("SELECT name FROM users WHERE id = ? LIMIT 1", [$userId]);
+            $username = $u->name ?? ('user_' . $userId);
 
-            // (Opcional) log de la fila actualizada (sirve mucho para debug)
-            $rowAfter = DB::table('bellzcup_viewerpoints')->where('id', $sessionId)->first();
-            logger()->info('viewer row after update', [
-                'userId' => $userId,
-                'sessionId' => $sessionId,
-                'now' => $now->toDateTimeString(),
-                'tiempo_inicial' => $rowAfter->tiempo_inicial ?? null,
-                'tiempo_final' => $rowAfter->tiempo_final ?? null,
-            ]);
-
-            // 3) Traer todas las filas no consumidas (point_boole=0)
-            $rowsFalse = DB::table('bellzcup_viewerpoints')
-                ->where('userid', $userId)
-                ->where('point_boole', 0)
-                ->lockForUpdate()
-                ->get(['id', 'tiempo_inicial', 'tiempo_final']);
-
-            // 4) Sumar segundos (FIX: evitar líos de timezone parseando directo a epoch)
-            $totalSeconds = 0;
-            foreach ($rowsFalse as $r) {
-                $start = strtotime($r->tiempo_inicial);
-                $end   = strtotime($r->tiempo_final);
-                if ($end > $start) {
-                    $totalSeconds += ($end - $start);
-                }
-            }
-
-            logger()->info('viewer seconds', [
-                'userId' => $userId,
-                'sessionId' => $sessionId,
-                'totalSeconds' => $totalSeconds,
-                'threshold' => self::POINT_SECONDS,
-                'rowsFalseCount' => $rowsFalse->count(),
-            ]);
-
-            // 5) Aún no llega
-            if ($totalSeconds < self::POINT_SECONDS) {
-                return;
-            }
-
-            // 6) Llegó => otorgar 1 punto
-            $awarded = true;
-            $overflow = $totalSeconds - self::POINT_SECONDS;
-
-            // 7) Consumir otras filas false (dejarlas en duración 0)
-            $otherFalseIds = $rowsFalse->pluck('id')->filter(fn ($id) => (int) $id !== $sessionId)->values();
-
-            if ($otherFalseIds->count()) {
-                DB::table('bellzcup_viewerpoints')
-                    ->whereIn('id', $otherFalseIds)
-                    ->update([
-                        'tiempo_final' => DB::raw('tiempo_inicial'),
-                        'updated_at'   => $now,
-                    ]);
-            }
-
-            // 8) Marcar la actual como true
-            DB::table('bellzcup_viewerpoints')
-                ->where('id', $sessionId)
-                ->update([
-                    'point_boole' => 1,
-                    'updated_at'  => $now,
-                ]);
-
-            // 9) Sumar +1 a rifapoints (con username cuando no exista)
-            $rifa = DB::table('bellzcup_rifapoints')
-                ->where('userid', $userId)
-                ->lockForUpdate()
-                ->first();
-
-            if ($rifa) {
-                DB::table('bellzcup_rifapoints')
-                    ->where('userid', $userId)
-                    ->update([
-                        'totalpoints' => (int) $rifa->totalpoints + 1,
-                        'updated_at'  => $now,
-                    ]);
-            } else {
-                $u = DB::table('users')->where('id', $userId)->first();
-
-                DB::table('bellzcup_rifapoints')->insert([
-                    'userid'      => $userId,
-                    'username'    => $u->name ?? ('user_' . $userId),
-                    'totalpoints' => 1,
-                    'created_at'  => $now,
-                    'updated_at'  => $now,
-                ]);
-            }
-
-            // 10) Crear siguiente fila false arrastrando overflow
-            $startNext = $overflow > 0 ? $now->copy()->subSeconds($overflow) : $now;
-
-            DB::table('bellzcup_viewerpoints')->insert([
-                'userid'         => $userId,
-                'tiempo_inicial' => $startNext,
-                'tiempo_final'   => $now,
-                'point_boole'    => 0,
-                'created_at'     => $now,
-                'updated_at'     => $now,
-            ]);
+            // 5) Upsert rifapoints (requiere UNIQUE(userid) recomendado)
+            DB::statement(
+                "INSERT INTO bellzcup_rifapoints (userid, username, totalpoints, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    totalpoints = totalpoints + VALUES(totalpoints),
+                    updated_at  = VALUES(updated_at),
+                    username    = COALESCE(username, VALUES(username))",
+                [
+                    $userId,
+                    $username,
+                    $awardedPoints,
+                    $now->toDateTimeString(),
+                    $now->toDateTimeString(),
+                ]
+            );
         });
 
         return response()->json([
-            'ok'      => true,
-            'awarded' => $awarded,
+            'ok'            => true,
+            'awarded'       => $awardedPoints > 0,
+            'awardedPoints' => $awardedPoints,
         ]);
+    }
+
+    /**
+     * STOP (opcional): desactiva la sesión
+     * Útil si quieres llamarlo cuando el usuario sale de "comunidad"
+     */
+    public function stop(Request $request)
+    {
+        $request->validate([
+            'session_id' => ['required', 'integer'],
+        ]);
+
+        $userId = (int) $request->user()->id;
+        $sessionId = (int) $request->integer('session_id');
+        $now = now('America/Mexico_City');
+
+        DB::statement(
+            "UPDATE bellzcup_viewer_sessions
+             SET active = 0,
+                 updated_at = ?
+             WHERE id = ? AND userid = ?",
+            [
+                $now->toDateTimeString(),
+                $sessionId,
+                $userId,
+            ]
+        );
+
+        return response()->json(['ok' => true]);
     }
 }
