@@ -12,19 +12,19 @@ class ProfilePageController extends Controller
     {
         // Mock user/profile
         $profile = [
-            'username' => 'xSlayer99',
+            'username' => 'Bellz',
             'country' => 'México',
             'member_since' => 2023,
             'badge' => 'Pro Player',
             'win_rate' => 68.5,
             'tournaments' => 14,
-            'avatar' => 'https://i.pravatar.cc/150?img=12',
+            'avatar' => 'https://static-cdn.jtvnw.net/jtv_user_pictures/008b9b4e-651c-4d3b-b14b-5b2122898c8d-profile_image-70x70.png',
         ];
 
         // Mock active tournaments
         $activeTournaments = [
             [
-                'name' => 'Neon City Cup',
+                'name' => 'BellzCup',
                 'status' => 'En Curso',
                 'match_code' => 'M-9921',
                 'lobby_url' => '/lobby/M-9921', // inventado (ajústalo)

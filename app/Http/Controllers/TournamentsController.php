@@ -29,8 +29,8 @@ class TournamentsController extends Controller
             'game' => 'Fortnite',
             'status' => 'En Vivo',
             'hero_image' => 'https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80',
-            'prize_pool' => 25000,
-            'twitch_channel' => 'Jelty',
+            'prize_pool' => 2200,
+            'twitch_channel' => 'bellz_z11',
         ];
 
         $bracketRounds = [

@@ -283,6 +283,18 @@
       "assets/Show-BCYquF6l.css"
     ]
   },
+  "resources/js/Pages/Public/TournamentLive.vue": {
+    "file": "assets/TournamentLive-CEg6C7cM.js",
+    "name": "TournamentLive",
+    "src": "resources/js/Pages/Public/TournamentLive.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.ts"
+    ],
+    "css": [
+      "assets/TournamentLive-CJuS_urb.css"
+    ]
+  },
   "resources/js/Pages/Tournament/Dashboard.vue": {
     "file": "assets/Dashboard-B2IeBOUQ.js",
     "name": "Dashboard",
@@ -327,6 +339,30 @@
       "resources/js/app.ts"
     ]
   },
+  "resources/js/Pages/Widgets/ObsGlobal.vue": {
+    "file": "assets/ObsGlobal-BPFDwV5t.js",
+    "name": "ObsGlobal",
+    "src": "resources/js/Pages/Widgets/ObsGlobal.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.ts"
+    ],
+    "css": [
+      "assets/ObsGlobal-BEzEFzTV.css"
+    ]
+  },
+  "resources/js/Pages/Widgets/ObsPlayer.vue": {
+    "file": "assets/ObsPlayer-BrPCId3A.js",
+    "name": "ObsPlayer",
+    "src": "resources/js/Pages/Widgets/ObsPlayer.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.ts"
+    ],
+    "css": [
+      "assets/ObsPlayer-D785d3vh.css"
+    ]
+  },
   "resources/js/app.ts": {
     "file": "assets/app-CgCrFjIn.js",
     "name": "app",
@@ -349,10 +385,13 @@
       "resources/js/Pages/Profile/Partials/UpdatePasswordForm.vue",
       "resources/js/Pages/Profile/Partials/UpdateProfileInformationForm.vue",
       "resources/js/Pages/Profile/Show.vue",
+      "resources/js/Pages/Public/TournamentLive.vue",
       "resources/js/Pages/Tournament/Dashboard.vue",
       "resources/js/Pages/Tournament/Show.vue",
       "resources/js/Pages/Tournament/Widget.vue",
-      "resources/js/Pages/Welcome.vue"
+      "resources/js/Pages/Welcome.vue",
+      "resources/js/Pages/Widgets/ObsGlobal.vue",
+      "resources/js/Pages/Widgets/ObsPlayer.vue"
     ],
     "css": [
       "assets/app-Dx8dp9Te.css"
