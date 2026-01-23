@@ -477,7 +477,40 @@ onUnmounted(() => {
       </div>
 
       <!-- === COMUNIDAD (AQUÍ ES DONDE SUMAN PUNTOS) === -->
-      <div v-show="activeTab === 'comunidad'" class="animate-fade-in">
+      <div v-show="activeTab === 'comunidad'" class="space-y-6 animate-fade-in">
+        
+        <!-- NEW STATUS BAR -->
+        <div class="w-full brutal-card p-4 bg-white dark:bg-[#0a0a0a] border-l-4 transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-4"
+             :class="isConnected ? 'border-l-green-500 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : 'border-l-red-500'">
+            
+            <div class="flex items-center gap-4">
+                <div class="p-3 transition-colors border rounded-lg bg-gray-50 dark:bg-white/5"
+                     :class="isConnected ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'">
+                    <i class="text-2xl ph-fill" :class="isConnected ? 'ph-broadcast' : 'ph-wifi-slash'"></i>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold tracking-widest text-gray-500 uppercase">Estado del Viewer</h4>
+                    <div class="flex items-center gap-2 text-xl font-black uppercase font-display" :class="isConnected ? 'text-green-500' : 'text-red-500'">
+                        {{ isConnected ? 'CONECTADO AL DROP SERVER' : 'DESCONECTADO' }}
+                        <span v-if="isConnected" class="relative flex w-3 h-3">
+                          <span class="absolute inline-flex w-full h-full bg-green-400 rounded-full opacity-75 animate-ping"></span>
+                          <span class="relative inline-flex w-3 h-3 bg-green-500 rounded-full"></span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="isConnected" class="flex items-center gap-3 px-5 py-2 text-white bg-green-500 btn-skew">
+                <div class="flex items-center gap-2 text-sm font-bold uppercase btn-content">
+                    <i class="ph-fill ph-coin-vertical animate-bounce"></i>
+                    <span>Sumando Puntos</span>
+                </div>
+            </div>
+            <div v-else class="px-3 py-1 font-mono text-xs text-red-500 rounded bg-red-500/10">
+                Sin conexión al servidor de puntos
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[70vh]">
           <div class="h-full lg:col-span-9">
             <div class="w-full h-full p-0 overflow-hidden bg-black border-0 brutal-card">
