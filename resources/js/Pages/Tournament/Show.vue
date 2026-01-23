@@ -47,8 +47,16 @@ function toggleTheme() {
 const activeTab = ref('bracket')
 
 // ===== Viewer Points (WEBSOCKET INTEGRATION) =====
-// Iniciamos con autoConnect: false para que solo conecte en el tab comunidad
-const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket({ autoConnect: false })
+// CORREGIDO: Pasamos argumentos en orden: type, id, options
+// manageVisibility: false porque tú ya manejas la visibilidad abajo con handleVisibilityChange
+const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket(
+    'community', 
+    props.tournament?.id, 
+    { 
+        autoConnect: false,
+        manageVisibility: false 
+    }
+)
 
 // DEBUG: Watcher para ver cuándo cambia realmente el estado
 watch(isConnected, (newVal) => {

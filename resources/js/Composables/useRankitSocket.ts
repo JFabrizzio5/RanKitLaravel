@@ -1,111 +1,150 @@
-import { onMounted, onUnmounted, ref } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { ref, onMounted, onUnmounted } from 'vue';
 
-export function useRankitSocket(options = { autoConnect: true }) {
+// Prioridad: Variable URL2 > Variable URL > Localhost
+const WS_URL = import.meta.env.VITE_POINTS_SERVICE_WS_URL2 || import.meta.env.VITE_POINTS_SERVICE_WS_URL || 'ws://localhost:8011';
+
+interface RankitSocketOptions {
+    autoConnect?: boolean;      // Conectar automáticamente al montar
+    manageVisibility?: boolean; // Si el composable debe manejar document.hidden automáticamente
+}
+
+export function useRankitSocket(
+    type: 'channel' | 'community', 
+    id?: string | number, 
+    options: RankitSocketOptions = {}
+) {
+    const { autoConnect = true, manageVisibility = true } = options;
+
     const isConnected = ref(false);
-    let socket: WebSocket | null = null;
-    let pingInterval: ReturnType<typeof setInterval> | null = null;
-
-    // CONFIGURACIÓN:
-    // Vite requiere que las variables empiecen con VITE_ para ser visibles en el cliente
-    const WS_URL = import.meta.env.VITE_RANKIT_WS_URL || 'ws://localhost:8011';
+    const socket = ref<WebSocket | null>(null);
+    const viewerCount = ref(0);
+    const secondsConnected = ref(0);
+    const messages = ref<any[]>([]);
+    
+    let pingInterval: number | undefined;
 
     const connect = () => {
-        // Casting a 'any' para evitar errores de TS si los tipos de Inertia no están definidos globalmente
-        const user = (usePage().props as any).auth?.user;
-        
-        if (!user || !user.id) {
-            console.warn('[RankitNative] Usuario no autenticado (o sin ID), no se inicia conexión WS.');
+        // Validación: si no hay ID, no intentamos conectar
+        if (id === undefined || id === null) {
+            console.log('[RankitNative] ID no proporcionado, omitiendo conexión.');
             return;
         }
 
-        const userId = user.id; 
-        
-        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-            console.log('[RankitNative] Ya existe una conexión activa o en proceso.');
+        if (socket.value?.readyState === WebSocket.OPEN) {
+            console.log('[RankitNative] Ya existe una conexión activa.');
             return;
         }
 
-        console.log(`[RankitNative] Intentando conectar a: ${WS_URL}/ws/community/${userId}`);
+        const wsUrl = `${WS_URL}/ws/${type}/${id}`;
+        console.log(`[RankitNative] Intentando conectar a: ${wsUrl}`);
 
         try {
-            // Conexión directa al WebSocket Python
-            socket = new WebSocket(`${WS_URL}/ws/community/${userId}`);
+            socket.value = new WebSocket(wsUrl);
 
-            socket.onopen = () => {
-                console.log('%c[RankitNative] Conectado exitosamente.', 'color: green; font-weight: bold;');
+            socket.value.onopen = () => {
+                console.log('[RankitNative] Conectado exitosamente.');
                 isConnected.value = true;
-                startPing();
+                startHeartbeat();
             };
 
-            socket.onmessage = (event) => {
-                // Si el servidor manda algo, lo vemos aquí
-                if (event.data === 'pong') {
-                    // Respuesta del ping, todo bien
-                    // console.debug('pong received');
-                } else {
-                    console.log('[RankitNative] Mensaje recibido:', event.data);
+            socket.value.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // console.log('[RankitNative] Mensaje:', data.type); // Uncomment for debug
+
+                    if (data.type === 'viewer_count') {
+                        viewerCount.value = data.count;
+                    } else if (data.type === 'progress') {
+                        secondsConnected.value = data.seconds_connected;
+                    } else {
+                        messages.value.push(data);
+                    }
+                } catch (e) {
+                    console.error('[RankitNative] Error parsing msg:', e);
                 }
             };
 
-            socket.onclose = (event) => {
-                console.log(`[RankitNative] Desconectado. Código: ${event.code}, Razón: ${event.reason}`);
+            socket.value.onclose = (event) => {
+                console.log(`[RankitNative] Desconectado (Code: ${event.code})`);
                 isConnected.value = false;
-                stopPing();
-                socket = null;
+                stopHeartbeat();
+                
+                // Reconexión automática solo si autoConnect es true y no fue cierre manual
+                if (autoConnect && event.code !== 1000 && event.code !== 1005) {
+                    setTimeout(() => {
+                        console.log('[RankitNative] Reintentando conexión...');
+                        connect();
+                    }, 3000);
+                }
             };
 
-            socket.onerror = (error) => {
-                console.error('[RankitNative] Error en el socket:', error);
-                // No cerramos manualmente aquí, onclose se disparará usualmente
+            socket.value.onerror = (error) => {
+                console.error('[RankitNative] Error WS:', error);
             };
 
-        } catch (e) {
-            console.error('[RankitNative] Excepción al crear WebSocket:', e);
-            isConnected.value = false;
-        }
-    };
-
-    const startPing = () => {
-        stopPing();
-        // Ping cada 20s para mantener la conexión viva (heartbeat)
-        pingInterval = setInterval(() => {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send('ping');
-            }
-        }, 20000);
-    };
-
-    const stopPing = () => {
-        if (pingInterval) {
-            clearInterval(pingInterval);
-            pingInterval = null;
+        } catch (error) {
+            console.error('[RankitNative] Error crítico:', error);
         }
     };
 
     const disconnect = () => {
-        stopPing();
-        if (socket) {
-            console.log('[RankitNative] Cerrando conexión intencionalmente...');
-            socket.close();
-            socket = null;
+        if (socket.value) {
+            console.log('[RankitNative] Cerrando conexión manualmente...');
+            socket.value.close(1000, "Component unmounted or manual disconnect");
+            socket.value = null;
+            isConnected.value = false;
+            stopHeartbeat();
         }
-        isConnected.value = false;
+    };
+
+    const startHeartbeat = () => {
+        stopHeartbeat();
+        pingInterval = window.setInterval(() => {
+            if (socket.value?.readyState === WebSocket.OPEN) {
+                // Keep-alive logic if needed
+            }
+        }, 30000); 
+    };
+
+    const stopHeartbeat = () => {
+        if (pingInterval) {
+            clearInterval(pingInterval);
+            pingInterval = undefined;
+        }
+    };
+
+    // Manejador interno de visibilidad (solo si manageVisibility es true)
+    const handleInternalVisibility = () => {
+        if (document.hidden) {
+            disconnect();
+        } else {
+            connect();
+        }
     };
 
     onMounted(() => {
-        if (options.autoConnect) {
+        if (autoConnect) {
             connect();
+        }
+        
+        if (manageVisibility) {
+            document.addEventListener('visibilitychange', handleInternalVisibility);
         }
     });
 
     onUnmounted(() => {
         disconnect();
+        if (manageVisibility) {
+            document.removeEventListener('visibilitychange', handleInternalVisibility);
+        }
     });
 
     return {
         isConnected,
-        connect,
-        disconnect
+        viewerCount,
+        secondsConnected,
+        messages,
+        disconnect,
+        connect
     };
 }
