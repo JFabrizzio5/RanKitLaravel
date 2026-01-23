@@ -46,12 +46,15 @@ function toggleTheme() {
  */
 const activeTab = ref('bracket')
 
+// 1. OBTENER USUARIO ANTES DEL SOCKET
+const page = usePage()
+const user = page.props.auth?.user as any
+
 // ===== Viewer Points (WEBSOCKET INTEGRATION) =====
-// CORREGIDO: Pasamos argumentos en orden: type, id, options
-// manageVisibility: false porque tú ya manejas la visibilidad abajo con handleVisibilityChange
+// CORREGIDO: Pasamos user?.id en lugar de props.tournament?.id
 const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket(
     'community', 
-    props.tournament?.id, 
+    user?.id, 
     { 
         autoConnect: false,
         manageVisibility: false 
@@ -70,13 +73,9 @@ const switchTab = (tab: string) => {
   if (tab === 'comunidad') {
     console.log('%c[RankitSocket] Tab Comunidad activado. Iniciando conexión...', 'color: cyan; font-weight: bold;')
     
-    // DEBUG: Imprimir variables de entorno para ver a dónde apunta
-    console.log('[RankitSocket] Configuración detectada (Vite Env):', {
-      PUSHER_HOST: import.meta.env.VITE_PUSHER_HOST,
-      PUSHER_PORT: import.meta.env.VITE_PUSHER_PORT,
-      REVERB_HOST: import.meta.env.VITE_REVERB_HOST,
-      SCHEME: import.meta.env.VITE_PUSHER_SCHEME,
-    })
+    if (!user) {
+        console.warn('[RankitSocket] Usuario no autenticado. No se conectará al socket.')
+    }
 
     connectSocket()
   } else {
@@ -98,8 +97,8 @@ const watchProgress = ref(65)
 // ==============================
 // REFERIDOS (MODALES + REDEEM)
 // ==============================
-const page = usePage()
-const me = page.props.auth?.user as any
+// Nota: user ya está definido arriba como 'user', pero mantenemos 'me' para compatibilidad con tu template si lo usas
+const me = user 
 
 const showInviteModal = ref(false)
 const showCodeModal = ref(false)
