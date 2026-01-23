@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { useRankitSocket } from '@/Composables/useRankitSocket'
 
 // CORRECCIÓN TS: Uso de sintaxis genérica para tipado correcto de Arrays
 const props = defineProps<{
@@ -18,7 +19,6 @@ const props = defineProps<{
   canLogin?: boolean;
   canRegister?: boolean;
 }>()
-
 
 /**
  * THEME MANAGEMENT
@@ -46,123 +46,29 @@ function toggleTheme() {
  */
 const activeTab = ref('bracket')
 
-// ===== Viewer Points (solo en "comunidad") =====
-const viewerSessionId = ref<number | null>(null)
-
-const viewerStartAt = computed(() => props.viewerStartAt ?? targetDate)
-const viewerEnabled = computed(() => Date.now() >= viewerStartAt.value)
-
-let viewerInterval: ReturnType<typeof setInterval> | null = null
-function csrfToken(): string {
-  return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
-}
-
-async function viewerStart() {
-  if (!me?.id) return
-  if (!viewerEnabled.value) return
-  if (viewerSessionId.value) return
-
-  const res = await fetch(route('bellzcup.viewer.start'), {
-    method: 'POST',
-    credentials: 'same-origin', // ✅ IMPORTANTE: manda cookies
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-TOKEN': csrfToken(), // ✅
-      'X-Requested-With': 'XMLHttpRequest', // ✅ recomendado
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({}),
-  })
-
-  if (!res.ok) {
-    // Para ver el error real en consola
-    console.error('viewerStart failed', res.status, await res.text())
-    return
-  }
-
-  const data = await res.json()
-  viewerSessionId.value = data.session_id ?? null
-}
-async function viewerStopServer() {
-  if (!viewerSessionId.value) return
-
-  try {
-    await fetch(route('bellzcup.viewer.stop'), {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': csrfToken(),
-        'X-Requested-With': 'XMLHttpRequest',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({ session_id: viewerSessionId.value }),
-    })
-  } catch (e) {
-    // best-effort
-  }
-}
-
-async function viewerHeartbeat() {
-  if (!viewerEnabled.value) return
-  if (!viewerSessionId.value) return
-
-  const res = await fetch(route('bellzcup.viewer.heartbeat'), {
-    method: 'POST',
-    credentials: 'same-origin', // ✅
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-TOKEN': csrfToken(), // ✅
-      'X-Requested-With': 'XMLHttpRequest',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({ session_id: viewerSessionId.value }),
-  })
-
-  if (!res.ok) {
-    console.error('viewerHeartbeat failed', res.status, await res.text())
-  }
-}
-
-
-function viewerStop() {
-  if (viewerInterval) {
-    clearInterval(viewerInterval)
-    viewerInterval = null
-  }
-
-  // best-effort: manda stop al server para desactivar sesión
-  viewerStopServer()
-
-  viewerSessionId.value = null
-}
-
+// ===== Viewer Points (WEBSOCKET INTEGRATION) =====
+// Iniciamos con autoConnect: false para que solo conecte en el tab comunidad
+const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket({ autoConnect: false })
 
 const switchTab = (tab: string) => {
   activeTab.value = tab
 
+  // Lógica de conexión basada en el Tab
   if (tab === 'comunidad') {
-    viewerStart().then(() => {
-      if (!viewerInterval) {
-        viewerInterval = setInterval(() => {
-          viewerHeartbeat()
-        }, 120_000)
-      }
-    })
+    connectSocket()
   } else {
-    viewerStop()
+    disconnectSocket()
   }
 }
 
 const twitchChannel = props.tournament?.twitch_channel ?? 'Jelty'
-
-// Título forzado
 const tournamentTitle = 'bellzCup' 
 
 // Tiempo
 const timeLeft = ref({ days: 0, hours: 0, minutes: 0, seconds: 0 })
 const targetDate = props.targetDate ?? (new Date().getTime() + 2 * 24 * 60 * 60 * 1000)
 const watchProgress = ref(65)
+
 // ==============================
 // REFERIDOS (MODALES + REDEEM)
 // ==============================
@@ -197,22 +103,14 @@ function submitCode() {
     },
   })
 }
+
 function copyToClipboard(text: string) {
-  // En SSR o entornos raros
   if (typeof window === 'undefined') return
-
   const t = String(text ?? '')
-
-  // Clipboard API moderna
   if (navigator?.clipboard?.writeText) {
-    navigator.clipboard.writeText(t).catch(() => {
-      // fallback abajo
-      fallbackCopy(t)
-    })
+    navigator.clipboard.writeText(t).catch(() => fallbackCopy(t))
     return
   }
-
-  // Fallback
   fallbackCopy(t)
 }
 
@@ -229,6 +127,17 @@ function fallbackCopy(text: string) {
   document.body.removeChild(ta)
 }
 
+// Control de visibilidad para pausar socket si minimizan
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    disconnectSocket()
+  } else {
+    // Solo reconectar si estamos en el tab correcto
+    if (activeTab.value === 'comunidad') {
+      connectSocket()
+    }
+  }
+}
 
 onMounted(() => {
   // Theme init
@@ -286,26 +195,14 @@ onMounted(() => {
   } else {
     setTimeout(initPlayer, 500)
   }
-    // ===== Viewer Points: si cierran pestaña o cambian de tab =====
-  window.addEventListener('beforeunload', () => {
-    viewerStop()
-  })
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      viewerStop()
-    } else {
-      // si vuelve y está en comunidad, arranca nuevo insert (como pediste)
-      if (activeTab.value === 'comunidad') {
-        viewerStart().then(() => {
-          if (!viewerInterval) {
-            viewerInterval = setInterval(() => viewerHeartbeat(), 20_000)
-          }
-        })
-      }
-    }
-  })
+  // Listeners de Visibilidad
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
 
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  disconnectSocket() // Asegurar desconexión al salir de la página
 })
 </script>
 
@@ -328,6 +225,12 @@ onMounted(() => {
       </Link>
 
       <div class="flex items-center gap-4">
+        <!-- Indicador de Puntos (Opcional, para debug visual) -->
+        <div v-if="isConnected && activeTab === 'comunidad'" class="items-center hidden gap-2 px-3 py-1 text-xs font-bold text-green-500 border rounded-full md:flex bg-green-500/10 animate-pulse border-green-500/20">
+            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+            SUMANDO PUNTOS
+        </div>
+
         <button @click="toggleTheme" class="p-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-neon dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
           <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
           <i v-else class="text-xl ph-fill ph-moon"></i>
@@ -349,10 +252,10 @@ onMounted(() => {
         <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
       </div>
 
-      <div class="relative z-10 w-full max-w-7xl mx-auto px-6 lg:px-8 flex flex-col gap-8">
+      <div class="relative z-10 flex flex-col w-full gap-8 px-6 mx-auto max-w-7xl lg:px-8">
         <div class="flex flex-wrap items-center gap-3 animate-fade-in-up">
           <span class="bg-red-600/90 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(220,38,38,0.6)] animate-pulse flex items-center gap-2 btn-skew">
-             <span class="btn-content flex items-center gap-2"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> {{ props.tournament?.status ?? 'En Vivo' }}</span>
+             <span class="flex items-center gap-2 btn-content"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> {{ props.tournament?.status ?? 'En Vivo' }}</span>
           </span>
           <span class="bg-white/10 border border-black/10 dark:border-white/10 text-black dark:text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default brutal-card">
             <i class="ph ph-game-controller text-neon"></i>
@@ -360,98 +263,95 @@ onMounted(() => {
           </span>
         </div>
 
-        <div class="flex flex-col lg:flex-row items-end justify-between gap-10">
-          <div class="max-w-3xl animate-fade-in-up delay-100 relative">
-            <h1 class="text-5xl md:text-7xl font-display font-black text-black dark:text-white mb-4 leading-none tracking-tight uppercase">
+        <div class="flex flex-col items-end justify-between gap-10 lg:flex-row">
+          <div class="relative max-w-3xl delay-100 animate-fade-in-up">
+            <h1 class="mb-4 text-5xl font-black leading-none tracking-tight text-black uppercase md:text-7xl font-display dark:text-white">
               {{ tournamentTitle }} <br />
               <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600">
                 SEASON 1
               </span>
             </h1>
-            <p class="text-gray-600 dark:text-gray-400 text-lg font-light max-w-xl border-l-4 border-neon pl-6 py-1">
+            <p class="max-w-xl py-1 pl-6 text-lg font-light text-gray-600 border-l-4 dark:text-gray-400 border-neon">
               El escenario definitivo. 16 equipos, un solo trofeo y la gloria eterna en el torneo más grande de LATAM.
             </p>
           </div>
 
           <!-- Countdown & CTA -->
-          <div class="w-full lg:w-auto flex flex-col sm:flex-row lg:flex-col gap-4 animate-fade-in-up delay-200">
+          <div class="flex flex-col w-full gap-4 delay-200 lg:w-auto sm:flex-row lg:flex-col animate-fade-in-up">
             <div class="brutal-card p-4 flex flex-col items-center bg-white dark:bg-[#0a0a0a]">
               <div class="text-[10px] text-neon uppercase font-bold mb-2 tracking-widest">Inscripciones Cierran En</div>
-              <div class="flex gap-4 items-center font-mono">
+              <div class="flex items-center gap-4 font-mono">
                 <div class="text-center">
-                  <div class="text-3xl font-black text-black dark:text-white leading-none">{{ timeLeft.days }}</div>
+                  <div class="text-3xl font-black leading-none text-black dark:text-white">{{ timeLeft.days }}</div>
                   <div class="text-[8px] text-gray-500 uppercase">Días</div>
                 </div>
-                <span class="text-gray-400 font-bold">:</span>
+                <span class="font-bold text-gray-400">:</span>
                 <div class="text-center">
-                  <div class="text-3xl font-black text-black dark:text-white leading-none">{{ timeLeft.hours }}</div>
+                  <div class="text-3xl font-black leading-none text-black dark:text-white">{{ timeLeft.hours }}</div>
                   <div class="text-[8px] text-gray-500 uppercase">Hrs</div>
                 </div>
-                <span class="text-gray-400 font-bold">:</span>
+                <span class="font-bold text-gray-400">:</span>
                 <div class="text-center">
-                  <div class="text-3xl font-black text-black dark:text-white leading-none">{{ timeLeft.minutes }}</div>
+                  <div class="text-3xl font-black leading-none text-black dark:text-white">{{ timeLeft.minutes }}</div>
                   <div class="text-[8px] text-gray-500 uppercase">Min</div>
                 </div>
               </div>
             </div>
             <!-- Total Points -->
-<div class="brutal-card px-4 py-3 text-center bg-white dark:bg-[#0a0a0a]">
-  <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total puntos</div>
-  <div class="text-3xl font-display font-black text-black dark:text-white">
-    {{ (props.totalPoints ?? 0).toLocaleString?.() ?? (props.totalPoints ?? 0) }}
-  </div>
-  <div class="text-[10px] text-gray-500">Rifa bellzCup</div>
-</div>
+            <div class="brutal-card px-4 py-3 text-center bg-white dark:bg-[#0a0a0a]">
+              <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total puntos</div>
+              <div class="text-3xl font-black text-black font-display dark:text-white">
+                {{ (props.totalPoints ?? 0).toLocaleString?.() ?? (props.totalPoints ?? 0) }}
+              </div>
+              <div class="text-[10px] text-gray-500">Rifa bellzCup</div>
+            </div>
 
+            <div class="flex flex-1 gap-3">
+              <!-- INGRESAR CÓDIGO -->
+              <button
+                type="button"
+                @click="openCode"
+                class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]"
+              >
+                <div class="text-[9px] text-gray-500 uppercase font-bold">Acceso</div>
+                <div class="text-sm font-bold font-display">INGRESAR CÓDIGO</div>
+              </button>
 
-            <div class="flex gap-3 flex-1">
-  <!-- INGRESAR CÓDIGO -->
-  <button
-    type="button"
-    @click="openCode"
-    class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]"
-  >
-    <div class="text-[9px] text-gray-500 uppercase font-bold">Acceso</div>
-    <div class="text-sm font-display font-bold">INGRESAR CÓDIGO</div>
-  </button>
-
-  <!-- INVITAR AMIGO -->
-  <button
-    type="button"
-    @click="openInvite"
-    class="flex-1 btn-skew py-3 px-6 text-sm font-bold tracking-wider uppercase"
-  >
-    <span class="btn-content">INVITAR AMIGO</span>
-  </button>
-</div>
-
-
+              <!-- INVITAR AMIGO -->
+              <button
+                type="button"
+                @click="openInvite"
+                class="flex-1 px-6 py-3 text-sm font-bold tracking-wider uppercase btn-skew"
+              >
+                <span class="btn-content">INVITAR AMIGO</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Sponsors Marquee -->
-      <div class="absolute bottom-0 w-full h-14 bg-white/50 dark:bg-black/80 border-t border-black/5 dark:border-white/5 backdrop-blur-md flex items-center z-20 overflow-hidden">
-        <div class="flex items-center gap-16 animate-marquee whitespace-nowrap pl-16">
-          <span v-for="i in 10" :key="i" class="text-gray-400 font-bold uppercase tracking-widest opacity-50">SPONSOR {{ i }}</span>
+      <div class="absolute bottom-0 z-20 flex items-center w-full overflow-hidden border-t h-14 bg-white/50 dark:bg-black/80 border-black/5 dark:border-white/5 backdrop-blur-md">
+        <div class="flex items-center gap-16 pl-16 animate-marquee whitespace-nowrap">
+          <span v-for="i in 10" :key="i" class="font-bold tracking-widest text-gray-400 uppercase opacity-50">SPONSOR {{ i }}</span>
         </div>
       </div>
     </header>
 
     <!-- Navigation Tabs -->
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
-      <div class="max-w-7xl mx-auto px-6 lg:px-8 flex gap-8 overflow-x-auto no-scrollbar">
+      <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
         <button
           v-for="tab in ['bracket', 'detalles', 'comunidad', 'reglas']"
           :key="tab"
           @click="switchTab(tab)"
-          class="py-5 text-xs font-bold uppercase tracking-widest border-b-2 transition duration-300 whitespace-nowrap flex items-center gap-2 group"
+          class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
           :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'"
         >
-          <i v-if="tab === 'bracket'" class="ph ph-tree-structure group-hover:text-neon transition"></i>
-          <i v-if="tab === 'detalles'" class="ph ph-info group-hover:text-neon transition"></i>
-          <i v-if="tab === 'comunidad'" class="ph ph-users group-hover:text-neon transition"></i>
-          <i v-if="tab === 'reglas'" class="ph ph-book-open group-hover:text-neon transition"></i>
+          <i v-if="tab === 'bracket'" class="transition ph ph-tree-structure group-hover:text-neon"></i>
+          <i v-if="tab === 'detalles'" class="transition ph ph-info group-hover:text-neon"></i>
+          <i v-if="tab === 'comunidad'" class="transition ph ph-users group-hover:text-neon"></i>
+          <i v-if="tab === 'reglas'" class="transition ph ph-book-open group-hover:text-neon"></i>
           {{ tab }}
         </button>
       </div>
@@ -459,22 +359,22 @@ onMounted(() => {
 
     <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 min-h-[600px]">
       <!-- === BRACKET === -->
-      <div v-if="activeTab === 'bracket'" class="animate-fade-in space-y-10">
-        <div class="flex flex-col md:flex-row justify-between items-end gap-4">
+      <div v-if="activeTab === 'bracket'" class="space-y-10 animate-fade-in">
+        <div class="flex flex-col items-end justify-between gap-4 md:flex-row">
           <div>
-            <h2 class="text-3xl font-display font-bold text-black dark:text-white uppercase">Playoffs Stage</h2>
-            <p class="text-gray-500 text-sm mt-1 font-mono">Haz clic en un match para ver estadísticas detalladas.</p>
+            <h2 class="text-3xl font-bold text-black uppercase font-display dark:text-white">Playoffs Stage</h2>
+            <p class="mt-1 font-mono text-sm text-gray-500">Haz clic en un match para ver estadísticas detalladas.</p>
           </div>
-          <div class="flex gap-4 text-xs bg-white dark:bg-black/30 p-2 rounded-lg border border-gray-200 dark:border-white/5 overflow-x-auto">
-            <span class="flex items-center gap-2 text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap"><span class="w-2 h-2 rounded-full bg-gray-400"></span> Finalizado</span>
-            <span class="flex items-center gap-2 text-red-500 font-bold whitespace-nowrap"><span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> En Vivo</span>
-            <span class="flex items-center gap-2 text-neon font-bold whitespace-nowrap"><i class="ph ph-robot"></i> AI Prediction</span>
+          <div class="flex gap-4 p-2 overflow-x-auto text-xs bg-white border border-gray-200 rounded-lg dark:bg-black/30 dark:border-white/5">
+            <span class="flex items-center gap-2 font-bold text-gray-500 dark:text-gray-400 whitespace-nowrap"><span class="w-2 h-2 bg-gray-400 rounded-full"></span> Finalizado</span>
+            <span class="flex items-center gap-2 font-bold text-red-500 whitespace-nowrap"><span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span> En Vivo</span>
+            <span class="flex items-center gap-2 font-bold text-neon whitespace-nowrap"><i class="ph ph-robot"></i> AI Prediction</span>
           </div>
         </div>
 
-        <div class="overflow-x-auto pb-12 custom-scroll">
-          <div class="flex gap-16 min-w-max px-4 pt-8">
-            <div v-for="(round, rIndex) in (props.bracketRounds || [{name:'Round 1', matches:[{id:1, p1:'Team A', p2:'Team B', status:'live'}]}])" :key="rIndex" class="flex flex-col justify-around gap-8 relative">
+        <div class="pb-12 overflow-x-auto custom-scroll">
+          <div class="flex gap-16 px-4 pt-8 min-w-max">
+            <div v-for="(round, rIndex) in (props.bracketRounds || [{name:'Round 1', matches:[{id:1, p1:'Team A', p2:'Team B', status:'live'}]}])" :key="rIndex" class="relative flex flex-col justify-around gap-8">
               <!-- CORRECCIÓN TS: round es any, no dará error -->
               <h3 class="absolute -top-10 left-0 w-full text-center text-xs font-bold text-neon uppercase tracking-[0.2em] bg-neon/5 py-1 rounded">{{ round.name }}</h3>
               
@@ -485,7 +385,7 @@ onMounted(() => {
                 <!-- Match Card -->
                 <div class="w-64 md:w-72 brutal-card transition-all duration-300 relative bg-white dark:bg-[#0a0a0a]"
                      :class="{ 'border-red-500 dark:border-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]': match.status === 'live' }">
-                  <div class="bg-gray-50 dark:bg-white/5 px-3 py-2 flex justify-between items-center border-b border-gray-200 dark:border-white/5">
+                  <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gray-50 dark:bg-white/5 dark:border-white/5">
                     <div class="flex gap-2">
                       <span v-if="match.status === 'live'" class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse">LIVE</span>
                       <span v-else class="text-[10px] text-gray-500 uppercase font-bold">{{ match.status ?? 'Pending' }}</span>
@@ -494,14 +394,14 @@ onMounted(() => {
                   </div>
 
                   <div class="p-2 space-y-1">
-                    <div class="flex justify-between items-center p-2 rounded hover:bg-gray-100 dark:hover:bg-white/5 transition">
+                    <div class="flex items-center justify-between p-2 transition rounded hover:bg-gray-100 dark:hover:bg-white/5">
                       <div class="flex items-center gap-3">
                         <div class="w-6 h-6 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-[10px] font-bold border border-black/10 dark:border-white/10">A</div>
                         <span class="text-xs font-bold text-black dark:text-white truncate max-w-[120px]">{{ match.p1 }}</span>
                       </div>
                       <span class="font-mono font-bold text-black dark:text-white">2</span>
                     </div>
-                    <div class="flex justify-between items-center p-2 rounded hover:bg-gray-100 dark:hover:bg-white/5 transition">
+                    <div class="flex items-center justify-between p-2 transition rounded hover:bg-gray-100 dark:hover:bg-white/5">
                       <div class="flex items-center gap-3">
                         <div class="w-6 h-6 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-[10px] font-bold border border-black/10 dark:border-white/10">B</div>
                         <span class="text-xs font-bold text-black dark:text-white truncate max-w-[120px]">{{ match.p2 }}</span>
@@ -517,82 +417,81 @@ onMounted(() => {
       </div>
 
       <!-- === DETALLES === -->
-      <div v-if="activeTab === 'detalles'" class="animate-fade-in grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div class="lg:col-span-8 space-y-8">
+      <div v-if="activeTab === 'detalles'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
+        <div class="space-y-8 lg:col-span-8">
           <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
-            <h3 class="font-bold text-2xl mb-4 text-black dark:text-white font-display uppercase">Información del Evento</h3>
-            <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-8">
-              <!-- CHANGE: Neon City Cup -> bellzCup -->
+            <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Información del Evento</h3>
+            <p class="mb-8 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
               Bienvenidos a la 1ra edición de la bellzCup. Este torneo reúne a los mejores equipos amateurs y semi-pro de la región.
             </p>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div class="p-4 border border-gray-200 dark:border-white/10 text-center group hover:border-neon transition">
-                <i class="ph ph-users text-neon mb-2 text-xl"></i>
+            <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
+                <i class="mb-2 text-xl ph ph-users text-neon"></i>
                 <div class="text-[10px] text-gray-500 uppercase font-bold">Formato</div>
-                <div class="text-black dark:text-white font-bold">5v5 Draft</div>
+                <div class="font-bold text-black dark:text-white">5v5 Draft</div>
               </div>
-              <div class="p-4 border border-gray-200 dark:border-white/10 text-center group hover:border-neon transition">
-                <i class="ph ph-desktop text-neon mb-2 text-xl"></i>
+              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
+                <i class="mb-2 text-xl ph ph-desktop text-neon"></i>
                 <div class="text-[10px] text-gray-500 uppercase font-bold">Plataforma</div>
-                <div class="text-black dark:text-white font-bold">PC / Win 11</div>
+                <div class="font-bold text-black dark:text-white">PC / Win 11</div>
               </div>
-              <div class="p-4 border border-gray-200 dark:border-white/10 text-center group hover:border-neon transition">
-                <i class="ph ph-globe text-neon mb-2 text-xl"></i>
+              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
+                <i class="mb-2 text-xl ph ph-globe text-neon"></i>
                 <div class="text-[10px] text-gray-500 uppercase font-bold">Región</div>
-                <div class="text-black dark:text-white font-bold">LATAM Norte</div>
+                <div class="font-bold text-black dark:text-white">LATAM Norte</div>
               </div>
-              <div class="p-4 border border-gray-200 dark:border-white/10 text-center group hover:border-neon transition">
-                <i class="ph ph-shield-check text-neon mb-2 text-xl"></i>
+              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
+                <i class="mb-2 text-xl ph ph-shield-check text-neon"></i>
                 <div class="text-[10px] text-gray-500 uppercase font-bold">Anti-Cheat</div>
-                <div class="text-black dark:text-white font-bold">Requerido</div>
+                <div class="font-bold text-black dark:text-white">Requerido</div>
               </div>
             </div>
           </div>
         </div>
 
-        <aside class="lg:col-span-4 space-y-6">
+        <aside class="space-y-6 lg:col-span-4">
           <div class="brutal-card p-6 bg-white dark:bg-[#0a0a0a] border-neon">
-             <div class="flex justify-between items-start mb-4">
+             <div class="flex items-start justify-between mb-4">
                 <div>
-                  <h3 class="font-display font-bold text-lg text-black dark:text-white uppercase">Viewer Drops</h3>
+                  <h3 class="text-lg font-bold text-black uppercase font-display dark:text-white">Viewer Drops</h3>
                   <p class="text-[10px] text-neon font-bold uppercase tracking-wider">Temporada 5</p>
                 </div>
-                <i class="ph ph-gift text-2xl text-neon animate-bounce"></i>
+                <i class="text-2xl ph ph-gift text-neon animate-bounce"></i>
              </div>
              <div class="space-y-4">
                 <div>
-                  <div class="flex justify-between text-xs font-bold text-black dark:text-white mb-2">
+                  <div class="flex justify-between mb-2 text-xs font-bold text-black dark:text-white">
                     <span>Nivel 3</span>
                     <span>{{ watchProgress }} / 100 XP</span>
                   </div>
-                  <div class="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-3 overflow-hidden">
-                    <div class="bg-neon h-3 rounded-full" :style="`width: ${watchProgress}%`"></div>
+                  <div class="w-full h-3 overflow-hidden bg-gray-200 rounded-full dark:bg-gray-800">
+                    <div class="h-3 rounded-full bg-neon" :style="`width: ${watchProgress}%`"></div>
                   </div>
                 </div>
                 <button class="w-full mt-6 bg-[#6441a5] text-white font-bold py-2 rounded-none btn-skew text-xs hover:bg-[#503484] transition flex items-center justify-center gap-2">
-                  <span class="btn-content flex items-center gap-2"><i class="fab fa-twitch"></i> Conectar Twitch</span>
+                  <span class="flex items-center gap-2 btn-content"><i class="fab fa-twitch"></i> Conectar Twitch</span>
                 </button>
              </div>
           </div>
         </aside>
       </div>
 
-      <!-- === COMUNIDAD === -->
+      <!-- === COMUNIDAD (AQUÍ ES DONDE SUMAN PUNTOS) === -->
       <div v-show="activeTab === 'comunidad'" class="animate-fade-in">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[70vh]">
-          <div class="lg:col-span-9 h-full">
-            <div class="w-full h-full brutal-card overflow-hidden bg-black p-0 border-0">
+          <div class="h-full lg:col-span-9">
+            <div class="w-full h-full p-0 overflow-hidden bg-black border-0 brutal-card">
               <div id="twitch-embed" class="w-full h-full"></div>
             </div>
           </div>
-          <div class="lg:col-span-3 h-full flex flex-col gap-4">
+          <div class="flex flex-col h-full gap-4 lg:col-span-3">
              <div class="flex-1 brutal-card bg-white dark:bg-[#0a0a0a] relative overflow-hidden flex flex-col">
-                <div class="p-2 text-xs font-bold text-gray-500 border-b border-gray-200 dark:border-white/10 flex justify-between bg-gray-50 dark:bg-white/5">
+                <div class="flex justify-between p-2 text-xs font-bold text-gray-500 border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                    <span>Chat en Vivo</span>
-                   <span class="text-green-500 flex items-center gap-1"><span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> 12.4k</span>
+                   <span class="flex items-center gap-1 text-green-500"><span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> 12.4k</span>
                 </div>
                 <!-- Chat Iframe Placeholder -->
-                <div class="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center text-xs text-gray-500">
+                <div class="flex items-center justify-center flex-1 text-xs text-gray-500 bg-gray-100 dark:bg-black/50">
                    Chat Widget Placeholder
                 </div>
              </div>
@@ -603,108 +502,76 @@ onMounted(() => {
       <!-- === REGLAS === -->
       <div v-show="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
-          <h3 class="font-bold text-2xl mb-4 text-black dark:text-white font-display uppercase">Reglas Oficiales</h3>
-          <p class="text-gray-600 dark:text-gray-400 text-sm">Aquí puedes pintar reglas desde DB (Markdown/HTML sanitizado).</p>
+          <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Oficiales</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Aquí puedes pintar reglas desde DB (Markdown/HTML sanitizado).</p>
         </div>
       </div>
     </main>
 
     <!-- Mobile CTA -->
     <div class="fixed bottom-0 w-full bg-white/90 dark:bg-[#0B0C15]/90 backdrop-blur-md border-t border-gray-200 dark:border-white/10 p-4 z-50 lg:hidden">
-      <div class="flex justify-between items-center">
+      <div class="flex items-center justify-between">
         <div>
           <!-- CHANGE: Neon City Cup -> bellzCup -->
-          <div class="text-black dark:text-white font-bold text-sm">{{ tournamentTitle }}</div>
+          <div class="text-sm font-bold text-black dark:text-white">{{ tournamentTitle }}</div>
           <div class="text-[10px] text-green-500">Inscripciones Abiertas</div>
         </div>
-        <button class="bg-neon text-white font-bold px-6 py-2 btn-skew text-sm">
+        <button class="px-6 py-2 text-sm font-bold text-white bg-neon btn-skew">
           <span class="btn-content">Inscribirse</span>
         </button>
       </div>
     </div>
-    <!-- =========================
-     MODAL: INVITAR AMIGO
-========================= -->
-<div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
-  <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
-
-  <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <div class="text-xs text-gray-500 uppercase font-bold">Invitar amigo</div>
-        <div class="text-2xl font-display font-black uppercase">Comparte tu código</div>
+    
+    <!-- MODALES DE REFERIDOS -->
+    <div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
+      <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-xs font-bold text-gray-500 uppercase">Invitar amigo</div>
+            <div class="text-2xl font-black uppercase font-display">Comparte tu código</div>
+          </div>
+          <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showInviteModal=false">✕</button>
+        </div>
+        <div class="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+          <p>1) Mándale este link a tu amigo y pidele que se registre:</p>
+          <div class="flex items-center justify-between gap-3 p-3 brutal-card bg-gray-50 dark:bg-black/30">
+            <div class="font-mono text-xs break-all">{{ inviteLink }}</div>
+            <button type="button" class="px-3 py-2 text-xs font-bold btn-skew" @click="copyToClipboard(inviteLink)">
+              <span class="btn-content">Copiar</span>
+            </button>
+          </div>
+          <p>2) Y pidele que ingrese este código en “Ingresar código”:</p>
+          <div class="flex items-center justify-between gap-3 p-3 brutal-card bg-gray-50 dark:bg-black/30">
+            <div class="font-mono text-lg font-bold">{{ myCode }}</div>
+            <button type="button" class="px-3 py-2 text-xs font-bold btn-skew" @click="copyToClipboard(myCode)">
+              <span class="btn-content">Copiar</span>
+            </button>
+          </div>
+          <p class="text-[11px] text-gray-500">Cuando tu amigo ingrese el código, tú recibes <b>+2 puntos</b> para la rifa.</p>
+        </div>
       </div>
-      <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showInviteModal=false">✕</button>
     </div>
 
-    <div class="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
-      <p>1) Mándale este link a tu amigo y pidele que se registre:</p>
-
-      <div class="brutal-card p-3 bg-gray-50 dark:bg-black/30 flex items-center justify-between gap-3">
-        <div class="font-mono text-xs break-all">{{ inviteLink }}</div>
-        <button
-          type="button"
-          class="btn-skew px-3 py-2 text-xs font-bold"
-          @click="copyToClipboard(inviteLink)"
-
-        >
-          <span class="btn-content">Copiar</span>
-        </button>
+    <div v-if="showCodeModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/60" @click="showCodeModal=false"></div>
+      <div class="relative w-full max-w-md brutal-card bg-white dark:bg-[#0a0a0a] p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-xs font-bold text-gray-500 uppercase">Ingresar código</div>
+            <div class="text-2xl font-black uppercase font-display">Pega tu código</div>
+          </div>
+          <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showCodeModal=false">✕</button>
+        </div>
+        <form class="mt-4 space-y-3" @submit.prevent="submitCode">
+          <input v-model="redeemForm.code" type="text" placeholder="Ej: 22rankit" class="w-full px-3 py-3 text-black bg-white brutal-card dark:bg-black/30 dark:text-white" />
+          <div v-if="redeemForm.errors.code" class="text-xs font-bold text-red-500">{{ redeemForm.errors.code }}</div>
+          <button class="w-full py-3 text-sm font-bold uppercase btn-skew" type="submit" :disabled="redeemForm.processing">
+            <span class="btn-content">{{ redeemForm.processing ? 'Aplicando...' : 'Aplicar código' }}</span>
+          </button>
+        </form>
       </div>
-
-      <p>2) Y pidele que ingrese este código en “Ingresar código”:</p>
-
-      <div class="brutal-card p-3 bg-gray-50 dark:bg-black/30 flex items-center justify-between gap-3">
-        <div class="font-mono text-lg font-bold">{{ myCode }}</div>
-        <button
-          type="button"
-          class="btn-skew px-3 py-2 text-xs font-bold"
-          @click="copyToClipboard(myCode)"
-
-        >
-          <span class="btn-content">Copiar</span>
-        </button>
-      </div>
-
-      <p class="text-[11px] text-gray-500">
-        Cuando tu amigo ingrese el código, tú recibes <b>+2 puntos</b> para la rifa.
-      </p>
     </div>
-  </div>
-</div>
-<!-- =========================
-     MODAL: INGRESAR CÓDIGO
-========================= -->
-<div v-if="showCodeModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
-  <div class="absolute inset-0 bg-black/60" @click="showCodeModal=false"></div>
-
-  <div class="relative w-full max-w-md brutal-card bg-white dark:bg-[#0a0a0a] p-6">
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <div class="text-xs text-gray-500 uppercase font-bold">Ingresar código</div>
-        <div class="text-2xl font-display font-black uppercase">Pega tu código</div>
-      </div>
-      <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showCodeModal=false">✕</button>
-    </div>
-
-    <form class="mt-4 space-y-3" @submit.prevent="submitCode">
-      <input
-        v-model="redeemForm.code"
-        type="text"
-        placeholder="Ej: 22rankit"
-        class="w-full brutal-card px-3 py-3 bg-white dark:bg-black/30 text-black dark:text-white"
-      />
-
-      <div v-if="redeemForm.errors.code" class="text-xs text-red-500 font-bold">
-        {{ redeemForm.errors.code }}
-      </div>
-
-      <button class="w-full btn-skew py-3 text-sm font-bold uppercase" type="submit" :disabled="redeemForm.processing">
-        <span class="btn-content">{{ redeemForm.processing ? 'Aplicando...' : 'Aplicar código' }}</span>
-      </button>
-    </form>
-  </div>
-</div>
 
   </div>
 </template>

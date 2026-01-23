@@ -3,8 +3,6 @@ use App\Http\Controllers\BellzCupReferralController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Auth\GoogleController;
 
-use App\Http\Controllers\BellzCupViewerController;
-
 use App\Http\Controllers\Admin\TournamentParserController; // Admin Nuevo
 use App\Http\Controllers\Public\PublicTournamentController; // Publico Nuevo
 use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
@@ -37,14 +35,13 @@ Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-// --- RUTAS RESTAURADAS (LO QUE FALTABA) ---
+// --- RUTAS RESTAURADAS ---
 
 // 1. Perfil Rankit
 Route::get('/profile/rankit', function () {
     if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
         return redirect()->route('jangel.indexdos');
     }
-    // Llama al controlador original manteniendo la inyección de dependencias
     return app()->call([ProfilePageController::class, 'show']);
 })->name('rankit.profile');
 
@@ -67,22 +64,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/tournament/widget', [TournamentController::class, 'widget'])->name('tournament.widget');
 });
 
-
 Route::middleware(['auth'])->group(function () {
     Route::post('/bellzcup/referidos/redeem', [BellzCupReferralController::class, 'redeem'])
         ->name('bellzcup.referidos.redeem');
 });
-Route::middleware(['auth'])->group(function () {
-    Route::post('/bellzcup/viewer/start', [BellzCupViewerController::class, 'start'])
-        ->name('bellzcup.viewer.start');
 
-    Route::post('/bellzcup/viewer/heartbeat', [BellzCupViewerController::class, 'heartbeat'])
-        ->name('bellzcup.viewer.heartbeat');
-
-    Route::post('/bellzcup/viewer/stop', [BellzCupViewerController::class, 'stop'])
-        ->name('bellzcup.viewer.stop');
-});
-
+// --- RUTAS DE VISITAS (HEARTBEAT) ELIMINADAS ---
+// La lógica de puntos ahora se maneja exclusivamente vía WebSocket en el microservicio Python.
 
 // API para los Widgets (Pública para OBS)
 Route::get('/api/tournaments/stats-detailed/{tableName}', [TournamentParserController::class, 'getDetailedStats']);
@@ -107,9 +95,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // --- PANEL ADMIN JANGEL (RUTAS CORREGIDAS) ---
-    // Usamos los nombres exactos que tiene tu Vue para que no crashee
-    
+    // --- PANEL ADMIN JANGEL ---
     Route::prefix('admin')->group(function () {
         // Vista Principal
         Route::get('/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
@@ -124,19 +110,17 @@ Route::middleware('auth')->group(function () {
         // Crear Slot (Código)
         Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');
 
-        // --- RUTA QUE FALTABA (SOLUCIÓN AL ERROR ZIGGY) ---
         // Actualizar partida (Editar código)
         Route::put('/match/{id}', [TournamentParserController::class, 'updateMatch'])->name('jangel.match.update');
         
-        // Procesar Replay (Nombre restaurado para compatibilidad con Vue)
-        // Antes era: jangel.match.process, pero tu Vue usa: tournaments.process-replay
+        // Procesar Replay
         Route::post('/tournaments/{id}/process-replay', [TournamentParserController::class, 'processReplay'])->name('tournaments.process-replay');
-        Route::post('/matches/process/{id}', [TournamentParserController::class, 'processReplay'])->name('jangel.match.process'); // Alias por si acaso
+        Route::post('/matches/process/{id}', [TournamentParserController::class, 'processReplay'])->name('jangel.match.process'); // Alias
         
         // Eliminar Partida
         Route::delete('/match/{matchId}', [TournamentParserController::class, 'deleteMatch'])->name('jangel.match.delete');
         
-        // API Leaderboard (Nombre restaurado)
+        // API Leaderboard
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
     });
