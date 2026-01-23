@@ -4,7 +4,12 @@ namespace App\Http\Controllers;
 
 use Inertia\Inertia;
 use Inertia\Response;
-
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Illuminate\Http\Response as HttpResponse;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 class TournamentsController extends Controller
 {
     /**
@@ -69,14 +74,23 @@ class TournamentsController extends Controller
         ];
 
         // 🔹 Fecha objetivo para el countdown (en ms para JS)
-        $targetDate = now()->addDays(2)->timestamp * 1000;
+        $targetDate = \Carbon\Carbon::create(2026, 1, 18, 22, 15, 0, 'America/Mexico_City')->timestamp * 1000;
 
+        $user = auth()->user();
+
+$totalPoints = 0;
+
+if ($user) {
+  $row = \DB::table('bellzcup_rifapoints')->where('userid', $user->id)->first();
+  $totalPoints = $row?->totalpoints ?? 0;
+}
         return Inertia::render('Tournament/Show', [
             'tournament'        => $tournament,
             'bracketRounds'     => $bracketRounds,
             'sponsors'          => $sponsors,
             'prizeDistribution' => $prizeDistribution,
             'targetDate'        => $targetDate,
+            'totalPoints' => $totalPoints,
         ]);
     }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
+import { Head, Link, usePage } from '@inertiajs/vue3'
 import Modal from '@/Components/Modal.vue'
 
 const props = defineProps({
@@ -13,7 +13,10 @@ const props = defineProps({
   phpVersion: String,
 })
 
-// --- THEME & UTILS (Inicio.vue Logic) ---
+// Acceso al usuario autenticado (Fallback si no viene en profile)
+const user = usePage().props.auth.user
+
+// --- THEME & UTILS ---
 const isDark = ref(true)
 
 function applyTheme(nextDark: boolean) {
@@ -128,10 +131,22 @@ const mockTableData = ref([
       </Link>
 
       <div class="flex items-center gap-4">
+        <!-- Theme Toggle -->
         <button @click="toggleTheme" class="p-2 transition-colors border border-transparent rounded-lg text-gray-500 hover:text-neon dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
           <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
           <i v-else class="text-xl ph-fill ph-moon"></i>
         </button>
+
+        <!-- LOGOUT BUTTON AÑADIDO -->
+        <Link 
+            :href="route('logout')" 
+            method="post" 
+            as="button" 
+            class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-500 uppercase transition-all border border-red-500/20 rounded-lg hover:bg-red-500 hover:text-white hover:border-red-500 group"
+        >
+            <i class="text-lg ph-bold ph-sign-out"></i>
+            <span class="hidden sm:inline">Salir</span>
+        </Link>
       </div>
     </nav>
 
@@ -143,10 +158,14 @@ const mockTableData = ref([
           <div class="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-[var(--rankit-neon)]/20 to-transparent"></div>
           <div class="relative z-10">
             <div class="relative flex items-center justify-center mx-auto mb-4 w-24 h-24 rounded-full p-1 bg-gradient-to-r from-cyan-500 to-[var(--rankit-neon)]">
-              <img :src="props.profile?.avatar || 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff'" class="w-full h-full rounded-full object-cover border-4 border-white dark:border-[#0a0a0a]" />
+              <!-- Avatar Fallback using UI Avatars -->
+              <img 
+                :src="props.profile?.avatar || `https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=000&color=fff`" 
+                class="w-full h-full rounded-full object-cover border-4 border-white dark:border-[#0a0a0a]" 
+              />
             </div>
-            <h1 class="text-2xl font-bold font-display text-black dark:text-white">{{ props.profile?.username ?? 'BellzAdmin' }}</h1>
-            <p class="mb-4 text-xs text-gray-500 font-bold uppercase tracking-widest">Organizador Principal</p>
+            <h1 class="text-2xl font-bold font-display text-black dark:text-white">{{ props.profile?.username ?? user?.name ?? 'Jugador' }}</h1>
+            <p class="mb-4 text-xs text-gray-500 font-bold uppercase tracking-widest">{{ props.profile?.badge ?? 'Participante' }}</p>
           </div>
         </div>
 
@@ -237,9 +256,12 @@ const mockTableData = ref([
             </div>
             <span class="px-2 py-1 bg-red-500 text-white text-[10px] font-bold uppercase animate-pulse">En Vivo</span>
           </div>
-          <div class="flex items-center justify-center h-48 border bg-gray-100 dark:bg-black/50 border-gray-200 dark:border-white/5">
-            <span class="text-xs tracking-widest text-gray-500 uppercase flex items-center gap-2">
-                <i class="ph ph-video-camera text-xl"></i> Stream Preview Placeholder
+          <div class="flex items-center justify-center h-48 border bg-gray-100 dark:bg-black/50 border-gray-200 dark:border-white/5 relative overflow-hidden group">
+            <!-- Placeholder Background -->
+             <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80')] bg-cover bg-center opacity-30 grayscale group-hover:grayscale-0 transition duration-700"></div>
+            
+            <span class="text-xs tracking-widest text-gray-500 uppercase flex items-center gap-2 relative z-10 font-bold bg-black/50 px-4 py-2 rounded-full border border-white/10 backdrop-blur-sm">
+                <i class="ph ph-video-camera text-xl text-red-500"></i> Vista Previa del Stream
             </span>
           </div>
         </div>
