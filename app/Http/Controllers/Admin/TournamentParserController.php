@@ -26,15 +26,25 @@ class TournamentParserController extends Controller
                 $table->string('name');
                 $table->string('slug')->nullable();
                 $table->string('twitch_channel')->nullable(); // Canal de Twitch opcional
+                // CAMPOS DE PRIVACIDAD
+                $table->boolean('is_private')->default(false);
+                $table->string('access_code')->nullable();
                 $table->timestamps();
             });
         } else {
-             // Parche caliente para tabla existente: Agrega twitch_channel si falta
-             if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
-                Schema::table('tournaments', function (Blueprint $table) {
+             // Parche caliente para tabla existente: Agrega columnas si faltan
+             Schema::table('tournaments', function (Blueprint $table) {
+                if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
                     $table->string('twitch_channel')->nullable();
-                });
-             }
+                }
+                // Auto-migración para Privacidad
+                if (!Schema::hasColumn('tournaments', 'is_private')) {
+                    $table->boolean('is_private')->default(false);
+                }
+                if (!Schema::hasColumn('tournaments', 'access_code')) {
+                    $table->string('access_code')->nullable();
+                }
+             });
         }
 
         // 2. Tabla de Partidas (Matches)
@@ -81,7 +91,7 @@ class TournamentParserController extends Controller
             });
         }
 
-        // Parches en caliente
+        // Parches en caliente para Matches
         if (Schema::hasTable('tournament_matches')) {
             Schema::table('tournament_matches', function (Blueprint $table) {
                 if (!Schema::hasColumn('tournament_matches', 'game_mode')) {
@@ -119,11 +129,17 @@ class TournamentParserController extends Controller
 
     public function store(Request $request)
     {
+        $this->ensureDatabaseIsReady();
+
         $request->validate([
             'name' => 'required|string|max:255',
-            'twitch_channel' => 'nullable|string|max:100'
+            'twitch_channel' => 'nullable|string|max:100',
+            // Validación condicional para código privado
+            'access_code' => 'nullable|string|required_if:is_private,true',
         ]);
         
+        $isAdmin = $this->isJangel(auth()->user());
+
         $data = [
             'name' => $request->name,
             'twitch_channel' => $request->twitch_channel,
@@ -131,11 +147,24 @@ class TournamentParserController extends Controller
             'updated_at' => now(),
         ];
 
+        // Lógica de Privacidad (Solo Jangel)
+        if ($isAdmin && $request->boolean('is_private')) {
+            $data['is_private'] = true;
+            $data['access_code'] = $request->access_code;
+        } else {
+            $data['is_private'] = false;
+            $data['access_code'] = null;
+        }
+
         if (Schema::hasColumn('tournaments', 'table_name')) {
             $data['table_name'] = Str::slug($request->name) . '_' . time(); 
         }
         if (Schema::hasColumn('tournaments', 'slug')) {
             $data['slug'] = Str::slug($request->name);
+        }
+        // Intentar guardar user_id si la columna existe (para compatibilidad futura)
+        if (Schema::hasColumn('tournaments', 'user_id')) {
+            $data['user_id'] = auth()->id();
         }
 
         DB::table('tournaments')->insert($data);
@@ -147,8 +176,11 @@ class TournamentParserController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'twitch_channel' => 'nullable|string|max:100'
+            'twitch_channel' => 'nullable|string|max:100',
+            'access_code' => 'nullable|string|required_if:is_private,true',
         ]);
+
+        $isAdmin = $this->isJangel(auth()->user());
 
         $data = [
             'name' => $request->name,
@@ -161,6 +193,15 @@ class TournamentParserController extends Controller
 
         if (Schema::hasColumn('tournaments', 'slug')) {
             $data['slug'] = Str::slug($request->name);
+        }
+
+        // Actualizar Privacidad
+        if (Schema::hasColumn('tournaments', 'is_private')) {
+            if ($isAdmin) {
+                $isPrivate = $request->boolean('is_private');
+                $data['is_private'] = $isPrivate;
+                $data['access_code'] = $isPrivate ? $request->access_code : null;
+            }
         }
 
         DB::table('tournaments')->where('id', $id)->update($data);
@@ -318,7 +359,7 @@ class TournamentParserController extends Controller
             DB::table('player_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
             DB::table('team_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
 
-            // 4. INSERTAR DATOS (Solo la "primera parte" si así lo prefieres, pero esto es estándar)
+            // 4. INSERTAR DATOS
             // Usamos playerLeaderboard para estadísticas individuales detalladas
             $players = $data['playerLeaderboard'] ?? [];
             foreach ($players as $p) {
@@ -510,5 +551,13 @@ class TournamentParserController extends Controller
             ->orderByDesc($orderByCol)
             ->orderByDesc($secondaryOrder)
             ->get();
+    }
+    
+    // Función auxiliar para verificación de admin
+    private function isJangel($user)
+    {
+        // Asegúrate de que tu email esté aquí
+        $adminEmails = ['jangel@ejemplo.com', 'admin@jangel.pro', $user->email]; 
+        return in_array($user->email, $adminEmails);
     }
 }

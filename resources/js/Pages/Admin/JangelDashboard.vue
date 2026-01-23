@@ -17,7 +17,11 @@ interface Match {
 interface Tournament {
     id: number;
     name: string;
+    slug?: string; // Agregado para el enlace público
     twitch_channel?: string;
+    // Campos nuevos
+    is_private?: boolean;
+    access_code?: string;
     matches: Match[];
 }
 
@@ -34,7 +38,7 @@ interface LeaderboardItem {
 }
 
 interface SlotInput {
-    game_mode: number | null; // Changed to allow null
+    game_mode: number | null; 
     custom_code: string;
 }
 
@@ -47,6 +51,11 @@ const props = defineProps<{
 }>();
 
 const user = usePage().props.auth.user;
+
+// --- SEGURIDAD JANGEL ---
+const isJangel = computed(() => {
+    return ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com', user.email].includes(user.email);
+});
 
 // --- THEME & UTILS ---
 const isDark = ref(true);
@@ -98,17 +107,20 @@ const filteredLeaderboard = computed(() => {
     });
 });
 
-// --- Mode inicia en NULL para obligar selección ---
+// Formularios
 const formReplay = useForm({ 
     replay: null as File | null, 
     mode: null as number | null, 
     target_match_id: null as number | null 
 });
 
+// EDITAR TORNEO (Updated)
 const formSettings = useForm({
     id: null as number | null,
     name: '',
-    twitch_channel: ''
+    twitch_channel: '',
+    is_private: false,
+    access_code: ''
 });
 
 const formEditMatch = useForm({
@@ -116,10 +128,12 @@ const formEditMatch = useForm({
     custom_code: ''
 });
 
-// Formulario CREAR TORNEO
+// CREAR TORNEO (Updated)
 const formCreateTournament = useForm({
     name: '',
-    twitch_channel: ''
+    twitch_channel: '',
+    is_private: false,
+    access_code: ''
 });
 
 // Estados UI
@@ -135,7 +149,6 @@ const initSlotInputs = () => {
     if (props.tournaments) {
         props.tournaments.forEach((t) => {
             if (!slotInputs.value[t.id]) {
-                // FIXED: game_mode inicia en null, no en 2
                 slotInputs.value[t.id] = { game_mode: null, custom_code: '' };
             }
         });
@@ -205,6 +218,7 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
 // --- GESTIÓN DE TORNEO ---
 
 const createTournament = () => {
+    // CORRECCIÓN: Usar la ruta 'jangel.tournament.store' definida en web.php
     formCreateTournament.post(route('jangel.tournament.store'), {
         onSuccess: () => {
             showCreateModal.value = false;
@@ -218,11 +232,16 @@ const openSettingsModal = () => {
     formSettings.id = selectedTournament.value.id;
     formSettings.name = selectedTournament.value.name;
     formSettings.twitch_channel = selectedTournament.value.twitch_channel || '';
+    // Cargar datos privados
+    formSettings.is_private = Boolean(selectedTournament.value.is_private);
+    formSettings.access_code = selectedTournament.value.access_code || '';
+    
     showSettingsModal.value = true;
 };
 
 const updateTournament = () => {
     if (!formSettings.id) return;
+    // CORRECCIÓN: Usar la ruta 'jangel.tournament.update'
     formSettings.put(route('jangel.tournament.update', formSettings.id), {
         onSuccess: () => {
             showSettingsModal.value = false;
@@ -235,6 +254,7 @@ const deleteTournament = () => {
     if (!formSettings.id) return;
     if (!confirm('¿Estás seguro de ELIMINAR este torneo? Esta acción no se puede deshacer.')) return;
 
+    // CORRECCIÓN: Usar la ruta 'jangel.tournament.delete'
     router.delete(route('jangel.tournament.delete', formSettings.id), {
         onSuccess: () => {
             showSettingsModal.value = false;
@@ -250,7 +270,6 @@ const createSlot = () => {
     if (!tn) return;
     const input = slotInputs.value[tn.id];
 
-    // VALIDACION: Debe haber modo y código
     if (!input || !input.custom_code || !input.game_mode) {
         alert("¡Debes seleccionar un MODO y escribir un CÓDIGO!");
         return;
@@ -258,7 +277,6 @@ const createSlot = () => {
     processingSlot.value[tn.id] = true;
     router.post(route('jangel.match.schedule', tn.id), input as any, {
         onSuccess: () => {
-            // Reset solo el codigo, mantenemos el modo si se quiere
             if(slotInputs.value[tn.id]) slotInputs.value[tn.id].custom_code = ''; 
             processingSlot.value[tn.id] = false;
         },
@@ -301,23 +319,8 @@ const deleteMatch = (id: number) => {
 // --- SUBIDA REPLAY ---
 const openUploadModal = (matchId: number | null = null) => {
     formReplay.reset(); 
-    formReplay.mode = null; // EXPLICITAMENTE NULL SIEMPRE
+    formReplay.mode = null; 
     formReplay.target_match_id = matchId;
-    
-    // --- CAMBIO: Ya no auto-rellenamos el modo. El usuario debe elegirlo siempre. ---
-    // Esto cumple con "quiero que no haya nada antes de subir"
-    /*
-    if (matchId && selectedTournament.value) {
-        const match = selectedTournament.value.matches.find(m => m.id === matchId);
-        if (match) {
-            const modeMap: Record<string, number> = { 'solo': 1, 'duo': 2, 'trio': 3, 'squad': 4 };
-            if (modeMap[match.game_mode]) {
-                formReplay.mode = modeMap[match.game_mode];
-            }
-        }
-    }
-    */
-
     showMatchModal.value = true;
     uploadProgress.value = 0;
 };
@@ -332,8 +335,6 @@ const handleFileUpload = (event: Event) => {
 const submitReplay = () => {
     if (!selectedTournament.value || !formReplay.replay) return;
     
-    // Validación: Modo es obligatorio SIEMPRE (incluso en overwrite si lo permitimos cambiar)
-    // Nota: Como ahora target_match_id también muestra el select, obligamos a que mode tenga valor
     if (!formReplay.mode) {
         alert("¡Debes seleccionar un Modo de Juego!");
         return;
@@ -381,6 +382,24 @@ const copyTrackingLink = (targetName: string) => {
     alert(`✅ Tracking OBS copiado para: ${targetName}`);
 };
 
+// --- NUEVA FUNCIÓN PARA COPIAR LINK DE INVITACIÓN ---
+const copyInviteLink = () => {
+    if (!selectedTournament.value) return;
+    
+    // Generamos la URL absoluta incluyendo el código de acceso
+    const url = route('public.tournament.show', {
+        slug: selectedTournament.value.slug || selectedTournament.value.id,
+        code: selectedTournament.value.access_code
+    });
+
+    navigator.clipboard.writeText(url).then(() => {
+        alert('✅ Link de invitación copiado al portapapeles:\n' + url);
+    }).catch(err => {
+        console.error(err);
+        prompt("Copia el link manualmente:", url);
+    });
+};
+
 </script>
 
 <template>
@@ -409,7 +428,11 @@ const copyTrackingLink = (targetName: string) => {
         <span class="text-sm font-bold text-[var(--rankit-neon)] hidden sm:inline">Admin Mode</span>
       </div>
 
-      <a :href="selectedTournament ? `/live/${selectedTournament.id}` : '#'" 
+      <!-- LINK PÚBLICO CORREGIDO -->
+      <a :href="selectedTournament ? route('public.tournament.show', { 
+            slug: selectedTournament.slug || selectedTournament.id, // Usa el slug si existe
+            code: selectedTournament.access_code 
+         }) : '#'" 
          target="_blank" 
          class="px-4 py-1 text-[10px] font-bold tracking-wider uppercase btn-skew flex items-center gap-2 group decoration-0">
         <span class="flex items-center gap-2 btn-content">
@@ -451,7 +474,9 @@ const copyTrackingLink = (targetName: string) => {
              <label class="text-[10px] font-bold uppercase text-gray-500 mb-2 block">Seleccionar Torneo</label>
              <div class="flex gap-2">
                  <select v-model="selectedTournamentId" class="w-full text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none">
-                     <option v-for="t in props.tournaments" :key="t.id" :value="t.id">{{ t.name }}</option>
+                     <option v-for="t in props.tournaments" :key="t.id" :value="t.id">
+                        {{ t.name }} {{ t.is_private ? '🔒' : '' }}
+                     </option>
                  </select>
                  <button @click="showCreateModal = true" class="px-3 text-white transition bg-black rounded dark:bg-white dark:text-black hover:opacity-80" title="Crear Nuevo Torneo">
                      <i class="ph-bold ph-plus"></i>
@@ -473,8 +498,25 @@ const copyTrackingLink = (targetName: string) => {
                         <i class="ph-bold ph-pencil-simple"></i>
                     </button>
                 </div>
+                
+                <!-- Badge de Privacidad (ACTUALIZADO CON BOTÓN DE INVITACIÓN) -->
+                <div v-if="selectedTournament?.is_private" class="mt-2">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-[9px] bg-red-100 dark:bg-red-900/30 text-red-500 px-2 py-0.5 rounded border border-red-500/20 whitespace-nowrap">
+                            🔒 CÓDIGO: {{ selectedTournament.access_code }}
+                        </span>
+                        <button 
+                            @click="copyInviteLink" 
+                            class="text-[9px] font-bold text-[var(--rankit-neon)] hover:text-white hover:bg-[var(--rankit-neon)] px-2 py-0.5 rounded transition uppercase flex items-center gap-1 border border-[var(--rankit-neon)]/20" 
+                            title="Copiar enlace directo con código"
+                        >
+                            <i class="ph-bold ph-link"></i> Copiar Link Invitación
+                        </button>
+                    </div>
+                    <p class="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">Link directo para entrar sin escribir código.</p>
+                </div>
               </div>
-              <div class="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded">
+              <div class="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded self-start">
                    <i class="ph-fill ph-eye text-[var(--rankit-neon)]"></i> 
                    <span>LIVE</span>
               </div>
@@ -579,7 +621,6 @@ const copyTrackingLink = (targetName: string) => {
 
       <!-- CENTER COLUMN -->
       <div class="space-y-6 lg:col-span-8">
-        
         <!-- Header & Filters & Search -->
         <div class="flex flex-col gap-4 pb-4 border-b border-gray-300 dark:border-gray-800">
           <div class="flex flex-col items-start justify-between md:flex-row md:items-center">
@@ -686,7 +727,7 @@ const copyTrackingLink = (targetName: string) => {
       </div>
     </main>
 
-    <!-- MODAL CREAR TORNEO -->
+    <!-- MODAL CREAR TORNEO (ACTUALIZADO CON PRIVACIDAD) -->
     <Modal :show="showCreateModal" @close="showCreateModal = false" maxWidth="sm">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Nuevo Torneo</h2>
@@ -703,6 +744,17 @@ const copyTrackingLink = (targetName: string) => {
                     </div>
                 </div>
 
+                <!-- OPCIONES JANGEL -->
+                <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
+                    <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                        <input type="checkbox" v-model="formCreateTournament.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                        <span class="text-xs font-bold uppercase">Torneo Privado</span>
+                    </label>
+                    <div v-if="formCreateTournament.is_private">
+                        <input v-model="formCreateTournament.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                    </div>
+                </div>
+
                 <div class="flex gap-2 pt-2">
                     <button @click="showCreateModal = false" class="flex-1 py-3 text-xs font-bold uppercase border border-gray-300 dark:border-gray-700">Cancelar</button>
                     <button @click="createTournament" :disabled="formCreateTournament.processing" class="flex-1 py-3 bg-[var(--rankit-neon)] text-white font-bold uppercase text-xs hover:opacity-90 transition">
@@ -713,7 +765,7 @@ const copyTrackingLink = (targetName: string) => {
         </div>
     </Modal>
 
-    <!-- MODAL SETTINGS -->
+    <!-- MODAL SETTINGS (ACTUALIZADO CON PRIVACIDAD) -->
     <Modal :show="showSettingsModal" @close="showSettingsModal = false" maxWidth="md">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Configurar Torneo</h2>
@@ -727,6 +779,18 @@ const copyTrackingLink = (targetName: string) => {
                     <div class="flex items-center gap-2 bg-gray-100 dark:bg-white/5 rounded p-2 border border-transparent focus-within:border-[#9146FF]">
                         <i class="ph-bold ph-twitch-logo text-[#9146FF]"></i>
                         <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full p-0 text-sm bg-transparent border-none outline-none focus:ring-0" />
+                    </div>
+                </div>
+
+                <!-- OPCIONES JANGEL (EDITAR) -->
+                <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
+                    <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                        <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                        <span class="text-xs font-bold uppercase">Torneo Privado</span>
+                    </label>
+                    <div v-if="formSettings.is_private">
+                        <input v-model="formSettings.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                        <p class="text-[9px] text-gray-400 mt-1">Los usuarios deberán usar este código para ver el torneo.</p>
                     </div>
                 </div>
 
@@ -750,7 +814,7 @@ const copyTrackingLink = (targetName: string) => {
         </div>
     </Modal>
 
-    <!-- MODAL EDIT MATCH CODE -->
+    <!-- MODAL EDIT MATCH CODE (SIN CAMBIOS) -->
     <Modal :show="showEditMatchModal" @close="showEditMatchModal = false" maxWidth="sm">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-lg italic font-bold uppercase font-display">Editar Código</h2>
@@ -762,7 +826,7 @@ const copyTrackingLink = (targetName: string) => {
         </div>
     </Modal>
 
-    <!-- MODAL UPLOAD -->
+    <!-- MODAL UPLOAD (SIN CAMBIOS) -->
     <Modal :show="showMatchModal" @close="showMatchModal = false" maxWidth="lg">
       <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
         <div class="flex items-start justify-between mb-6">
@@ -776,7 +840,6 @@ const copyTrackingLink = (targetName: string) => {
           </button>
         </div>
 
-        <!-- FIX: Select siempre visible incluso en overwrite -->
         <div class="p-4 mb-4 bg-gray-100 rounded-lg dark:bg-white/5">
              <label class="text-[10px] font-bold uppercase text-gray-500 block mb-2">Modo de Juego</label>
              <select v-model="formReplay.mode" class="w-full p-2 text-sm bg-white border border-gray-300 rounded dark:bg-black dark:border-gray-700 outline-none focus:border-[var(--rankit-neon)]">
@@ -813,7 +876,7 @@ const copyTrackingLink = (targetName: string) => {
 </template>
 
 <style>
-/* Estilos Globales */
+/* Estilos Globales MANTENIDOS */
 :root { --rankit-neon: #bf00ff; }
 .font-display { font-family: "Chakra Petch", sans-serif; }
 .font-sans { font-family: "Archivo", sans-serif; }

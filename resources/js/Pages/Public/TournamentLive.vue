@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import axios from 'axios'
 
 // --- TIPOS ---
@@ -65,6 +65,7 @@ function toggleTheme() { applyTheme(!isDark.value); }
 // --- LOGICA DE DATOS ---
 const matches = ref<PublicMatch[]>([]);
 const ranking = ref<PublicRankingItem[]>([]);
+// Inicializamos con los props para tener datos inmediatos
 const tournamentData = ref<TournamentInfo>(props.tournament || {});
 const progressText = ref("Cargando...");
 const isLoading = ref(true); // Estado de carga inicial/manual
@@ -77,6 +78,16 @@ const leaderboardType = ref<'players' | 'teams'>('players');
 const filterMode = ref<string>('all'); 
 const sortBy = ref<'points' | 'kills'>('points');
 const expandedRowIndex = ref<number | null>(null);
+
+// --- LÓGICA ESPECIAL PARA BELLZCUP (ID 7) ---
+// Filtramos las pestañas: Si es el ID 7, quitamos "partidas".
+const availableTabs = computed(() => {
+    // Usamos Number() para asegurar que la comparación sea correcta (7 vs "7")
+    if (Number(tournamentData.value.id) === 7) {
+        return ['resultados', 'reglas'];
+    }
+    return ['resultados', 'partidas', 'reglas'];
+});
 
 let pollInterval: number | undefined;
 
@@ -109,6 +120,12 @@ const loadData = async (showSpinner = false) => {
         ranking.value = res.data.ranking;
         
         if(res.data.tournament) {
+            // CORRECCIÓN CRÍTICA: Solo actualizamos el ID si la API lo devuelve.
+            // Si la API no trae ID, mantenemos el que ya tenemos (props) para no romper la vista.
+            if (res.data.tournament.id) {
+                tournamentData.value.id = Number(res.data.tournament.id); 
+            }
+            
             tournamentData.value.name = res.data.tournament.name;
             progressText.value = res.data.tournament.progress || '';
             tournamentData.value.twitch_channel = res.data.tournament.twitch_channel; 
@@ -292,10 +309,10 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <!-- Tabs -->
+    <!-- Tabs Dinámicas (Oculta 'Partidas' si es ID 7) -->
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
-        <button v-for="tab in ['resultados', 'partidas', 'reglas']" :key="tab" @click="switchTab(tab as any)"
+        <button v-for="tab in availableTabs" :key="tab" @click="switchTab(tab as any)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
           :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'">
           {{ tab }}
@@ -325,7 +342,7 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <!-- Matches List -->
+            <!-- Matches List (Se muestra SOLO si NO es el torneo especial 7, o si quieres ocultarlo ahí también puedes usar v-if="tournamentData.id !== 7") -->
             <div>
                 <h3 class="mb-4 text-xs font-bold tracking-widest text-gray-500 uppercase">Historial de Partidas</h3>
                 <div @click="toggleMatchFilter(null)" 
@@ -437,13 +454,99 @@ onUnmounted(() => {
       <!-- Reglas -->
       <div v-if="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
-          <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Generales</h3>
-          <ul class="pl-5 space-y-2 text-sm text-gray-600 list-disc dark:text-gray-400">
-              <li>El uso de hacks o scripts resultará en descalificación inmediata.</li>
-              <li>Los equipos deben estar presentes en el lobby 10 minutos antes.</li>
-              <li>Las repeticiones deben guardarse por 24 horas.</li>
-              <li>El administrador tiene la decisión final en caso de disputas.</li>
-          </ul>
+          
+          <!-- CONTENIDO ESPECÍFICO PARA BELLZCUP (ID 7) -->
+          <div v-if="Number(tournamentData.id) === 7">
+             <!-- IMAGEN SOLICITADA -->
+             <div class="flex justify-center mb-8">
+                  <img src="/images/bellzcup.png" 
+                       onerror="this.src='https://via.placeholder.com/800x200?text=BellzCup+Official'" 
+                       alt="BellzCup Tournament" 
+                       class="rounded-lg shadow-2xl border border-[var(--rankit-neon)] w-full max-w-3xl object-cover" />
+             </div>
+
+             <div class="grid grid-cols-1 gap-12 md:grid-cols-2">
+                 <!-- COLUMNA REGLAS -->
+                 <div>
+                     <h3 class="mb-6 text-3xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
+                        Reglas Generales
+                     </h3>
+                     <ul class="space-y-4 text-sm font-bold text-gray-700 list-none dark:text-gray-300">
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-green-500 ph-fill ph-check-circle"></i> Todo es con construcción</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-green-500 ph-fill ph-check-circle"></i> Quitar el anónimo</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No usar sniper</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No carros</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No usar el arma de Rayos</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No usar medallones de los jefes</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No utilizar la varita de la tormenta</li>
+                         
+                         <li class="flex items-center gap-3 p-4 mt-4 text-red-500 border rounded bg-red-500/10 border-red-500/20">
+                             <i class="text-2xl ph-fill ph-warning-octagon"></i> 
+                             <span class="text-lg">No matar ni hacerse daño hasta la 7ma zona</span>
+                         </li>
+                     </ul>
+                 </div>
+
+                 <!-- COLUMNA FORMATO -->
+                 <div>
+                     <h3 class="mb-6 text-3xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
+                        Formato y Puntuación
+                     </h3>
+                     
+                     <div class="space-y-6">
+                         <!-- Solitario -->
+                         <div class="p-6 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10 relative overflow-hidden group hover:border-[var(--rankit-neon)] transition">
+                             <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
+                                <i class="text-6xl ph-fill ph-user"></i>
+                             </div>
+                             <h4 class="mb-1 text-xl font-bold text-white uppercase">Solitario</h4>
+                             <p class="mb-4 font-mono text-xs tracking-widest text-gray-400 uppercase">4 Partidas</p>
+                             <ul class="space-y-2 text-sm">
+                                 <li class="flex items-center justify-between pb-1 border-b border-white/5"><span>Por Kill</span> <span class="font-bold text-[var(--rankit-neon)] bg-black/30 px-2 py-0.5 rounded">1 pt</span></li>
+                                 <li class="flex items-center justify-between pb-1 border-b border-white/5"><span>Por Posición</span> <span class="font-bold text-[var(--rankit-neon)] bg-black/30 px-2 py-0.5 rounded">1 pt</span></li>
+                                 <li class="flex items-center justify-between pt-1"><span class="font-bold text-yellow-400">Victoria Royale</span> <span class="font-bold text-black bg-yellow-400 px-2 py-0.5 rounded shadow-lg shadow-yellow-500/50">5 pts</span></li>
+                             </ul>
+                         </div>
+
+                         <!-- Duos -->
+                         <div class="relative p-6 overflow-hidden transition border border-gray-200 bg-gray-50 dark:bg-white/5 rounded-xl dark:border-white/10 group hover:border-green-500">
+                             <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
+                                <i class="text-6xl ph-fill ph-users"></i>
+                             </div>
+                             <h4 class="mb-1 text-xl font-bold text-white uppercase">Duos Random</h4>
+                             <p class="mb-4 font-mono text-xs tracking-widest text-gray-400 uppercase">2 Partidas</p>
+                             <p class="flex items-center gap-2 text-sm font-bold text-green-400">
+                                <i class="ph-fill ph-gift"></i> Premio a los ganadores de cada partida
+                             </p>
+                         </div>
+
+                         <!-- Trios -->
+                         <div class="relative p-6 overflow-hidden transition border border-gray-200 bg-gray-50 dark:bg-white/5 rounded-xl dark:border-white/10 group hover:border-purple-500">
+                             <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
+                                <i class="text-6xl ph-fill ph-users-three"></i>
+                             </div>
+                             <h4 class="mb-1 text-xl font-bold text-white uppercase">Trios Random</h4>
+                             <p class="mb-4 font-mono text-xs tracking-widest text-gray-400 uppercase">1 Partida</p>
+                             <p class="flex items-center gap-2 text-sm font-bold text-purple-400">
+                                <i class="ph-fill ph-crown"></i> Ganador de la partida se lo lleva todo
+                             </p>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+          </div>
+
+          <!-- REGLAS POR DEFECTO (OTROS TORNEOS) -->
+          <div v-else>
+              <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Generales</h3>
+              <ul class="pl-5 space-y-2 text-sm text-gray-600 list-disc dark:text-gray-400">
+                  <li>El uso de hacks o scripts resultará en descalificación inmediata.</li>
+                  <li>Los equipos deben estar presentes en el lobby 10 minutos antes.</li>
+                  <li>Las repeticiones deben guardarse por 24 horas.</li>
+                  <li>El administrador tiene la decisión final en caso de disputas.</li>
+              </ul>
+          </div>
+
         </div>
       </div>
     </main>

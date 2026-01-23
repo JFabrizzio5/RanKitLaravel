@@ -10,15 +10,37 @@ use Inertia\Inertia;
 class PublicTournamentController extends Controller
 {
     /**
-     * Vista HTML principal (/live/{id})
+     * Vista HTML principal (/t/{slug})
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
+        // 1. Intentamos buscar por ID primero, si falla, buscamos por Slug (para compatibilidad)
         $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if (!$tournament) {
+            $tournament = DB::table('tournaments')->where('slug', $id)->first();
+        }
+
         if (!$tournament) abort(404);
 
+        // --- LÓGICA DE PRIVACIDAD (ESTO FALTABA) ---
+        // Verificamos si la columna existe y si está marcado como privado
+        if (isset($tournament->is_private) && $tournament->is_private) {
+            $providedCode = $request->query('code'); // Obtiene ?code=XYZ de la URL
+            
+            // Si el código de la URL no coincide con el de la base de datos
+            if ($providedCode !== $tournament->access_code) {
+                // Bloqueamos el acceso y mostramos la pantalla de restricción
+                return Inertia::render('Public/RestrictedAccess', [
+                    'tournamentName' => $tournament->name,
+                    'slug' => $tournament->slug ?? $tournament->id, // Para que el formulario sepa a dónde volver
+                    'tournamentId' => $tournament->id
+                ]);
+            }
+        }
+        // ---------------------------------------------
+
         $matchesProcessed = DB::table('tournament_matches')
-            ->where('tournament_id', $id)
+            ->where('tournament_id', $tournament->id)
             ->whereNotNull('raw_data')
             ->count();
 
@@ -26,7 +48,9 @@ class PublicTournamentController extends Controller
         $tournament->progress = "Partida $matchesProcessed / {$expected}";
 
         return Inertia::render('Public/TournamentLive', [
-            'tournament' => $tournament
+            'tournament' => $tournament,
+            // Pasamos el código a la vista para que no se pierda al navegar dentro de la app
+            'accessCode' => $request->query('code')
         ]);
     }
 
@@ -72,7 +96,6 @@ class PublicTournamentController extends Controller
 
         $expected = $tournament->expected_matches ?? 5;
 
-        // CORRECCIÓN: Usamos `?? null` para evitar error 500 si la columna twitch_channel no existe
         return response()->json([
             'tournament' => [
                 'name' => $tournament->name,
