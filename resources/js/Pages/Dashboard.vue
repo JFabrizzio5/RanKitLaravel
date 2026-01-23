@@ -18,7 +18,7 @@ import { Head, Link } from '@inertiajs/vue3';
                 
                 <!-- Imagen de Fondo (Con desenfoque y colores originales) -->
                 <div class="relative h-[400px] md:h-[500px] overflow-hidden">
-                    <img src="/BellzCupBeta/BannerBellzCup.png" 
+                    <img src="public/BellzCupBeta/BannerBellzCup.png" 
                          alt="Banner BellzCup"
                          class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-[1.5s] ease-out blur-[2px]" 
                          onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"/>
