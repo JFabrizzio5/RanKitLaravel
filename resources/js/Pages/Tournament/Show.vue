@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3'
-import { ref, onMounted } from 'vue'
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
+import { ref, onMounted, computed } from 'vue'
 
 // CORRECCIÓN TS: Uso de sintaxis genérica para tipado correcto de Arrays
 const props = defineProps<{
@@ -9,11 +9,16 @@ const props = defineProps<{
   sponsors?: any[];
   prizeDistribution?: any[];
   targetDate?: number;
+
+  totalPoints?: number;
+  viewerStartAt?: number;
+
   laravelVersion?: string;
   phpVersion?: string;
   canLogin?: boolean;
   canRegister?: boolean;
 }>()
+
 
 /**
  * THEME MANAGEMENT
@@ -40,7 +45,115 @@ function toggleTheme() {
  * LOGICA DEL TORNEO
  */
 const activeTab = ref('bracket')
-const switchTab = (tab: string) => (activeTab.value = tab)
+
+// ===== Viewer Points (solo en "comunidad") =====
+const viewerSessionId = ref<number | null>(null)
+
+const viewerStartAt = computed(() => props.viewerStartAt ?? targetDate)
+const viewerEnabled = computed(() => Date.now() >= viewerStartAt.value)
+
+let viewerInterval: ReturnType<typeof setInterval> | null = null
+function csrfToken(): string {
+  return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+}
+
+async function viewerStart() {
+  if (!me?.id) return
+  if (!viewerEnabled.value) return
+  if (viewerSessionId.value) return
+
+  const res = await fetch(route('bellzcup.viewer.start'), {
+    method: 'POST',
+    credentials: 'same-origin', // ✅ IMPORTANTE: manda cookies
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-TOKEN': csrfToken(), // ✅
+      'X-Requested-With': 'XMLHttpRequest', // ✅ recomendado
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({}),
+  })
+
+  if (!res.ok) {
+    // Para ver el error real en consola
+    console.error('viewerStart failed', res.status, await res.text())
+    return
+  }
+
+  const data = await res.json()
+  viewerSessionId.value = data.session_id ?? null
+}
+async function viewerStopServer() {
+  if (!viewerSessionId.value) return
+
+  try {
+    await fetch(route('bellzcup.viewer.stop'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ session_id: viewerSessionId.value }),
+    })
+  } catch (e) {
+    // best-effort
+  }
+}
+
+async function viewerHeartbeat() {
+  if (!viewerEnabled.value) return
+  if (!viewerSessionId.value) return
+
+  const res = await fetch(route('bellzcup.viewer.heartbeat'), {
+    method: 'POST',
+    credentials: 'same-origin', // ✅
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-TOKEN': csrfToken(), // ✅
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({ session_id: viewerSessionId.value }),
+  })
+
+  if (!res.ok) {
+    console.error('viewerHeartbeat failed', res.status, await res.text())
+  }
+}
+
+
+function viewerStop() {
+  if (viewerInterval) {
+    clearInterval(viewerInterval)
+    viewerInterval = null
+  }
+
+  // best-effort: manda stop al server para desactivar sesión
+  viewerStopServer()
+
+  viewerSessionId.value = null
+}
+
+
+const switchTab = (tab: string) => {
+  activeTab.value = tab
+
+  if (tab === 'comunidad') {
+    viewerStart().then(() => {
+      if (!viewerInterval) {
+        viewerInterval = setInterval(() => {
+          viewerHeartbeat()
+        }, 120_000)
+      }
+    })
+  } else {
+    viewerStop()
+  }
+}
+
 const twitchChannel = props.tournament?.twitch_channel ?? 'Jelty'
 
 // Título forzado
@@ -50,6 +163,72 @@ const tournamentTitle = 'bellzCup'
 const timeLeft = ref({ days: 0, hours: 0, minutes: 0, seconds: 0 })
 const targetDate = props.targetDate ?? (new Date().getTime() + 2 * 24 * 60 * 60 * 1000)
 const watchProgress = ref(65)
+// ==============================
+// REFERIDOS (MODALES + REDEEM)
+// ==============================
+const page = usePage()
+const me = page.props.auth?.user as any
+
+const showInviteModal = ref(false)
+const showCodeModal = ref(false)
+
+const myCode = computed(() => (me?.id ? `${me.id}rankit` : ''))
+const inviteLink = computed(() => `https://rankit.pro/?ref=${myCode.value}`)
+
+const redeemForm = useForm({
+  code: '',
+})
+
+function openInvite() {
+  showInviteModal.value = true
+}
+
+function openCode() {
+  showCodeModal.value = true
+  redeemForm.clearErrors()
+}
+
+function submitCode() {
+  redeemForm.post(route('bellzcup.referidos.redeem'), {
+    preserveScroll: true,
+    onSuccess: () => {
+      showCodeModal.value = false
+      redeemForm.reset()
+    },
+  })
+}
+function copyToClipboard(text: string) {
+  // En SSR o entornos raros
+  if (typeof window === 'undefined') return
+
+  const t = String(text ?? '')
+
+  // Clipboard API moderna
+  if (navigator?.clipboard?.writeText) {
+    navigator.clipboard.writeText(t).catch(() => {
+      // fallback abajo
+      fallbackCopy(t)
+    })
+    return
+  }
+
+  // Fallback
+  fallbackCopy(t)
+}
+
+function fallbackCopy(text: string) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.setAttribute('readonly', '')
+  ta.style.position = 'fixed'
+  ta.style.top = '-1000px'
+  ta.style.left = '-1000px'
+  document.body.appendChild(ta)
+  ta.select()
+  try { document.execCommand('copy') } catch (e) {}
+  document.body.removeChild(ta)
+}
+
 
 onMounted(() => {
   // Theme init
@@ -107,6 +286,26 @@ onMounted(() => {
   } else {
     setTimeout(initPlayer, 500)
   }
+    // ===== Viewer Points: si cierran pestaña o cambian de tab =====
+  window.addEventListener('beforeunload', () => {
+    viewerStop()
+  })
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      viewerStop()
+    } else {
+      // si vuelve y está en comunidad, arranca nuevo insert (como pediste)
+      if (activeTab.value === 'comunidad') {
+        viewerStart().then(() => {
+          if (!viewerInterval) {
+            viewerInterval = setInterval(() => viewerHeartbeat(), 20_000)
+          }
+        })
+      }
+    }
+  })
+
 })
 </script>
 
@@ -195,19 +394,38 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+            <!-- Total Points -->
+<div class="brutal-card px-4 py-3 text-center bg-white dark:bg-[#0a0a0a]">
+  <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total puntos</div>
+  <div class="text-3xl font-display font-black text-black dark:text-white">
+    {{ (props.totalPoints ?? 0).toLocaleString?.() ?? (props.totalPoints ?? 0) }}
+  </div>
+  <div class="text-[10px] text-gray-500">Rifa bellzCup</div>
+</div>
+
 
             <div class="flex gap-3 flex-1">
-              <div class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]">
-                <div class="text-[9px] text-gray-500 uppercase font-bold">Prize Pool</div>
-                <div class="text-xl font-display font-bold text-green-600 dark:text-green-400">
-                  ${{ (props.tournament?.prize_pool ?? 25000).toLocaleString?.() ?? (props.tournament?.prize_pool ?? 25000) }}
-                </div>
-              </div>
+  <!-- INGRESAR CÓDIGO -->
+  <button
+    type="button"
+    @click="openCode"
+    class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]"
+  >
+    <div class="text-[9px] text-gray-500 uppercase font-bold">Acceso</div>
+    <div class="text-sm font-display font-bold">INGRESAR CÓDIGO</div>
+  </button>
 
-              <button class="flex-1 btn-skew py-3 px-6 text-sm font-bold tracking-wider uppercase">
-                <span class="btn-content">INSCRIBIRSE</span>
-              </button>
-            </div>
+  <!-- INVITAR AMIGO -->
+  <button
+    type="button"
+    @click="openInvite"
+    class="flex-1 btn-skew py-3 px-6 text-sm font-bold tracking-wider uppercase"
+  >
+    <span class="btn-content">INVITAR AMIGO</span>
+  </button>
+</div>
+
+
           </div>
         </div>
       </div>
@@ -404,6 +622,90 @@ onMounted(() => {
         </button>
       </div>
     </div>
+    <!-- =========================
+     MODAL: INVITAR AMIGO
+========================= -->
+<div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
+
+  <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="text-xs text-gray-500 uppercase font-bold">Invitar amigo</div>
+        <div class="text-2xl font-display font-black uppercase">Comparte tu código</div>
+      </div>
+      <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showInviteModal=false">✕</button>
+    </div>
+
+    <div class="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+      <p>1) Mándale este link a tu amigo y pidele que se registre:</p>
+
+      <div class="brutal-card p-3 bg-gray-50 dark:bg-black/30 flex items-center justify-between gap-3">
+        <div class="font-mono text-xs break-all">{{ inviteLink }}</div>
+        <button
+          type="button"
+          class="btn-skew px-3 py-2 text-xs font-bold"
+          @click="copyToClipboard(inviteLink)"
+
+        >
+          <span class="btn-content">Copiar</span>
+        </button>
+      </div>
+
+      <p>2) Y pidele que ingrese este código en “Ingresar código”:</p>
+
+      <div class="brutal-card p-3 bg-gray-50 dark:bg-black/30 flex items-center justify-between gap-3">
+        <div class="font-mono text-lg font-bold">{{ myCode }}</div>
+        <button
+          type="button"
+          class="btn-skew px-3 py-2 text-xs font-bold"
+          @click="copyToClipboard(myCode)"
+
+        >
+          <span class="btn-content">Copiar</span>
+        </button>
+      </div>
+
+      <p class="text-[11px] text-gray-500">
+        Cuando tu amigo ingrese el código, tú recibes <b>+2 puntos</b> para la rifa.
+      </p>
+    </div>
+  </div>
+</div>
+<!-- =========================
+     MODAL: INGRESAR CÓDIGO
+========================= -->
+<div v-if="showCodeModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/60" @click="showCodeModal=false"></div>
+
+  <div class="relative w-full max-w-md brutal-card bg-white dark:bg-[#0a0a0a] p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="text-xs text-gray-500 uppercase font-bold">Ingresar código</div>
+        <div class="text-2xl font-display font-black uppercase">Pega tu código</div>
+      </div>
+      <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showCodeModal=false">✕</button>
+    </div>
+
+    <form class="mt-4 space-y-3" @submit.prevent="submitCode">
+      <input
+        v-model="redeemForm.code"
+        type="text"
+        placeholder="Ej: 22rankit"
+        class="w-full brutal-card px-3 py-3 bg-white dark:bg-black/30 text-black dark:text-white"
+      />
+
+      <div v-if="redeemForm.errors.code" class="text-xs text-red-500 font-bold">
+        {{ redeemForm.errors.code }}
+      </div>
+
+      <button class="w-full btn-skew py-3 text-sm font-bold uppercase" type="submit" :disabled="redeemForm.processing">
+        <span class="btn-content">{{ redeemForm.processing ? 'Aplicando...' : 'Aplicar código' }}</span>
+      </button>
+    </form>
+  </div>
+</div>
+
   </div>
 </template>
 
