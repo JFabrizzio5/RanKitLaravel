@@ -7,60 +7,68 @@ export function useRankitSocket(options = { autoConnect: true }) {
     let pingInterval: ReturnType<typeof setInterval> | null = null;
 
     // CONFIGURACIÓN:
+    // Vite requiere que las variables empiecen con VITE_ para ser visibles en el cliente
     const WS_URL = import.meta.env.VITE_RANKIT_WS_URL || 'ws://localhost:8011';
 
     const connect = () => {
-        const user = usePage().props.auth.user;
+        // Casting a 'any' para evitar errores de TS si los tipos de Inertia no están definidos globalmente
+        const user = (usePage().props as any).auth?.user;
         
         if (!user || !user.id) {
-            console.log('Rankit: Usuario no autenticado, no se inicia conexión.');
+            console.warn('[RankitNative] Usuario no autenticado (o sin ID), no se inicia conexión WS.');
             return;
         }
 
         const userId = user.id; 
         
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+            console.log('[RankitNative] Ya existe una conexión activa o en proceso.');
             return;
         }
 
-        console.log(`Rankit: Conectando a sala comunidad...`);
+        console.log(`[RankitNative] Intentando conectar a: ${WS_URL}/ws/community/${userId}`);
 
         try {
-            // NOTA: Apuntamos al endpoint específico de comunidad
+            // Conexión directa al WebSocket Python
             socket = new WebSocket(`${WS_URL}/ws/community/${userId}`);
 
             socket.onopen = () => {
-                console.log('Rankit: Conectado. Sumando puntos.');
+                console.log('%c[RankitNative] Conectado exitosamente.', 'color: green; font-weight: bold;');
                 isConnected.value = true;
                 startPing();
             };
 
             socket.onmessage = (event) => {
+                // Si el servidor manda algo, lo vemos aquí
                 if (event.data === 'pong') {
-                    // Alive
+                    // Respuesta del ping, todo bien
+                    // console.debug('pong received');
+                } else {
+                    console.log('[RankitNative] Mensaje recibido:', event.data);
                 }
             };
 
-            socket.onclose = () => {
-                console.log('Rankit: Desconectado.');
+            socket.onclose = (event) => {
+                console.log(`[RankitNative] Desconectado. Código: ${event.code}, Razón: ${event.reason}`);
                 isConnected.value = false;
                 stopPing();
-                // Solo reconectar automáticamente si la intención era estar conectado
-                // (Podrías agregar lógica aquí si se cae internet)
+                socket = null;
             };
 
             socket.onerror = (error) => {
-                console.error('Rankit: Error en WebSocket', error);
-                socket?.close();
+                console.error('[RankitNative] Error en el socket:', error);
+                // No cerramos manualmente aquí, onclose se disparará usualmente
             };
 
         } catch (e) {
-            console.error('Rankit: Error al iniciar conexión', e);
+            console.error('[RankitNative] Excepción al crear WebSocket:', e);
+            isConnected.value = false;
         }
     };
 
     const startPing = () => {
         stopPing();
+        // Ping cada 20s para mantener la conexión viva (heartbeat)
         pingInterval = setInterval(() => {
             if (socket && socket.readyState === WebSocket.OPEN) {
                 socket.send('ping');
@@ -78,6 +86,7 @@ export function useRankitSocket(options = { autoConnect: true }) {
     const disconnect = () => {
         stopPing();
         if (socket) {
+            console.log('[RankitNative] Cerrando conexión intencionalmente...');
             socket.close();
             socket = null;
         }

@@ -67,3 +67,8 @@ STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
 
 POINTS_SERVICE_URL=http://localhost:8011
 POINTS_SERVICE_WS_URL=ws://localhost:8011
+
+VITE_
+POINTS_SERVICE_URL=http://http://62.72.3.139:8011
+POINTS_SERVICE_WS_URL=ws://62.72.3.139:8011
+VITE_
