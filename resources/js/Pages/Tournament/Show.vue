@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRankitSocket } from '@/Composables/useRankitSocket'
 
 // CORRECCIÓN TS: Uso de sintaxis genérica para tipado correcto de Arrays
@@ -50,13 +50,31 @@ const activeTab = ref('bracket')
 // Iniciamos con autoConnect: false para que solo conecte en el tab comunidad
 const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket({ autoConnect: false })
 
+// DEBUG: Watcher para ver cuándo cambia realmente el estado
+watch(isConnected, (newVal) => {
+  console.log('%c[RankitSocket] Estado isConnected cambió a:', 'color: orange; font-weight: bold;', newVal)
+})
+
 const switchTab = (tab: string) => {
   activeTab.value = tab
 
   // Lógica de conexión basada en el Tab
   if (tab === 'comunidad') {
+    console.log('%c[RankitSocket] Tab Comunidad activado. Iniciando conexión...', 'color: cyan; font-weight: bold;')
+    
+    // DEBUG: Imprimir variables de entorno para ver a dónde apunta
+    console.log('[RankitSocket] Configuración detectada (Vite Env):', {
+      PUSHER_HOST: import.meta.env.VITE_PUSHER_HOST,
+      PUSHER_PORT: import.meta.env.VITE_PUSHER_PORT,
+      REVERB_HOST: import.meta.env.VITE_REVERB_HOST,
+      SCHEME: import.meta.env.VITE_PUSHER_SCHEME,
+    })
+
     connectSocket()
   } else {
+    if (isConnected.value) {
+      console.log('%c[RankitSocket] Saliendo de Comunidad. Desconectando...', 'color: gray;')
+    }
     disconnectSocket()
   }
 }
@@ -130,10 +148,12 @@ function fallbackCopy(text: string) {
 // Control de visibilidad para pausar socket si minimizan
 const handleVisibilityChange = () => {
   if (document.hidden) {
+    console.log('[RankitSocket] Documento oculto (minimizado). Desconectando...')
     disconnectSocket()
   } else {
     // Solo reconectar si estamos en el tab correcto
     if (activeTab.value === 'comunidad') {
+      console.log('[RankitSocket] Documento visible. Reconectando...')
       connectSocket()
     }
   }
