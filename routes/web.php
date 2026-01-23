@@ -1,12 +1,16 @@
 <?php
-
+use App\Http\Controllers\BellzCupReferralController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Auth\GoogleController;
+
+use App\Http\Controllers\BellzCupViewerController;
+
 use App\Http\Controllers\Admin\TournamentParserController; // Admin Nuevo
 use App\Http\Controllers\Public\PublicTournamentController; // Publico Nuevo
 use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
 use App\Http\Controllers\TournamentController; // Dashboard Viejo
 use App\Http\Controllers\ProfilePageController; // Rankit
+
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -62,6 +66,26 @@ Route::middleware('auth')->group(function () {
     Route::get('/tournament/dashboard', [TournamentController::class, 'index'])->name('tournament.dashboard');
     Route::get('/tournament/widget', [TournamentController::class, 'widget'])->name('tournament.widget');
 });
+
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/bellzcup/referidos/redeem', [BellzCupReferralController::class, 'redeem'])
+        ->name('bellzcup.referidos.redeem');
+});
+Route::middleware(['auth'])->group(function () {
+    Route::post('/bellzcup/viewer/start', [BellzCupViewerController::class, 'start'])
+        ->name('bellzcup.viewer.start');
+
+    Route::post('/bellzcup/viewer/heartbeat', [BellzCupViewerController::class, 'heartbeat'])
+        ->name('bellzcup.viewer.heartbeat');
+
+    Route::post('/bellzcup/viewer/stop', [BellzCupViewerController::class, 'stop'])
+        ->name('bellzcup.viewer.stop');
+});
+
+
+// API para los Widgets (Pública para OBS)
+Route::get('/api/tournaments/stats-detailed/{tableName}', [TournamentParserController::class, 'getDetailedStats']);
 
 
 // --- RUTAS NUEVAS (SISTEMA JANGEL / LIVE) ---

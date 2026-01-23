@@ -14,6 +14,8 @@ namespace App\Models {
      * @property string|null $remember_token
      * @property string $password
      * @property \Illuminate\Support\Carbon|null $email_verified_at
+     * @property string|null $avatar
+     * @property string|null $google_id
      * @property string $email
      * @property string $name
      * @property int $id
@@ -22,6 +24,8 @@ namespace App\Models {
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereId($value)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereName($value)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereEmail($value)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereGoogleId($value)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereAvatar($value)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereEmailVerifiedAt($value)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User wherePassword($value)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereRememberToken($value)
@@ -43,6 +47,7 @@ namespace App\Models {
      * @method static array parseSub(mixed $query)
      * @method static mixed prependDatabaseNameIfCrossDatabaseQuery(mixed $query)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User addSelect(mixed $column)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User selectVectorDistance(\Illuminate\Contracts\Database\Query\Expression|string $column, \Illuminate\Support\Collection<int,float>|\Illuminate\Contracts\Support\Arrayable|array<int,float>|string $vector, string|null $as)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User distinct()
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User from(\Closure|\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $table, string|null $as)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User useIndex(string $index)
@@ -75,6 +80,9 @@ namespace App\Models {
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereNot(\Closure|string|array|\Illuminate\Contracts\Database\Query\Expression $column, mixed $operator, mixed $value)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereColumn(\Illuminate\Contracts\Database\Query\Expression|string|array $first, string|null $operator, string|null $second, string|null $boolean)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereColumn(\Illuminate\Contracts\Database\Query\Expression|string|array $first, string|null $operator, string|null $second)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereVectorSimilarTo(\Illuminate\Contracts\Database\Query\Expression|string $column, \Illuminate\Support\Collection<int,float>|\Illuminate\Contracts\Support\Arrayable|array<int,float>|string $vector, float $minSimilarity A value between 0.0 and 1.0, where 1.0 is identical., bool $order)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereVectorDistanceLessThan(\Illuminate\Contracts\Database\Query\Expression|string $column, \Illuminate\Support\Collection<int,float>|\Illuminate\Contracts\Support\Arrayable|array<int,float>|string $vector, float $maxDistance, string $boolean)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereVectorDistanceLessThan(\Illuminate\Contracts\Database\Query\Expression|string $column, \Illuminate\Support\Collection<int,float>|\Illuminate\Contracts\Support\Arrayable|array<int,float>|string $vector, float $maxDistance)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereRaw(\Illuminate\Contracts\Database\Query\Expression|string $sql, mixed $bindings, string $boolean)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereRaw(string $sql, mixed $bindings)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereLike(\Illuminate\Contracts\Database\Query\Expression|string $column, string $value, bool $caseSensitive, string $boolean, bool $not)
@@ -92,13 +100,13 @@ namespace App\Models {
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereNull(string|array|\Illuminate\Contracts\Database\Query\Expression $columns, string $boolean, bool $not)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereNull(string|array|\Illuminate\Contracts\Database\Query\Expression $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereNotNull(string|array|\Illuminate\Contracts\Database\Query\Expression $columns, string $boolean)
-     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereBetween(\Illuminate\Contracts\Database\Query\Expression|string $column, string $boolean, bool $not)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereBetween(\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $column, string $boolean, bool $not)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereBetweenColumns(\Illuminate\Contracts\Database\Query\Expression|string $column, string $boolean, bool $not)
-     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereBetween(\Illuminate\Contracts\Database\Query\Expression|string $column)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereBetween(\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereBetweenColumns(\Illuminate\Contracts\Database\Query\Expression|string $column)
-     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereNotBetween(\Illuminate\Contracts\Database\Query\Expression|string $column, string $boolean)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereNotBetween(\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $column, string $boolean)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereNotBetweenColumns(\Illuminate\Contracts\Database\Query\Expression|string $column, string $boolean)
-     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereNotBetween(\Illuminate\Contracts\Database\Query\Expression|string $column)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereNotBetween(\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereNotBetweenColumns(\Illuminate\Contracts\Database\Query\Expression|string $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User whereValueBetween(mixed $value, array{\Illuminate\Contracts\Database\Query\Expression|string, \Illuminate\Contracts\Database\Query\Expression|string} $columns, string $boolean, bool $not)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orWhereValueBetween(mixed $value, array{\Illuminate\Contracts\Database\Query\Expression|string, \Illuminate\Contracts\Database\Query\Expression|string} $columns)
@@ -162,12 +170,16 @@ namespace App\Models {
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User havingNotNull(array|string $columns, string $boolean)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orHavingNotNull(string $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User havingBetween(string $column, string $boolean, bool $not)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User havingNotBetween(string $column, iterable $values, string $boolean)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orHavingBetween(string $column, iterable $values)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orHavingNotBetween(string $column, iterable $values)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User havingRaw(string $sql, string $boolean)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orHavingRaw(string $sql)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orderBy(\Closure|\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $column, string $direction)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orderByDesc(\Closure|\Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<mixed>|\Illuminate\Contracts\Database\Query\Expression|string $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User latest(\Closure|\Illuminate\Database\Query\Builder|\Illuminate\Contracts\Database\Query\Expression|string $column)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User oldest(\Closure|\Illuminate\Database\Query\Builder|\Illuminate\Contracts\Database\Query\Expression|string $column)
+     * @method static \Illuminate\Database\Eloquent\Builder<User>|User orderByVectorDistance(\Illuminate\Contracts\Database\Query\Expression|string $column, \Illuminate\Support\Collection<int,float>|\Illuminate\Contracts\Support\Arrayable|array<int,float> $vector)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User inRandomOrder(string|int $seed)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User orderByRaw(string $sql, array $bindings)
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User skip(int $value)
@@ -261,6 +273,7 @@ namespace App\Models {
      * @method static mixed flattenValue(mixed $value)
      * @method static string defaultKeyName()
      * @method static \Illuminate\Database\ConnectionInterface getConnection()
+     * @method static void ensureConnectionSupportsVectors()
      * @method static \Illuminate\Database\Query\Processors\Processor getProcessor()
      * @method static \Illuminate\Database\Query\Grammars\Grammar getGrammar()
      * @method static \Illuminate\Database\Eloquent\Builder<User>|User useWritePdo()
