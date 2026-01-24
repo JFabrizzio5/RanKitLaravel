@@ -112,7 +112,7 @@ onMounted(() => {
                 
                 <div class="flex items-center justify-between px-5 py-3 bg-[#0a0a0a] border-b-2 border-[#bf00ff]">
                     <div class="flex items-center gap-3">
-                         <img src="public/BellzCup.png" alt="BellzCup" class="h-6">
+                         <img src="https://rankit.pro/public/BellzCup.png" alt="BellzCup" class="h-6">
                          <div class="w-[24px] h-[24px]">
                             <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/> 
