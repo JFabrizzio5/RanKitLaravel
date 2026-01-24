@@ -53,7 +53,7 @@ const t = computed(() => {
         title2: 'Compite.',
         title3: 'Escala.',
         desc: 'Desde canchas de fútbol 7 hasta arenas de esports. Rankit es el sistema operativo para organizadores que buscan profesionalismo.',
-        btnOrganize: 'Organizar Torneo',
+        btnOrganize: 'Lobby',
         btnDemo: 'Ver Demo',
       },
       tournaments: { title: 'Torneos', titleSub: 'En Curso', desc: 'Únete a la competencia. Demuestra tu nivel.', viewAll: 'Ver Todos', cardCreate: 'Crea tu Torneo' },
@@ -98,7 +98,7 @@ const t = computed(() => {
       custom: {
         tag: 'Enterprise',
         title: '¿Necesitas algo',
-        titleSub: 'a medida?',
+        titleSub: ' a medida?',
         desc: 'Para organizaciones grandes, ligas nacionales o integraciones personalizadas. Cuéntanos tu proyecto.',
         feat1: 'Desarrollo de Features Exclusivos',
         feat2: 'Servidores Dedicados',
@@ -312,28 +312,34 @@ onMounted(() => {
           </p>
 
           <div class="flex flex-col gap-4 sm:flex-row">
-            <!-- Auth Logic en botón principal -->
-            <Link
-               v-if="$page.props.auth?.user"
-               :href="route('dashboard')"
-               class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
-            >
-               <span class="btn-content">Dashboard</span>
-            </Link>
-            <Link
-               v-else-if="props.canRegister"
-               :href="route('register')"
-               class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
-            >
-               <span class="btn-content">{{ t.hero.btnOrganize }}</span>
-            </Link>
+  <!-- Si está logeado: se queda "Organizar Torneo" (como pediste) -->
+  <Link
+    v-if="$page.props.auth?.user"
+    :href="route('dashboard')"
+    class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
+  >
+    <span class="btn-content">{{ t.hero.btnOrganize }}</span>
+  </Link>
 
-            <button type="button" class="px-8 py-4 text-lg font-bold tracking-wider text-black uppercase btn-skew-outline dark:text-white">
-              <span class="flex items-center gap-3 btn-content">
-                <i class="text-2xl ph ph-play-circle"></i> <span>{{ t.hero.btnDemo }}</span>
-              </span>
-            </button>
-          </div>
+  <!-- Si NO está logeado: Ingresar + Crear cuenta -->
+  <template v-else>
+    <Link
+      :href="route('login')"
+      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
+    >
+      <span class="btn-content">{{ t.nav.login }}</span>
+    </Link>
+
+    <Link
+      v-if="props.canRegister"
+      :href="route('register')"
+      class="px-8 py-4 text-lg font-bold tracking-wider uppercase btn-skew-outline"
+    >
+      <span class="btn-content">{{ t.nav.create }}</span>
+    </Link>
+  </template>
+</div>
+
         </div>
 
         <!-- Hero Visuals -->
@@ -427,12 +433,12 @@ onMounted(() => {
         <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           <div class="cursor-pointer brutal-card group">
             <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
-              <img src="https://images.unsplash.com/photo-1624138784181-2999e4253b85?q=80&w=800" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="Valorant" />
+              <img src="BellzCup.png" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="Valorant" />
               <div class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-black uppercase bg-neon">Esports</div>
             </div>
             <div class="p-6">
-              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">Valorant Masters</h3>
-              <p class="mb-4 font-mono text-xs text-gray-500">5v5 • PC • $10,000 MXN</p>
+              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">BellzCup</h3>
+              <p class="mb-4 font-mono text-xs text-gray-500">Battle Royale • Crossplay • $2,400.00 MXN en premios</p>
             </div>
           </div>
 
@@ -559,7 +565,12 @@ onMounted(() => {
             </div>
             <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">{{ t.alliance.techTitle }}</h3>
             <p class="h-12 mb-8 text-gray-500 dark:text-gray-400">{{ t.alliance.techDesc }}</p>
-            <a href="#" class="inline-flex items-center gap-2 text-sm font-bold tracking-wider text-blue-500 uppercase transition-colors group-hover:text-blue-400">
+<a
+  href="https://instagram.com/cometaxcompany"
+  target="_blank"
+  rel="noopener"
+  class="inline-flex items-center gap-2 text-sm font-bold tracking-wider text-blue-500 uppercase transition-colors group-hover:text-blue-400"
+>
               <span>{{ t.alliance.techCta }}</span> <i class="ph ph-arrow-right"></i>
             </a>
           </div>
@@ -571,7 +582,13 @@ onMounted(() => {
             </div>
             <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">{{ t.alliance.creatorTitle }}</h3>
             <p class="h-12 mb-8 text-gray-500 dark:text-gray-400">{{ t.alliance.creatorDesc }}</p>
-            <a href="#" class="inline-flex items-center gap-2 text-sm font-bold tracking-wider text-pink-500 uppercase transition-colors group-hover:text-pink-400">
+<a
+  href="https://instagram.com/cometaxcompany"
+  target="_blank"
+  rel="noopener"
+  class="inline-flex items-center gap-2 text-sm font-bold tracking-wider text-pink-500 uppercase transition-colors group-hover:text-pink-400"
+>
+
               <span>{{ t.alliance.creatorCta }}</span> <i class="ph ph-arrow-right"></i>
             </a>
           </div>
@@ -600,41 +617,105 @@ onMounted(() => {
 
     <!-- Contact Form -->
     <section id="contacto" class="py-24 bg-gray-50 dark:bg-[#050505] border-t border-gray-200 dark:border-white/10">
-      <div class="grid items-center max-w-5xl grid-cols-1 gap-16 px-6 mx-auto md:grid-cols-2">
-        <div>
-          <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">{{ t.custom.tag }}</span>
-          <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
-            <span>{{ t.custom.title }}</span>
-            <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">
-              {{ t.custom.titleSub }}
-            </span>
-          </h2>
-          <p class="mb-8 text-lg text-gray-500 dark:text-gray-400">{{ t.custom.desc }}</p>
-          <ul class="mb-8 space-y-4 text-sm text-gray-600 dark:text-gray-300">
-            <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat1 }}</li>
-            <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat2 }}</li>
-            <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat3 }}</li>
-          </ul>
-        </div>
+  <div class="grid items-center max-w-5xl grid-cols-1 gap-16 px-6 mx-auto md:grid-cols-2">
+    <div>
+      <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">{{ t.custom.tag }}</span>
+      <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
+        <span>{{ t.custom.title }}</span>
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">
+          {{ t.custom.titleSub }}
+        </span>
+      </h2>
+      <p class="mb-8 text-lg text-gray-500 dark:text-gray-400">{{ t.custom.desc }}</p>
+      <ul class="mb-8 space-y-4 text-sm text-gray-600 dark:text-gray-300">
+        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat1 }}</li>
+        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat2 }}</li>
+        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat3 }}</li>
+      </ul>
+    </div>
 
-        <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
-          <form class="space-y-8" @submit.prevent>
-            <div>
-              <input type="text" :placeholder="t.custom.inputName" class="brutal-input" />
-            </div>
-            <div>
-              <input type="email" :placeholder="t.custom.inputEmail" class="brutal-input" />
-            </div>
-            <div>
-              <textarea :placeholder="t.custom.inputDetails" rows="3" class="resize-none brutal-input"></textarea>
-            </div>
-            <button type="button" class="w-full py-4 mt-4 text-sm font-bold tracking-wider uppercase btn-skew">
-              <span class="btn-content">{{ t.custom.btnSend }}</span>
-            </button>
-          </form>
-        </div>
+    <!-- Instagram CTA -->
+    <div class="brutal-card p-10 bg-white dark:bg-[#0a0a0a] flex flex-col items-center justify-center text-center">
+      <div class="w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_var(--rankit-neon)] bg-neon/10">
+<img
+    src="https://cdn-icons-png.flaticon.com/512/1400/1400487.png"
+    alt="Instagram"
+    class="w-8 h-8 object-contain"
+  />      </div>
+
+      <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">
+        Instagram
+      </h3>
+      <p class="mb-8 text-gray-500 dark:text-gray-400">
+        Escríbenos por DM y te armamos una demo o una propuesta a medida.
+      </p>
+
+      <!-- Cambia el href por tu IG real -->
+      <a
+        href="https://instagram.com/rankit.pro"
+        target="_blank"
+        rel="noopener"
+        class="w-full py-4 text-sm font-bold tracking-wider uppercase btn-skew"
+      >
+        <span class="btn-content">Abrir Instagram</span>
+      </a>
+    </div>
+  </div>
+</section>
+<section id="software-medida" class="py-24 bg-gray-50 dark:bg-[#050505] border-t border-gray-200 dark:border-white/10">
+  <div class="grid items-center max-w-5xl grid-cols-1 gap-16 px-6 mx-auto md:grid-cols-2">
+
+    <!-- Instagram CTA (ahora del lado izquierdo) -->
+    <div class="brutal-card p-10 bg-white dark:bg-[#0a0a0a] flex flex-col items-center justify-center text-center">
+      <div class="w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_var(--rankit-neon)] bg-neon/10">
+        <img
+    src="https://cdn-icons-png.flaticon.com/512/1400/1400487.png"
+          alt="Instagram"
+          class="w-8 h-8 object-contain"
+        />
       </div>
-    </section>
+
+      <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">
+        CometaX Company
+      </h3>
+      <p class="mb-8 text-gray-500 dark:text-gray-400">
+        Escríbenos por DM para cotizar software a medida.
+      </p>
+
+      <a
+        href="https://instagram.com/cometaxcompany"
+        target="_blank"
+        rel="noopener"
+        class="w-full py-4 text-sm font-bold tracking-wider uppercase btn-skew"
+      >
+        <span class="btn-content">Abrir Instagram</span>
+      </a>
+    </div>
+
+    <!-- Texto (ahora del lado derecho) -->
+    <div>
+      <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">Software</span>
+      <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
+        <span>¿Necesitas software</span>
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">
+          a medida?
+        </span>
+      </h2>
+
+      <p class="mb-8 text-lg text-gray-500 dark:text-gray-400">
+        Si tu organización necesita un sistema personalizado, integraciones especiales o una plataforma completa, lo construimos contigo.
+      </p>
+
+      <ul class="mb-8 space-y-4 text-sm text-gray-600 dark:text-gray-300">
+        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> Integraciones y automatizaciones</li>
+        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> Dashboard + roles + permisos</li>
+        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> Deploy, soporte y escalamiento</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
 
     <!-- Footer -->
     <footer class="py-12 transition-colors bg-gray-100 border-t border-gray-200 dark:bg-black dark:border-white/10">
@@ -698,6 +779,7 @@ onMounted(() => {
     linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
 }
+.text-ig { color: var(--rankit-neon); }
 
 /* Brutal card */
 .brutal-card {
