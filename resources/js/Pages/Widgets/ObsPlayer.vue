@@ -42,7 +42,7 @@ onMounted(() => {
         <div class="flex flex-col justify-center gap-2">
             <div class="flex items-center gap-3">
                 <!-- Logo BellzCup -->
-                <img src="/BellzCup.png" alt="BellzCup" class="h-5">
+                <img src="public/BellzCup.png" alt="BellzCup" class="h-5">
                 <span class="text-xl italic font-black leading-none tracking-tighter uppercase font-display">
                     {{ playerName }}
                 </span>
