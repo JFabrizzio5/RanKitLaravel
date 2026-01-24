@@ -270,7 +270,7 @@ onUnmounted(() => {
     <!-- HERO SECTION -->
     <header class="relative min-h-[500px] h-auto flex items-end overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
       <div class="absolute inset-0 z-0 pointer-events-none">
-        <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80" class="w-full h-full object-cover opacity-20 dark:opacity-30 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear grayscale mix-blend-multiply dark:mix-blend-overlay" />
+        <img src="public/BellzCupBeta/BannerBellzCup.png" class="w-full h-full object-cover opacity-20 dark:opacity-30 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear grayscale mix-blend-multiply dark:mix-blend-overlay" />
         <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
       </div>
 
@@ -458,11 +458,11 @@ onUnmounted(() => {
           <!-- CONTENIDO ESPECÍFICO PARA BELLZCUP (ID 7) -->
           <div v-if="Number(tournamentData.id) === 7">
              <!-- IMAGEN SOLICITADA -->
-             <div class="flex justify-center mb-8">
-                  <img src="/images/bellzcup.png" 
-                       onerror="this.src='https://via.placeholder.com/800x200?text=BellzCup+Official'" 
-                       alt="BellzCup Tournament" 
-                       class="rounded-lg shadow-2xl border border-[var(--rankit-neon)] w-full max-w-3xl object-cover" />
+             <div class="relative h-[400px] md:h-[500px] overflow-hidden rounded-xl shadow-2xl border border-[var(--rankit-neon)] mb-12 group">
+                 <img src="/BellzCupBeta/BannerBellzCup.png" 
+                     alt="Banner BellzCup"
+                     class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-[1.5s] ease-out blur-[2px] group-hover:blur-0" 
+                     onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"/>
              </div>
 
              <div class="grid grid-cols-1 gap-12 md:grid-cols-2">
