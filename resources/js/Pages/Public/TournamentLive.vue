@@ -1,238 +1,344 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3'
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
+import { useRankitSocket } from '@/Composables/useRankitSocket'
 import axios from 'axios'
 
-// --- TIPOS ---
-
+// --- TIPOS (Del segundo código para la Tabla) ---
 interface PublicMatch {
-    id: number;
-    mode: string;
-    code: string;
-    status: string;
-    is_active: boolean;
-    created_at: string;
+  id: number;
+  mode: string;
+  code: string;
+  status: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 interface PublicRankingItem {
-    player_name: string;
-    member_names?: string[];
-    games_played: number;
-    total_kills: number;
-    total_points: number;
-    avg_points: number;
-    avg_kills: number;
-    avg_placement: number;
-    best_placement: number;
+  player_name: string;
+  member_names?: string[];
+  games_played: number;
+  total_kills: number;
+  total_points: number;
+  avg_points: number;
+  avg_kills: number;
+  avg_placement: number;
+  best_placement: number;
 }
 
 interface TournamentInfo {
-    id?: number;
-    name?: string;
-    progress?: string;
-    twitch_channel?: string;
+  id?: number;
+  name?: string;
+  progress?: string;
+  twitch_channel?: string;
+  hero_image?: string;
+  status?: string;
+  game?: string;
 }
 
 interface LiveDataResponse {
-    tournament: TournamentInfo;
-    matches: PublicMatch[];
-    ranking: PublicRankingItem[];
+  tournament: TournamentInfo;
+  matches: PublicMatch[];
+  ranking: PublicRankingItem[];
 }
 
 // --- PROPS ---
 const props = defineProps<{
-  tournament?: TournamentInfo; 
+  tournament?: TournamentInfo;
   sponsors?: any[];
-  targetDate?: number;
-}>();
+  totalPoints?: number;
+  // Props de Auth
+  laravelVersion?: string;
+  phpVersion?: string;
+  canLogin?: boolean;
+  canRegister?: boolean;
+}>()
 
-// --- THEME ---
-const isDark = ref(true);
+/**
+ * THEME MANAGEMENT
+ */
+const isDark = ref(true)
 
 function applyTheme(nextDark: boolean) {
-  isDark.value = nextDark;
-  const html = document.documentElement;
+  isDark.value = nextDark
+  const html = document.documentElement
   if (nextDark) {
-    html.classList.add('dark');
-    localStorage.setItem('theme', 'dark');
+    html.classList.add('dark')
+    localStorage.setItem('theme', 'dark')
   } else {
-    html.classList.remove('dark');
-    localStorage.setItem('theme', 'light');
+    html.classList.remove('dark')
+    localStorage.setItem('theme', 'light')
   }
 }
-function toggleTheme() { applyTheme(!isDark.value); }
 
-// --- LOGICA DE DATOS ---
-const matches = ref<PublicMatch[]>([]);
-const ranking = ref<PublicRankingItem[]>([]);
-// Inicializamos con los props para tener datos inmediatos
-const tournamentData = ref<TournamentInfo>(props.tournament || {});
-const progressText = ref("Cargando...");
-const isLoading = ref(true); // Estado de carga inicial/manual
-// const viewerCount = ref(1240); // Eliminado por solicitud de rendimiento/visualización
+function toggleTheme() {
+  applyTheme(!isDark.value)
+}
 
-// Tabs y Filtros
-const activeTab = ref<'resultados' | 'partidas' | 'reglas' | 'premios'>('resultados');
-const selectedMatchId = ref<number | null>(null);
-const leaderboardType = ref<'players' | 'teams'>('players');
-const filterMode = ref<string>('all'); 
-const sortBy = ref<'points' | 'kills'>('points');
-const expandedRowIndex = ref<number | null>(null);
+/**
+ * LOGICA DE DATOS (TABLA Y FILTROS)
+ */
+const matches = ref<PublicMatch[]>([])
+const ranking = ref<PublicRankingItem[]>([])
+// Inicializamos con los props para tener datos inmediatos si existen
+const tournamentData = ref<TournamentInfo>(props.tournament || {})
+const isLoading = ref(true)
+const progressText = ref(props.tournament?.status || "Cargando...")
 
-// --- LÓGICA ESPECIAL PARA BELLZCUP (ID 7) ---
-// Filtramos las pestañas: Si es el ID 7, quitamos "partidas".
-const availableTabs = computed(() => {
-    // Usamos Number() para asegurar que la comparación sea correcta (7 vs "7")
-    if (Number(tournamentData.value.id) === 7) {
-        return ['resultados', 'reglas', 'premios'];
-    }
-    return ['resultados', 'partidas', 'reglas'];
-});
+// Filtros de Tabla
+const selectedMatchId = ref<number | null>(null)
+const leaderboardType = ref<'players' | 'teams'>('players')
+const filterMode = ref<string>('all') 
+const sortBy = ref<'points' | 'kills'>('points')
+const expandedRowIndex = ref<number | null>(null)
 
-let pollInterval: number | undefined;
+let pollInterval: number | undefined
 
-// Función principal de carga
-// showSpinner: true para acciones del usuario (clicks), false para polling automático
 const loadData = async (showSpinner = false) => {
-    try {
-        const id = props.tournament?.id || tournamentData.value.id;
-        if(!id) return;
+  try {
+    // Usamos el ID del prop o del objeto reactivo
+    const id = props.tournament?.id || tournamentData.value.id
+    if(!id) return
 
-        if (showSpinner) {
-            isLoading.value = true;
-            expandedRowIndex.value = null; // Colapsar filas al filtrar
-        }
-
-        // viewerCount logic removed
-
-        const url = `/api/live/${id}/data`;
-        const params: any = {
-            type: leaderboardType.value,
-            mode: filterMode.value, 
-            sort: sortBy.value
-        };
-        if (selectedMatchId.value) params.match_id = selectedMatchId.value;
-
-        const res = await axios.get<LiveDataResponse>(url, { params });
-        
-        matches.value = res.data.matches;
-        ranking.value = res.data.ranking;
-        
-        if(res.data.tournament) {
-            // CORRECCIÓN CRÍTICA: Solo actualizamos el ID si la API lo devuelve.
-            // Si la API no trae ID, mantenemos el que ya tenemos (props) para no romper la vista.
-            if (res.data.tournament.id) {
-                tournamentData.value.id = Number(res.data.tournament.id); 
-            }
-            
-            tournamentData.value.name = res.data.tournament.name;
-            progressText.value = res.data.tournament.progress || '';
-            tournamentData.value.twitch_channel = res.data.tournament.twitch_channel; 
-        }
-        
-    } catch (e) { 
-        console.error("Error polling data:", e); 
-    } finally {
-        // Solo quitamos el spinner si estaba activo, el polling no lo activa
-        if (showSpinner) isLoading.value = false;
-        // Si era la carga inicial (mounted), también lo quitamos
-        if (isLoading.value && !showSpinner) isLoading.value = false; 
+    if (showSpinner) {
+      isLoading.value = true
+      expandedRowIndex.value = null
     }
-};
 
-// UI Helpers
-const switchTab = (tab: 'resultados' | 'partidas' | 'reglas' | 'premios') => (activeTab.value = tab);
+    const url = `/api/live/${id}/data`
+    const params: any = {
+      type: leaderboardType.value,
+      mode: filterMode.value, 
+      sort: sortBy.value
+    }
+    if (selectedMatchId.value) params.match_id = selectedMatchId.value
 
-const formatDec = (num: number | string) => {
-    const n = typeof num === 'string' ? parseFloat(num) : num;
-    return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '');
-};
-
-// Acciones de Usuario (activan spinner)
-const changeFilter = (type: 'type' | 'mode' | 'sort', value: string) => {
-    if (type === 'type') leaderboardType.value = value as any;
-    if (type === 'mode') filterMode.value = value;
-    if (type === 'sort') sortBy.value = value as any;
+    const res = await axios.get<LiveDataResponse>(url, { params })
     
-    loadData(true); // true = Mostrar Spinner
-};
+    matches.value = res.data.matches
+    ranking.value = res.data.ranking
+    
+    if(res.data.tournament) {
+      if (res.data.tournament.id) {
+        tournamentData.value.id = Number(res.data.tournament.id) 
+      }
+      tournamentData.value.name = res.data.tournament.name
+      progressText.value = res.data.tournament.progress || ''
+      tournamentData.value.twitch_channel = res.data.tournament.twitch_channel 
+    }
+    
+  } catch (e) { 
+    console.error("Error polling data:", e) 
+  } finally {
+    if (showSpinner) isLoading.value = false
+    if (isLoading.value && !showSpinner) isLoading.value = false 
+  }
+}
+
+// Helpers de Tabla
+const formatDec = (num: number | string) => {
+  const n = typeof num === 'string' ? parseFloat(num) : num
+  return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '')
+}
+
+const changeFilter = (type: 'type' | 'mode' | 'sort', value: string) => {
+  if (type === 'type') leaderboardType.value = value as any
+  if (type === 'mode') filterMode.value = value
+  if (type === 'sort') sortBy.value = value as any
+  loadData(true)
+}
 
 const toggleMatchFilter = (matchId: number | null) => {
-    selectedMatchId.value = selectedMatchId.value === matchId ? null : matchId;
-    loadData(true);
-};
-
-const copyObsLink = () => {
-    const id = props.tournament?.id || tournamentData.value.id;
-    if (!id) return;
-    
-    const baseUrl = `${window.location.origin}/widget/obs/global/${id}`;
-    const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10${selectedMatchId.value ? `&match_id=${selectedMatchId.value}` : ''}`;
-    
-    navigator.clipboard.writeText(baseUrl + query);
-    alert(`✅ Link OBS Copiado!\n\nConfiguración:\n• Modo: ${filterMode.value.toUpperCase()}\n• Vista: ${leaderboardType.value.toUpperCase()}\n• Orden: ${sortBy.value.toUpperCase()}\n• Match: ${selectedMatchId.value ? '#' + selectedMatchId.value : 'Global'}`);
-};
-
-// Función para copiar link de Tracking individual
-const copyTrackingLink = (item: PublicRankingItem) => {
-    const id = props.tournament?.id || tournamentData.value.id;
-    if (!id) return;
-
-    let targetName = item.player_name;
-    // Si es equipos, usamos el primer nombre de miembro para buscar
-    if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
-        targetName = item.member_names[0];
-    }
-
-    if (!targetName) return;
-
-    const baseUrl = `${window.location.origin}/widget/obs/global/${id}`;
-    const query = `?type=${leaderboardType.value}&mode=all&sort=${sortBy.value}&limit=1&search=${encodeURIComponent(targetName)}`;
-    
-    navigator.clipboard.writeText(baseUrl + query);
-    alert(`✅ Tracking OBS copiado para: ${targetName}`);
-};
-
-const copyPublicLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert("✅ Enlace público copiado al portapapeles.");
+  selectedMatchId.value = selectedMatchId.value === matchId ? null : matchId
+  loadData(true)
 }
 
-const getTwitchUrl = (channel: string) => {
-    const parent = window.location.hostname;
-    return `https://player.twitch.tv/?channel=${channel}&parent=${parent}&muted=false`;
-};
+const copyObsLink = () => {
+  const id = props.tournament?.id || tournamentData.value.id
+  if (!id) return
+  
+  const baseUrl = `${window.location.origin}/widget/obs/global/${id}`
+  const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10${selectedMatchId.value ? `&match_id=${selectedMatchId.value}` : ''}`
+  
+  navigator.clipboard.writeText(baseUrl + query)
+  alert(`✅ Link OBS Copiado!\n\nConfiguración:\n• Modo: ${filterMode.value.toUpperCase()}\n• Vista: ${leaderboardType.value.toUpperCase()}\n• Orden: ${sortBy.value.toUpperCase()}\n• Match: ${selectedMatchId.value ? '#' + selectedMatchId.value : 'Global'}`)
+}
 
-onMounted(() => {
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme === 'light') applyTheme(false);
-  else applyTheme(true);
+const copyTrackingLink = (item: PublicRankingItem) => {
+  const id = props.tournament?.id || tournamentData.value.id
+  if (!id) return
 
-  if (!document.querySelector('script[src="https://unpkg.com/@phosphor-icons/web"]')) {
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/@phosphor-icons/web';
-    script.async = true;
-    document.head.appendChild(script);
+  let targetName = item.player_name
+  if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
+    targetName = item.member_names[0]
   }
 
-  loadData(true); // Carga inicial con spinner
-  // Polling actualizado a 4 minutos (240000ms)
-  pollInterval = window.setInterval(() => loadData(false), 240000); 
-});
+  if (!targetName) return
+
+  const baseUrl = `${window.location.origin}/widget/obs/global/${id}`
+  const query = `?type=${leaderboardType.value}&mode=all&sort=${sortBy.value}&limit=1&search=${encodeURIComponent(targetName)}`
+  
+  navigator.clipboard.writeText(baseUrl + query)
+  alert(`✅ Tracking OBS copiado para: ${targetName}`)
+}
+
+/**
+ * LOGICA DEL TORNEO & SOCKETS (INTACTA)
+ */
+const activeTab = ref('resultados') // Default ahora es resultados (tabla)
+
+// 1. OBTENER USUARIO
+const page = usePage()
+const user = page.props.auth?.user as any
+
+// ===== Viewer Points (WEBSOCKET INTEGRATION) =====
+const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket(
+  'community', 
+  user?.id, 
+  { 
+    autoConnect: false,
+    manageVisibility: false 
+  }
+)
+
+// DEBUG: Watcher socket
+watch(isConnected, (newVal) => {
+  console.log('%c[RankitSocket] Estado isConnected cambió a:', 'color: orange; font-weight: bold;', newVal)
+})
+
+const switchTab = (tab: string) => {
+  activeTab.value = tab
+
+  // Lógica de conexión basada en el Tab
+  if (tab === 'comunidad') {
+    console.log('%c[RankitSocket] Tab Comunidad activado. Iniciando conexión...', 'color: cyan; font-weight: bold;')
+    if (!user) {
+        console.warn('[RankitSocket] Usuario no autenticado. No se conectará al socket.')
+    }
+    connectSocket()
+  } else {
+    if (isConnected.value) {
+      console.log('%c[RankitSocket] Saliendo de Comunidad. Desconectando...', 'color: gray;')
+    }
+    disconnectSocket()
+  }
+}
+
+// Twitch Props
+const twitchChannel = computed(() => tournamentData.value.twitch_channel ?? props.tournament?.twitch_channel ?? 'Rankit')
+const tournamentTitle = computed(() => tournamentData.value.name ?? 'bellzCup') 
+
+// ==============================
+// REFERIDOS (MODALES + REDEEM)
+// ==============================
+const me = user 
+const showInviteModal = ref(false)
+const showCodeModal = ref(false)
+const myCode = computed(() => (me?.id ? `${me.id}rankit` : ''))
+const inviteLink = computed(() => `https://rankit.pro/?ref=${myCode.value}`)
+const redeemForm = useForm({ code: '' })
+
+function openInvite() { showInviteModal.value = true }
+function openCode() { showCodeModal.value = true; redeemForm.clearErrors() }
+function submitCode() {
+  redeemForm.post(route('bellzcup.referidos.redeem'), {
+    preserveScroll: true,
+    onSuccess: () => { showCodeModal.value = false; redeemForm.reset() },
+  })
+}
+function copyToClipboard(text: string) {
+  if (typeof window === 'undefined') return
+  const t = String(text ?? '')
+  if (navigator?.clipboard?.writeText) {
+    navigator.clipboard.writeText(t).catch(() => fallbackCopy(t))
+    return
+  }
+  fallbackCopy(t)
+}
+function fallbackCopy(text: string) {
+  const ta = document.createElement('textarea')
+  ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.left = '-1000px'
+  document.body.appendChild(ta); ta.select(); try { document.execCommand('copy') } catch (e) {}; document.body.removeChild(ta)
+}
+
+// Control de visibilidad
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    console.log('[RankitSocket] Documento oculto (minimizado). Desconectando...')
+    disconnectSocket()
+  } else {
+    if (activeTab.value === 'comunidad') {
+      console.log('[RankitSocket] Documento visible. Reconectando...')
+      connectSocket()
+    }
+  }
+}
+
+onMounted(() => {
+  // Theme init
+  const savedTheme = localStorage.getItem('theme')
+  const systemPrefersDark = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? true
+  if (savedTheme === 'light') applyTheme(false)
+  else if (savedTheme === 'dark') applyTheme(true)
+  else applyTheme(systemPrefersDark)
+
+  // Cargar Iconos
+  if (!document.querySelector('script[src="https://unpkg.com/@phosphor-icons/web"]')) {
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/@phosphor-icons/web'
+    script.async = true
+    document.head.appendChild(script)
+  }
+  
+  // Twitch Embed (Solo si es necesario al inicio, pero se maneja dinamicamente en tab comunidad)
+  const parentHost = window.location.hostname
+  const initPlayer = () => {
+    const embed = document.getElementById('twitch-embed')
+    if (!embed) return
+    // @ts-ignore
+    if (window.Twitch && !embed.firstChild) {
+      // @ts-ignore
+      new window.Twitch.Player('twitch-embed', {
+        channel: twitchChannel.value,
+        width: '100%',
+        height: '100%',
+        parent: [parentHost],
+      })
+    }
+  }
+
+  if (!document.getElementById('twitch-embed-script')) {
+    const script = document.createElement('script')
+    script.setAttribute('id', 'twitch-embed-script')
+    script.setAttribute('src', 'https://player.twitch.tv/js/embed/v1.js')
+    script.onload = initPlayer
+    document.head.appendChild(script)
+  } else {
+    setTimeout(initPlayer, 500)
+  }
+
+  // Data Loading
+  loadData(true)
+  pollInterval = window.setInterval(() => loadData(false), 240000) // 4 min polling
+
+  // Listeners de Visibilidad
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
 
 onUnmounted(() => {
-    if(pollInterval) clearInterval(pollInterval);
-});
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  disconnectSocket()
+  if(pollInterval) clearInterval(pollInterval)
+})
 </script>
 
 <template>
-  <Head :title="`${tournamentData.name || 'Torneo'} - BellzCup Live`">
+  <Head title="bellzCup - Rankit">
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Archivo:wght@300;400;600;800&display=swap" rel="stylesheet" />
   </Head>
 
   <div class="overflow-x-hidden selection:bg-[var(--rankit-neon)] selection:text-white bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-white font-sans transition-colors duration-300">
     
-    <!-- Navbar -->
     <nav class="fixed w-full z-50 transition-colors duration-300 bg-white/90 border-b border-gray-200 dark:bg-[#050505]/95 dark:border-white/10 backdrop-blur-md h-20 flex items-center px-6 lg:px-12 justify-between">
       <Link href="/" class="flex items-center gap-3 cursor-pointer group">
         <svg class="w-10 h-10 text-black dark:text-white group-hover:text-[var(--rankit-neon)] transition-colors" viewBox="0 0 100 100" fill="none">
@@ -240,90 +346,121 @@ onUnmounted(() => {
           <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="currentColor" />
           <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--rankit-neon)" />
         </svg>
-        <span class="text-3xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">BellzCup</span>
+        <span class="text-3xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">Rankit</span>
       </Link>
+
       <div class="flex items-center gap-4">
+        <div v-if="isConnected && activeTab === 'comunidad'" class="items-center hidden gap-2 px-3 py-1 text-xs font-bold text-green-500 border rounded-full md:flex bg-green-500/10 animate-pulse border-green-500/20">
+            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+            SUMANDO PUNTOS
+        </div>
+
         <button @click="toggleTheme" class="p-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-neon dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
           <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
           <i v-else class="text-xl ph-fill ph-moon"></i>
         </button>
+        
+        <template v-if="$page.props.auth?.user">
+             <Link :href="route('dashboard')" class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white">Dashboard</Link>
+        </template>
+        <template v-else>
+             <Link :href="route('login')" class="px-6 py-2 text-sm font-bold tracking-wider uppercase btn-skew"><span class="btn-content">Ingresar</span></Link>
+        </template>
       </div>
     </nav>
 
-    <!-- STREAM SECTION (Si hay canal) -->
-    <div v-if="tournamentData.twitch_channel" class="pt-20 bg-black">
-        <div class="w-full aspect-video max-w-7xl mx-auto lg:aspect-[21/9] xl:aspect-[24/9] max-h-[60vh] relative group">
-            <iframe
-                :src="getTwitchUrl(tournamentData.twitch_channel)"
-                frameborder="0"
-                allowfullscreen="true"
-                scrolling="no"
-                class="w-full h-full"
-            ></iframe>
-            <div class="absolute bottom-4 right-4 bg-black/80 text-white px-2 py-1 text-[10px] uppercase font-bold rounded pointer-events-none opacity-0 group-hover:opacity-100 transition">
-                Viendo a {{ tournamentData.twitch_channel }}
-            </div>
-        </div>
-    </div>
+    <header class="relative min-h-[500px] h-auto flex items-end pt-24 overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]">
+      <div class="absolute inset-0 z-0 pointer-events-none">
+        <img src="https://rankit.pro/public/BellzCupBeta/BannerBellzCup.png" class="w-full h-full object-cover opacity-30 dark:opacity-40 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear" />
+        <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
+      </div>
 
-    <!-- HERO SECTION / BANNER (OPTIMIZADO / SIN IMAGEN PESADA) -->
-    <header class="relative min-h-[300px] flex items-end pb-12 bg-[#0a0a0a]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
-      
-      <!-- Fondo CSS Ligero -->
-      <div class="absolute inset-0 z-0 bg-gradient-to-b from-gray-900 to-black"></div>
-      <div class="absolute inset-0 z-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
-
-      <div class="relative z-10 flex flex-col w-full gap-6 px-6 mx-auto max-w-7xl lg:px-8">
+      <div class="relative z-10 flex flex-col w-full gap-8 px-6 mx-auto max-w-7xl lg:px-8">
         <div class="flex flex-wrap items-center gap-3 animate-fade-in-up">
-          <span class="bg-red-600/90 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-lg animate-pulse flex items-center gap-2 rounded-sm">
-             <span class="w-1.5 h-1.5 bg-white rounded-full"></span> EN VIVO
+          <span class="bg-red-600/90 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(220,38,38,0.6)] animate-pulse flex items-center gap-2 btn-skew">
+             <span class="flex items-center gap-2 btn-content"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> {{ props.tournament?.status ?? 'En Vivo' }}</span>
           </span>
-          <span class="bg-white/10 border border-white/10 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default backdrop-blur-sm rounded-sm">
-            {{ progressText }}
+          <span class="bg-white/10 border border-black/10 dark:border-white/10 text-black dark:text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default brutal-card">
+            <i class="ph ph-game-controller text-neon"></i>
+            {{ props.tournament?.game ?? 'Fortnite' }}
           </span>
-          
-          <!-- BOTÓN ACTUALIZAR MANUAL -->
-          <button @click="loadData(true)" class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold text-white uppercase bg-[var(--rankit-neon)] hover:opacity-80 transition rounded-sm group">
-             <span class="flex items-center gap-2 btn-content">
+           <button @click="loadData(true)" class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold text-white uppercase bg-[var(--rankit-neon)] hover:opacity-80 transition rounded-sm group">
+              <span class="flex items-center gap-2 btn-content">
                 <i class="transition-transform duration-500 ph-bold ph-arrows-clockwise group-hover:rotate-180"></i>
                 Actualizar
-             </span>
-          </button>
-          
-          <!-- Viewers Eliminados por solicitud -->
+              </span>
+           </button>
         </div>
 
-        <div class="relative max-w-4xl delay-100 animate-fade-in-up">
-            <h1 class="mb-2 text-4xl italic font-black leading-none tracking-tight text-white uppercase md:text-6xl font-display">
-              {{ tournamentData.name || 'Torneo' }}
-            </h1>
-            <h2 class="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600 font-display italic">
+        <div class="flex flex-col items-end justify-between gap-10 lg:flex-row">
+          <div class="relative max-w-3xl delay-100 animate-fade-in-up">
+            <h1 class="mb-4 text-5xl font-black leading-none tracking-tight text-black uppercase md:text-7xl font-display dark:text-white">
+              {{ tournamentTitle }} <br />
+              <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600">
                 LIVE STATS
-            </h2>
+              </span>
+            </h1>
+            <p class="max-w-xl py-1 pl-6 text-lg font-light text-gray-600 border-l-4 dark:text-gray-400 border-neon">
+              El escenario definitivo. 16 equipos, un solo trofeo y la gloria eterna en el torneo más grande de LATAM.
+            </p>
+          </div>
+
+          <div class="flex flex-col w-full gap-4 delay-200 lg:w-auto sm:flex-row lg:flex-col animate-fade-in-up">
+            <div class="brutal-card px-4 py-3 text-center bg-white dark:bg-[#0a0a0a]">
+              <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total puntos</div>
+              <div class="text-3xl font-black text-black font-display dark:text-white">
+                {{ (props.totalPoints ?? 0).toLocaleString?.() ?? (props.totalPoints ?? 0) }}
+              </div>
+              <div class="text-[10px] text-gray-500">Rifa bellzCup</div>
+            </div>
+
+            <div class="flex flex-1 gap-3">
+              <button type="button" @click="openCode" class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]">
+                <div class="text-[9px] text-gray-500 uppercase font-bold">Acceso</div>
+                <div class="text-sm font-bold font-display">INGRESAR CÓDIGO</div>
+              </button>
+
+              <button type="button" @click="openInvite" class="flex-1 px-6 py-3 text-sm font-bold tracking-wider uppercase btn-skew">
+                <span class="btn-content">INVITAR AMIGO</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="absolute bottom-0 z-20 flex items-center w-full overflow-hidden border-t h-14 bg-white/50 dark:bg-black/80 border-black/5 dark:border-white/5 backdrop-blur-md">
+        <div class="flex items-center gap-16 pl-16 animate-marquee whitespace-nowrap">
+          <span v-for="i in 10" :key="i" class="font-bold tracking-widest text-gray-400 uppercase opacity-50">SPONSOR {{ i }}</span>
         </div>
       </div>
     </header>
 
-    <!-- Tabs Dinámicas (Oculta 'Partidas' si es ID 7) -->
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
-        <button v-for="tab in availableTabs" :key="tab" @click="switchTab(tab as any)"
+        <button
+          v-for="tab in ['resultados', 'comunidad', 'reglas', 'premios']"
+          :key="tab"
+          @click="switchTab(tab)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
-          :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'">
+          :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'"
+        >
+          <i v-if="tab === 'resultados'" class="transition ph ph-list-numbers group-hover:text-neon"></i>
+          <i v-if="tab === 'comunidad'" class="transition ph ph-users group-hover:text-neon"></i>
+          <i v-if="tab === 'reglas'" class="transition ph ph-book-open group-hover:text-neon"></i>
+          <i v-if="tab === 'premios'" class="transition ph ph-trophy group-hover:text-neon"></i>
           {{ tab }}
         </button>
       </div>
     </div>
 
     <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 min-h-[600px]">
+      
       <div v-if="activeTab === 'resultados'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
         
-        <!-- Sidebar -->
         <aside class="space-y-6 lg:col-span-4">
             <div class="brutal-card p-4 bg-white dark:bg-[#0a0a0a]">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-xs font-bold tracking-widest text-gray-500 uppercase">Info Torneo</h3>
-                    <button @click="copyPublicLink" class="text-[var(--rankit-neon)] hover:underline text-[10px] font-bold uppercase">Compartir</button>
                 </div>
                 <div class="space-y-3">
                     <div class="flex items-center justify-between p-2 bg-gray-100 rounded dark:bg-white/5">
@@ -337,7 +474,6 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <!-- Matches List (Se muestra SOLO si NO es el torneo especial 7, o si quieres ocultarlo ahí también puedes usar v-if="tournamentData.id !== 7") -->
             <div>
                 <h3 class="mb-4 text-xs font-bold tracking-widest text-gray-500 uppercase">Historial de Partidas</h3>
                 <div @click="toggleMatchFilter(null)" 
@@ -365,7 +501,6 @@ onUnmounted(() => {
             </div>
         </aside>
 
-        <!-- Main Leaderboard -->
         <div class="lg:col-span-8">
             <div class="flex flex-col md:flex-row gap-4 justify-between items-center mb-6 p-4 brutal-card bg-white dark:bg-[#0a0a0a]">
                 <div class="flex p-1 bg-gray-200 rounded-lg dark:bg-white/5">
@@ -373,11 +508,11 @@ onUnmounted(() => {
                     <button @click="changeFilter('type', 'teams')" :class="leaderboardType==='teams'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Equipos</button>
                 </div>
                 <div class="flex max-w-full gap-1 p-1 overflow-x-auto bg-gray-200 rounded-lg dark:bg-white/5">
-                     <button v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" :key="m" @click="changeFilter('mode', m)"
+                      <button v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" :key="m" @click="changeFilter('mode', m)"
                         :class="filterMode===m ? 'bg-[var(--rankit-neon)] text-white shadow' : 'text-gray-500 hover:text-black dark:hover:text-white'"
                         class="px-3 py-1 text-[10px] font-bold uppercase rounded transition whitespace-nowrap">
                         {{ m }}
-                     </button>
+                      </button>
                 </div>
                 <button @click="changeFilter('sort', sortBy==='points'?'kills':'points')" class="text-xs font-bold text-[var(--rankit-neon)] hover:underline uppercase flex items-center gap-1">
                     <i class="ph-bold" :class="sortBy==='points' ? 'ph-trophy' : 'ph-sword'"></i>
@@ -386,16 +521,15 @@ onUnmounted(() => {
             </div>
 
             <div class="brutal-card bg-white dark:bg-[#0a0a0a] min-h-[400px] relative">
-                 
-                 <!-- LOADING OVERLAY -->
-                 <div v-if="isLoading" class="absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200 bg-white/80 dark:bg-black/80 backdrop-blur-sm">
+                  
+                  <div v-if="isLoading" class="absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200 bg-white/80 dark:bg-black/80 backdrop-blur-sm">
                     <div class="flex flex-col items-center gap-3">
                         <div class="w-10 h-10 border-4 border-[var(--rankit-neon)] border-t-transparent rounded-full animate-spin"></div>
                         <span class="text-[10px] font-bold uppercase text-[var(--rankit-neon)] animate-pulse">Actualizando datos...</span>
                     </div>
-                 </div>
+                  </div>
 
-                 <div class="overflow-x-auto">
+                  <div class="overflow-x-auto">
                     <table class="w-full text-sm text-left">
                         <thead class="text-gray-500 bg-gray-100 dark:bg-white/5 dark:text-gray-400">
                             <tr>
@@ -441,24 +575,72 @@ onUnmounted(() => {
                             </tr>
                         </tbody>
                     </table>
-                 </div>
+                  </div>
             </div>
         </div>
       </div>
 
-      <!-- Reglas -->
-      <div v-if="activeTab === 'reglas'" class="animate-fade-in">
+      <div v-show="activeTab === 'comunidad'" class="space-y-6 animate-fade-in">
+        
+        <div class="w-full brutal-card p-4 bg-white dark:bg-[#0a0a0a] border-l-4 transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-4"
+             :class="isConnected ? 'border-l-green-500 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : 'border-l-red-500'">
+            
+            <div class="flex items-center gap-4">
+                <div class="p-3 transition-colors border rounded-lg bg-gray-50 dark:bg-white/5"
+                     :class="isConnected ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'">
+                    <i class="text-2xl ph-fill" :class="isConnected ? 'ph-broadcast' : 'ph-wifi-slash'"></i>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold tracking-widest text-gray-500 uppercase">Estado del Viewer</h4>
+                    <div class="flex items-center gap-2 text-xl font-black uppercase font-display" :class="isConnected ? 'text-green-500' : 'text-red-500'">
+                        {{ isConnected ? 'CONECTADO AL DROP SERVER' : 'DESCONECTADO' }}
+                        <span v-if="isConnected" class="relative flex w-3 h-3">
+                          <span class="absolute inline-flex w-full h-full bg-green-400 rounded-full opacity-75 animate-ping"></span>
+                          <span class="relative inline-flex w-3 h-3 bg-green-500 rounded-full"></span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="isConnected" class="flex items-center gap-3 px-5 py-2 text-white bg-green-500 btn-skew">
+                <div class="flex items-center gap-2 text-sm font-bold uppercase btn-content">
+                    <i class="ph-fill ph-coin-vertical animate-bounce"></i>
+                    <span>Sumando Puntos</span>
+                </div>
+            </div>
+            <div v-else class="px-3 py-1 font-mono text-xs text-red-500 rounded bg-red-500/10">
+                Sin conexión al servidor de puntos
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[70vh]">
+          <div class="h-full lg:col-span-9">
+            <div class="w-full h-full p-0 overflow-hidden bg-black border-0 brutal-card">
+              <div id="twitch-embed" class="w-full h-full"></div>
+            </div>
+          </div>
+          <div class="flex flex-col h-full gap-4 lg:col-span-3">
+             <div class="flex-1 brutal-card bg-white dark:bg-[#0a0a0a] relative overflow-hidden flex flex-col">
+                <div class="flex justify-between p-2 text-xs font-bold text-gray-500 border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+                   <span>Chat en Vivo</span>
+                </div>
+                <div class="flex items-center justify-center flex-1 text-xs text-gray-500 bg-gray-100 dark:bg-black/50">
+                   Chat Widget Placeholder
+                </div>
+             </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
           
-          <!-- CONTENIDO ESPECÍFICO PARA BELLZCUP (ID 7) -->
           <div v-if="Number(tournamentData.id) === 7">
-             <!-- Imagen Removida -->
              <div class="pb-4 mb-8 border-b border-gray-700">
                  <h2 class="text-3xl font-black italic uppercase font-display text-[var(--rankit-neon)] drop-shadow-lg">Reglas Oficiales</h2>
              </div>
 
              <div class="grid grid-cols-1 gap-12 md:grid-cols-2">
-                 <!-- COLUMNA REGLAS -->
                  <div>
                      <h3 class="mb-6 text-xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
                         Reglas Generales
@@ -479,14 +661,12 @@ onUnmounted(() => {
                      </ul>
                  </div>
 
-                 <!-- COLUMNA FORMATO -->
                  <div>
                      <h3 class="mb-6 text-xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
                         Formato y Puntuación
                      </h3>
                      
                      <div class="space-y-6">
-                         <!-- Solitario -->
                          <div class="p-6 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10 relative overflow-hidden group hover:border-[var(--rankit-neon)] transition">
                              <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
                                 <i class="text-6xl ph-fill ph-user"></i>
@@ -500,7 +680,6 @@ onUnmounted(() => {
                              </ul>
                          </div>
 
-                         <!-- Duos -->
                          <div class="relative p-6 overflow-hidden transition border border-gray-200 bg-gray-50 dark:bg-white/5 rounded-xl dark:border-white/10 group hover:border-green-500">
                              <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
                                 <i class="text-6xl ph-fill ph-users"></i>
@@ -512,7 +691,6 @@ onUnmounted(() => {
                              </p>
                          </div>
 
-                         <!-- Trios -->
                          <div class="relative p-6 overflow-hidden transition border border-gray-200 bg-gray-50 dark:bg-white/5 rounded-xl dark:border-white/10 group hover:border-purple-500">
                              <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
                                 <i class="text-6xl ph-fill ph-users-three"></i>
@@ -528,22 +706,18 @@ onUnmounted(() => {
              </div>
           </div>
 
-          <!-- REGLAS POR DEFECTO (OTROS TORNEOS) -->
           <div v-else>
               <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Generales</h3>
               <ul class="pl-5 space-y-2 text-sm text-gray-600 list-disc dark:text-gray-400">
                   <li>El uso de hacks o scripts resultará en descalificación inmediata.</li>
                   <li>Los equipos deben estar presentes en el lobby 10 minutos antes.</li>
                   <li>Las repeticiones deben guardarse por 24 horas.</li>
-                  <li>El administrador tiene la decisión final en caso de disputas.</li>
               </ul>
           </div>
-
         </div>
       </div>
 
-      <!-- SECCIÓN PREMIOS (Nuevo) -->
-      <div v-if="activeTab === 'premios'" class="animate-fade-in">
+       <div v-if="activeTab === 'premios'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
             
             <div class="mb-8 text-center">
@@ -556,7 +730,6 @@ onUnmounted(() => {
             </div>
 
             <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-3">
-                <!-- MVP -->
                 <div class="p-6 bg-gradient-to-br from-yellow-500/20 to-yellow-900/20 border border-yellow-500/50 rounded-xl text-center relative overflow-hidden group transform hover:scale-105 transition duration-300 shadow-[0_0_30px_rgba(234,179,8,0.2)]">
                     <div class="absolute transition duration-500 -right-4 -top-4 text-yellow-500/20 text-9xl group-hover:scale-110 animate-pulse">
                         <i class="ph-fill ph-crown"></i>
@@ -571,7 +744,6 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <!-- KILLER -->
                 <div class="p-6 bg-gradient-to-br from-red-500/20 to-red-900/20 border border-red-500/50 rounded-xl text-center relative overflow-hidden group transform hover:scale-105 transition duration-300 shadow-[0_0_30px_rgba(220,38,38,0.2)]">
                     <div class="absolute transition duration-500 -right-4 -top-4 text-red-500/20 text-9xl group-hover:scale-110 animate-pulse">
                         <i class="ph-fill ph-crosshair"></i>
@@ -586,7 +758,6 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <!-- NOOB -->
                 <div class="p-6 bg-gradient-to-br from-green-500/20 to-green-900/20 border border-green-500/50 rounded-xl text-center relative overflow-hidden group transform hover:scale-105 transition duration-300 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
                     <div class="absolute transition duration-500 -right-4 -top-4 text-green-500/20 text-9xl group-hover:scale-110 animate-pulse">
                         <i class="ph-fill ph-baby"></i>
@@ -602,7 +773,6 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <!-- Premios Especiales (Consolación) -->
             <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2">
                 <div class="relative flex items-center gap-6 p-6 overflow-hidden transition border bg-gradient-to-r from-purple-900/40 to-gray-900/40 border-purple-500/50 rounded-xl hover:border-purple-400 group">
                     <div class="absolute inset-0 transition bg-purple-500/5 group-hover:bg-purple-500/10"></div>
@@ -653,5 +823,107 @@ onUnmounted(() => {
         </div>
       </div>
     </main>
+
+    <div class="fixed bottom-0 w-full bg-white/90 dark:bg-[#0B0C15]/90 backdrop-blur-md border-t border-gray-200 dark:border-white/10 p-4 z-50 lg:hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm font-bold text-black dark:text-white">{{ tournamentTitle }}</div>
+          <div class="text-[10px] text-green-500">Inscripciones Abiertas</div>
+        </div>
+        <button class="px-6 py-2 text-sm font-bold text-white bg-neon btn-skew">
+          <span class="btn-content">Inscribirse</span>
+        </button>
+      </div>
+    </div>
+    
+    <div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
+      <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-xs font-bold text-gray-500 uppercase">Invitar amigo</div>
+            <div class="text-2xl font-black uppercase font-display">Comparte tu código</div>
+          </div>
+          <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showInviteModal=false">✕</button>
+        </div>
+        <div class="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+          <p>1) Mándale este link a tu amigo y pidele que se registre:</p>
+          <div class="flex items-center justify-between gap-3 p-3 brutal-card bg-gray-50 dark:bg-black/30">
+            <div class="font-mono text-xs break-all">{{ inviteLink }}</div>
+            <button type="button" class="px-3 py-2 text-xs font-bold btn-skew" @click="copyToClipboard(inviteLink)">
+              <span class="btn-content">Copiar</span>
+            </button>
+          </div>
+          <p>2) Y pidele que ingrese este código en “Ingresar código”:</p>
+          <div class="flex items-center justify-between gap-3 p-3 brutal-card bg-gray-50 dark:bg-black/30">
+            <div class="font-mono text-lg font-bold">{{ myCode }}</div>
+            <button type="button" class="px-3 py-2 text-xs font-bold btn-skew" @click="copyToClipboard(myCode)">
+              <span class="btn-content">Copiar</span>
+            </button>
+          </div>
+          <p class="text-[11px] text-gray-500">Cuando tu amigo ingrese el código, tú recibes <b>+2 puntos</b> para la rifa.</p>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showCodeModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/60" @click="showCodeModal=false"></div>
+      <div class="relative w-full max-w-md brutal-card bg-white dark:bg-[#0a0a0a] p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-xs font-bold text-gray-500 uppercase">Ingresar código</div>
+            <div class="text-2xl font-black uppercase font-display">Pega tu código</div>
+          </div>
+          <button type="button" class="text-gray-500 hover:text-black dark:hover:text-white" @click="showCodeModal=false">✕</button>
+        </div>
+        <form class="mt-4 space-y-3" @submit.prevent="submitCode">
+          <input v-model="redeemForm.code" type="text" placeholder="Ej: 22rankit" class="w-full px-3 py-3 text-black bg-white brutal-card dark:bg-black/30 dark:text-white" />
+          <div v-if="redeemForm.errors.code" class="text-xs font-bold text-red-500">{{ redeemForm.errors.code }}</div>
+          <button class="w-full py-3 text-sm font-bold uppercase btn-skew" type="submit" :disabled="redeemForm.processing">
+            <span class="btn-content">{{ redeemForm.processing ? 'Aplicando...' : 'Aplicar código' }}</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
   </div>
 </template>
+
+<style>
+/* Global Styles from Inicio.vue */
+:root { --rankit-neon: #bf00ff; }
+.font-display { font-family: "Chakra Petch", sans-serif; }
+.font-sans { font-family: "Archivo", sans-serif; }
+.text-neon { color: var(--rankit-neon); }
+.bg-neon { background-color: var(--rankit-neon); }
+.border-neon { border-color: var(--rankit-neon); }
+
+.bg-tech-grid-dark { background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px); }
+.bg-tech-grid-light { background-image: linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px); }
+
+.brutal-card { position: relative; transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94); border: 1px solid; }
+.dark .brutal-card { background: #0a0a0a; border-color: #333; }
+html:not(.dark) .brutal-card { background: #ffffff; border-color: #e5e5e5; box-shadow: 4px 4px 0px #00000010; }
+.brutal-card:hover { border-color: var(--rankit-neon); transform: translate(-4px, -4px); }
+.dark .brutal-card:hover { box-shadow: 6px 6px 0px var(--rankit-neon); }
+html:not(.dark) .brutal-card:hover { box-shadow: 6px 6px 0px var(--rankit-neon), 6px 6px 0px 2px black; }
+
+.btn-skew { background-color: var(--rankit-neon); color: white; transform: skewX(-10deg); transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.btn-skew:hover { background-color: white; color: black; box-shadow: 0 0 15px var(--rankit-neon); }
+html:not(.dark) .btn-skew:hover { background-color: black; color: white; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); }
+.btn-content { transform: skewX(10deg); }
+
+.animate-fade-in-up { animation: fadeInUp 0.8s ease-out forwards; opacity: 0; }
+.animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+.animate-marquee { animation: marquee 30s linear infinite; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--rankit-neon); border-radius: 4px; }
+</style>

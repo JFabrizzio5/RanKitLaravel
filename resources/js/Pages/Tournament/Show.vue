@@ -2,18 +2,51 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
 import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRankitSocket } from '@/Composables/useRankitSocket'
+import axios from 'axios'
 
-// CORRECCIÓN TS: Uso de sintaxis genérica para tipado correcto de Arrays
+// --- TIPOS ---
+interface PublicMatch {
+  id: number;
+  mode: string;
+  code: string; // Se mantiene en tipo pero no se muestra
+  status: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface PublicRankingItem {
+  player_name: string;
+  member_names?: string[];
+  games_played: number;
+  total_kills: number;
+  total_points: number;
+  avg_points: number;
+  avg_kills: number;
+  avg_placement: number;
+  best_placement: number;
+}
+
+interface TournamentInfo {
+  id?: number;
+  name?: string;
+  progress?: string;
+  twitch_channel?: string;
+  hero_image?: string;
+  status?: string;
+  game?: string;
+}
+
+interface LiveDataResponse {
+  tournament: TournamentInfo;
+  matches: PublicMatch[];
+  ranking: PublicRankingItem[];
+}
+
+// --- PROPS ---
 const props = defineProps<{
-  tournament?: any;
-  bracketRounds?: any[];
+  tournament?: TournamentInfo;
   sponsors?: any[];
-  prizeDistribution?: any[];
-  targetDate?: number;
-
   totalPoints?: number;
-  viewerStartAt?: number;
-
   laravelVersion?: string;
   phpVersion?: string;
   canLogin?: boolean;
@@ -42,26 +75,128 @@ function toggleTheme() {
 }
 
 /**
- * LOGICA DEL TORNEO
+ * LOGICA DE DATOS (TABLA Y FILTROS)
  */
-const activeTab = ref('bracket')
+const matches = ref<PublicMatch[]>([])
+const ranking = ref<PublicRankingItem[]>([])
+// Inicializamos con los props, pero forzaremos ID 7
+const tournamentData = ref<TournamentInfo>(props.tournament || { id: 7 })
+const isLoading = ref(true)
+const progressText = ref(props.tournament?.status || "Cargando...")
 
-// 1. OBTENER USUARIO ANTES DEL SOCKET
+// Filtros de Tabla
+const selectedMatchId = ref<number | null>(null)
+const leaderboardType = ref<'players' | 'teams'>('players')
+const filterMode = ref<string>('all') 
+const sortBy = ref<'points' | 'kills'>('points')
+const expandedRowIndex = ref<number | null>(null)
+
+let pollInterval: number | undefined
+
+const loadData = async (showSpinner = false) => {
+  try {
+    // REGLA: La tabla debe ser el torneo ID 7
+    const id = 7; 
+    
+    // Actualizamos el ref local para consistencia
+    tournamentData.value.id = id;
+
+    if (showSpinner) {
+      isLoading.value = true
+      expandedRowIndex.value = null
+    }
+
+    const url = `/api/live/${id}/data`
+    const params: any = {
+      type: leaderboardType.value,
+      mode: filterMode.value, 
+      sort: sortBy.value
+    }
+    if (selectedMatchId.value) params.match_id = selectedMatchId.value
+
+    const res = await axios.get<LiveDataResponse>(url, { params })
+    
+    matches.value = res.data.matches
+    ranking.value = res.data.ranking
+    
+    if(res.data.tournament) {
+      tournamentData.value.name = res.data.tournament.name
+      progressText.value = res.data.tournament.progress || ''
+      tournamentData.value.twitch_channel = res.data.tournament.twitch_channel 
+    }
+    
+  } catch (e) { 
+    console.error("Error polling data:", e) 
+  } finally {
+    if (showSpinner) isLoading.value = false
+    if (isLoading.value && !showSpinner) isLoading.value = false 
+  }
+}
+
+// Helpers de Tabla
+const formatDec = (num: number | string) => {
+  const n = typeof num === 'string' ? parseFloat(num) : num
+  return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '')
+}
+
+const changeFilter = (type: 'type' | 'mode' | 'sort', value: string) => {
+  if (type === 'type') leaderboardType.value = value as any
+  if (type === 'mode') filterMode.value = value
+  if (type === 'sort') sortBy.value = value as any
+  loadData(true)
+}
+
+const toggleMatchFilter = (matchId: number | null) => {
+  selectedMatchId.value = selectedMatchId.value === matchId ? null : matchId
+  loadData(true)
+}
+
+const copyObsLink = () => {
+  const id = 7 // ID Fijo
+  
+  const baseUrl = `${window.location.origin}/widget/obs/global/${id}`
+  const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10${selectedMatchId.value ? `&match_id=${selectedMatchId.value}` : ''}`
+  
+  navigator.clipboard.writeText(baseUrl + query)
+  alert(`✅ Link OBS Copiado!\n\nConfiguración:\n• Modo: ${filterMode.value.toUpperCase()}\n• Vista: ${leaderboardType.value.toUpperCase()}\n• Orden: ${sortBy.value.toUpperCase()}\n• Match: ${selectedMatchId.value ? '#' + selectedMatchId.value : 'Global'}`)
+}
+
+const copyTrackingLink = (item: PublicRankingItem) => {
+  const id = 7 // ID Fijo
+
+  let targetName = item.player_name
+  if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
+    targetName = item.member_names[0]
+  }
+
+  if (!targetName) return
+
+  const baseUrl = `${window.location.origin}/widget/obs/global/${id}`
+  const query = `?type=${leaderboardType.value}&mode=all&sort=${sortBy.value}&limit=1&search=${encodeURIComponent(targetName)}`
+  
+  navigator.clipboard.writeText(baseUrl + query)
+  alert(`✅ Tracking OBS copiado para: ${targetName}`)
+}
+
+/**
+ * LOGICA DEL TORNEO & SOCKETS
+ */
+// CAMBIO REALIZADO: Pestaña por defecto ahora es 'comunidad'
+const activeTab = ref('comunidad') 
+
 const page = usePage()
 const user = page.props.auth?.user as any
 
 // ===== Viewer Points (WEBSOCKET INTEGRATION) =====
-// CORREGIDO: Pasamos user?.id en lugar de props.tournament?.id
 const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket(
-    'community', 
-    user?.id, 
-    { 
-        autoConnect: false,
-        manageVisibility: false 
-    }
+  'community', 
+  user?.id, 
+  { 
+    autoConnect: false,
+    manageVisibility: false 
+  }
 )
 
-// DEBUG: Watcher para ver cuándo cambia realmente el estado
 watch(isConnected, (newVal) => {
   console.log('%c[RankitSocket] Estado isConnected cambió a:', 'color: orange; font-weight: bold;', newVal)
 })
@@ -71,64 +206,44 @@ const switchTab = (tab: string) => {
 
   // Lógica de conexión basada en el Tab
   if (tab === 'comunidad') {
-    console.log('%c[RankitSocket] Tab Comunidad activado. Iniciando conexión...', 'color: cyan; font-weight: bold;')
-    
     if (!user) {
         console.warn('[RankitSocket] Usuario no autenticado. No se conectará al socket.')
     }
-
     connectSocket()
   } else {
-    if (isConnected.value) {
-      console.log('%c[RankitSocket] Saliendo de Comunidad. Desconectando...', 'color: gray;')
-    }
     disconnectSocket()
   }
 }
 
-const twitchChannel = props.tournament?.twitch_channel ?? 'Jelty'
-const tournamentTitle = 'bellzCup' 
-
-// Tiempo
-const timeLeft = ref({ days: 0, hours: 0, minutes: 0, seconds: 0 })
-const targetDate = props.targetDate ?? (new Date().getTime() + 2 * 24 * 60 * 60 * 1000)
-const watchProgress = ref(65)
+// Twitch Props
+const twitchChannel = computed(() => tournamentData.value.twitch_channel ?? props.tournament?.twitch_channel ?? 'Rankit')
+const tournamentTitle = computed(() => tournamentData.value.name ?? 'bellzCup') 
+const twitchChatUrl = computed(() => {
+    if (typeof window === 'undefined') return ''
+    const parent = window.location.hostname
+    const channel = twitchChannel.value
+    // Usamos darkpopout para que se vea mejor en modo oscuro por defecto
+    return `https://www.twitch.tv/embed/${channel}/chat?parent=${parent}&darkpopout`
+})
 
 // ==============================
 // REFERIDOS (MODALES + REDEEM)
 // ==============================
-// Nota: user ya está definido arriba como 'user', pero mantenemos 'me' para compatibilidad con tu template si lo usas
 const me = user 
-
 const showInviteModal = ref(false)
 const showCodeModal = ref(false)
-
 const myCode = computed(() => (me?.id ? `${me.id}rankit` : ''))
 const inviteLink = computed(() => `https://rankit.pro/?ref=${myCode.value}`)
+const redeemForm = useForm({ code: '' })
 
-const redeemForm = useForm({
-  code: '',
-})
-
-function openInvite() {
-  showInviteModal.value = true
-}
-
-function openCode() {
-  showCodeModal.value = true
-  redeemForm.clearErrors()
-}
-
+function openInvite() { showInviteModal.value = true }
+function openCode() { showCodeModal.value = true; redeemForm.clearErrors() }
 function submitCode() {
   redeemForm.post(route('bellzcup.referidos.redeem'), {
     preserveScroll: true,
-    onSuccess: () => {
-      showCodeModal.value = false
-      redeemForm.reset()
-    },
+    onSuccess: () => { showCodeModal.value = false; redeemForm.reset() },
   })
 }
-
 function copyToClipboard(text: string) {
   if (typeof window === 'undefined') return
   const t = String(text ?? '')
@@ -138,29 +253,18 @@ function copyToClipboard(text: string) {
   }
   fallbackCopy(t)
 }
-
 function fallbackCopy(text: string) {
   const ta = document.createElement('textarea')
-  ta.value = text
-  ta.setAttribute('readonly', '')
-  ta.style.position = 'fixed'
-  ta.style.top = '-1000px'
-  ta.style.left = '-1000px'
-  document.body.appendChild(ta)
-  ta.select()
-  try { document.execCommand('copy') } catch (e) {}
-  document.body.removeChild(ta)
+  ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.left = '-1000px'
+  document.body.appendChild(ta); ta.select(); try { document.execCommand('copy') } catch (e) {}; document.body.removeChild(ta)
 }
 
-// Control de visibilidad para pausar socket si minimizan
+// Control de visibilidad
 const handleVisibilityChange = () => {
   if (document.hidden) {
-    console.log('[RankitSocket] Documento oculto (minimizado). Desconectando...')
     disconnectSocket()
   } else {
-    // Solo reconectar si estamos en el tab correcto
     if (activeTab.value === 'comunidad') {
-      console.log('[RankitSocket] Documento visible. Reconectando...')
       connectSocket()
     }
   }
@@ -182,21 +286,7 @@ onMounted(() => {
     document.head.appendChild(script)
   }
   
-  // Timer Logic
-  const timerInterval = setInterval(() => {
-    const now = new Date().getTime()
-    const distance = targetDate - now
-    if (distance < 0) {
-      clearInterval(timerInterval)
-      return
-    }
-    timeLeft.value.days = Math.floor(distance / (1000 * 60 * 60 * 24))
-    timeLeft.value.hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-    timeLeft.value.minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60))
-    timeLeft.value.seconds = Math.floor((distance % (1000 * 60)) / 1000)
-  }, 1000)
-
-  // Twitch Embed
+  // Twitch Embed Player
   const parentHost = window.location.hostname
   const initPlayer = () => {
     const embed = document.getElementById('twitch-embed')
@@ -205,7 +295,7 @@ onMounted(() => {
     if (window.Twitch && !embed.firstChild) {
       // @ts-ignore
       new window.Twitch.Player('twitch-embed', {
-        channel: twitchChannel,
+        channel: twitchChannel.value,
         width: '100%',
         height: '100%',
         parent: [parentHost],
@@ -223,13 +313,23 @@ onMounted(() => {
     setTimeout(initPlayer, 500)
   }
 
+  // Data Loading
+  loadData(true)
+  pollInterval = window.setInterval(() => loadData(false), 240000) // 4 min polling
+
+  // CAMBIO REALIZADO: Conectar socket si la pestaña inicial es comunidad
+  if (activeTab.value === 'comunidad') {
+    connectSocket()
+  }
+
   // Listeners de Visibilidad
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  disconnectSocket() // Asegurar desconexión al salir de la página
+  disconnectSocket()
+  if(pollInterval) clearInterval(pollInterval)
 })
 </script>
 
@@ -240,7 +340,6 @@ onUnmounted(() => {
 
   <div class="overflow-x-hidden selection:bg-[var(--rankit-neon)] selection:text-white bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-white font-sans transition-colors duration-300">
     
-    <!-- Navbar -->
     <nav class="fixed w-full z-50 transition-colors duration-300 bg-white/90 border-b border-gray-200 dark:bg-[#050505]/95 dark:border-white/10 backdrop-blur-md h-20 flex items-center px-6 lg:px-12 justify-between">
       <Link href="/" class="flex items-center gap-3 cursor-pointer group">
         <svg class="w-10 h-10 text-black dark:text-white group-hover:text-[var(--rankit-neon)] transition-colors" viewBox="0 0 100 100" fill="none">
@@ -252,7 +351,6 @@ onUnmounted(() => {
       </Link>
 
       <div class="flex items-center gap-4">
-        <!-- Indicador de Puntos (Opcional, para debug visual) -->
         <div v-if="isConnected && activeTab === 'comunidad'" class="items-center hidden gap-2 px-3 py-1 text-xs font-bold text-green-500 border rounded-full md:flex bg-green-500/10 animate-pulse border-green-500/20">
             <span class="w-2 h-2 bg-green-500 rounded-full"></span>
             SUMANDO PUNTOS
@@ -272,10 +370,9 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <!-- HERO SECTION -->
-    <header class="relative min-h-[600px] h-auto flex items-end pt-24 overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]">
+    <header class="relative min-h-[500px] h-auto flex items-end pt-24 overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]">
       <div class="absolute inset-0 z-0 pointer-events-none">
-        <img v-if="props.tournament?.hero_image" :src="props.tournament.hero_image" class="w-full h-full object-cover opacity-20 dark:opacity-30 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear grayscale mix-blend-multiply dark:mix-blend-overlay" />
+        <img src="https://rankit.pro/public/BellzCupBeta/BannerBellzCup.png" class="w-full h-full object-cover opacity-30 dark:opacity-40 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear" />
         <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
       </div>
 
@@ -286,8 +383,14 @@ onUnmounted(() => {
           </span>
           <span class="bg-white/10 border border-black/10 dark:border-white/10 text-black dark:text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default brutal-card">
             <i class="ph ph-game-controller text-neon"></i>
-            {{ props.tournament?.game ?? 'Valorant' }}
+            {{ props.tournament?.game ?? 'Fortnite' }}
           </span>
+           <button @click="loadData(true)" class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold text-white uppercase bg-[var(--rankit-neon)] hover:opacity-80 transition rounded-sm group">
+              <span class="flex items-center gap-2 btn-content">
+                <i class="transition-transform duration-500 ph-bold ph-arrows-clockwise group-hover:rotate-180"></i>
+                Actualizar
+              </span>
+           </button>
         </div>
 
         <div class="flex flex-col items-end justify-between gap-10 lg:flex-row">
@@ -295,36 +398,15 @@ onUnmounted(() => {
             <h1 class="mb-4 text-5xl font-black leading-none tracking-tight text-black uppercase md:text-7xl font-display dark:text-white">
               {{ tournamentTitle }} <br />
               <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600">
-                SEASON 1
+                LIVE STATS
               </span>
             </h1>
             <p class="max-w-xl py-1 pl-6 text-lg font-light text-gray-600 border-l-4 dark:text-gray-400 border-neon">
-              El escenario definitivo. 16 equipos, un solo trofeo y la gloria eterna en el torneo más grande de LATAM.
+             Torneo de fortnite con creadores de contenido y actores de doblaje. Sigue el directo, gana puntos y consigue premios exclusivos solo por ver el stream Desde Rankit.Pro
             </p>
           </div>
 
-          <!-- Countdown & CTA -->
           <div class="flex flex-col w-full gap-4 delay-200 lg:w-auto sm:flex-row lg:flex-col animate-fade-in-up">
-            <div class="brutal-card p-4 flex flex-col items-center bg-white dark:bg-[#0a0a0a]">
-              <div class="text-[10px] text-neon uppercase font-bold mb-2 tracking-widest">Inscripciones Cierran En</div>
-              <div class="flex items-center gap-4 font-mono">
-                <div class="text-center">
-                  <div class="text-3xl font-black leading-none text-black dark:text-white">{{ timeLeft.days }}</div>
-                  <div class="text-[8px] text-gray-500 uppercase">Días</div>
-                </div>
-                <span class="font-bold text-gray-400">:</span>
-                <div class="text-center">
-                  <div class="text-3xl font-black leading-none text-black dark:text-white">{{ timeLeft.hours }}</div>
-                  <div class="text-[8px] text-gray-500 uppercase">Hrs</div>
-                </div>
-                <span class="font-bold text-gray-400">:</span>
-                <div class="text-center">
-                  <div class="text-3xl font-black leading-none text-black dark:text-white">{{ timeLeft.minutes }}</div>
-                  <div class="text-[8px] text-gray-500 uppercase">Min</div>
-                </div>
-              </div>
-            </div>
-            <!-- Total Points -->
             <div class="brutal-card px-4 py-3 text-center bg-white dark:bg-[#0a0a0a]">
               <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total puntos</div>
               <div class="text-3xl font-black text-black font-display dark:text-white">
@@ -334,22 +416,12 @@ onUnmounted(() => {
             </div>
 
             <div class="flex flex-1 gap-3">
-              <!-- INGRESAR CÓDIGO -->
-              <button
-                type="button"
-                @click="openCode"
-                class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]"
-              >
+              <button type="button" @click="openCode" class="brutal-card px-4 py-2 text-center flex-1 flex flex-col justify-center bg-white dark:bg-[#0a0a0a]">
                 <div class="text-[9px] text-gray-500 uppercase font-bold">Acceso</div>
                 <div class="text-sm font-bold font-display">INGRESAR CÓDIGO</div>
               </button>
 
-              <!-- INVITAR AMIGO -->
-              <button
-                type="button"
-                @click="openInvite"
-                class="flex-1 px-6 py-3 text-sm font-bold tracking-wider uppercase btn-skew"
-              >
+              <button type="button" @click="openInvite" class="flex-1 px-6 py-3 text-sm font-bold tracking-wider uppercase btn-skew">
                 <span class="btn-content">INVITAR AMIGO</span>
               </button>
             </div>
@@ -357,7 +429,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Sponsors Marquee -->
       <div class="absolute bottom-0 z-20 flex items-center w-full overflow-hidden border-t h-14 bg-white/50 dark:bg-black/80 border-black/5 dark:border-white/5 backdrop-blur-md">
         <div class="flex items-center gap-16 pl-16 animate-marquee whitespace-nowrap">
           <span v-for="i in 10" :key="i" class="font-bold tracking-widest text-gray-400 uppercase opacity-50">SPONSOR {{ i }}</span>
@@ -365,148 +436,152 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <!-- Navigation Tabs -->
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
         <button
-          v-for="tab in ['bracket', 'detalles', 'comunidad', 'reglas']"
+          v-for="tab in ['resultados', 'comunidad', 'reglas', 'premios']"
           :key="tab"
           @click="switchTab(tab)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
           :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'"
         >
-          <i v-if="tab === 'bracket'" class="transition ph ph-tree-structure group-hover:text-neon"></i>
-          <i v-if="tab === 'detalles'" class="transition ph ph-info group-hover:text-neon"></i>
+          <i v-if="tab === 'resultados'" class="transition ph ph-list-numbers group-hover:text-neon"></i>
           <i v-if="tab === 'comunidad'" class="transition ph ph-users group-hover:text-neon"></i>
           <i v-if="tab === 'reglas'" class="transition ph ph-book-open group-hover:text-neon"></i>
+          <i v-if="tab === 'premios'" class="transition ph ph-trophy group-hover:text-neon"></i>
           {{ tab }}
         </button>
       </div>
     </div>
 
     <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 min-h-[600px]">
-      <!-- === BRACKET === -->
-      <div v-if="activeTab === 'bracket'" class="space-y-10 animate-fade-in">
-        <div class="flex flex-col items-end justify-between gap-4 md:flex-row">
-          <div>
-            <h2 class="text-3xl font-bold text-black uppercase font-display dark:text-white">Playoffs Stage</h2>
-            <p class="mt-1 font-mono text-sm text-gray-500">Haz clic en un match para ver estadísticas detalladas.</p>
-          </div>
-          <div class="flex gap-4 p-2 overflow-x-auto text-xs bg-white border border-gray-200 rounded-lg dark:bg-black/30 dark:border-white/5">
-            <span class="flex items-center gap-2 font-bold text-gray-500 dark:text-gray-400 whitespace-nowrap"><span class="w-2 h-2 bg-gray-400 rounded-full"></span> Finalizado</span>
-            <span class="flex items-center gap-2 font-bold text-red-500 whitespace-nowrap"><span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span> En Vivo</span>
-            <span class="flex items-center gap-2 font-bold text-neon whitespace-nowrap"><i class="ph ph-robot"></i> AI Prediction</span>
-          </div>
-        </div>
-
-        <div class="pb-12 overflow-x-auto custom-scroll">
-          <div class="flex gap-16 px-4 pt-8 min-w-max">
-            <div v-for="(round, rIndex) in (props.bracketRounds || [{name:'Round 1', matches:[{id:1, p1:'Team A', p2:'Team B', status:'live'}]}])" :key="rIndex" class="relative flex flex-col justify-around gap-8">
-              <!-- CORRECCIÓN TS: round es any, no dará error -->
-              <h3 class="absolute -top-10 left-0 w-full text-center text-xs font-bold text-neon uppercase tracking-[0.2em] bg-neon/5 py-1 rounded">{{ round.name }}</h3>
-              
-              <div v-for="match in round.matches" :key="match.id" class="relative group">
-                <!-- Connectors -->
-                <div v-if="!match.isFinal" class="hidden md:block absolute -right-8 top-1/2 w-8 h-0.5 bg-gray-300 dark:bg-gray-800"></div>
-                
-                <!-- Match Card -->
-                <div class="w-64 md:w-72 brutal-card transition-all duration-300 relative bg-white dark:bg-[#0a0a0a]"
-                     :class="{ 'border-red-500 dark:border-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]': match.status === 'live' }">
-                  <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gray-50 dark:bg-white/5 dark:border-white/5">
-                    <div class="flex gap-2">
-                      <span v-if="match.status === 'live'" class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse">LIVE</span>
-                      <span v-else class="text-[10px] text-gray-500 uppercase font-bold">{{ match.status ?? 'Pending' }}</span>
-                    </div>
-                    <div class="flex items-center gap-1 text-[10px] text-neon"><i class="ph ph-brain"></i> 65% Win Prob</div>
-                  </div>
-
-                  <div class="p-2 space-y-1">
-                    <div class="flex items-center justify-between p-2 transition rounded hover:bg-gray-100 dark:hover:bg-white/5">
-                      <div class="flex items-center gap-3">
-                        <div class="w-6 h-6 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-[10px] font-bold border border-black/10 dark:border-white/10">A</div>
-                        <span class="text-xs font-bold text-black dark:text-white truncate max-w-[120px]">{{ match.p1 }}</span>
-                      </div>
-                      <span class="font-mono font-bold text-black dark:text-white">2</span>
-                    </div>
-                    <div class="flex items-center justify-between p-2 transition rounded hover:bg-gray-100 dark:hover:bg-white/5">
-                      <div class="flex items-center gap-3">
-                        <div class="w-6 h-6 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-[10px] font-bold border border-black/10 dark:border-white/10">B</div>
-                        <span class="text-xs font-bold text-black dark:text-white truncate max-w-[120px]">{{ match.p2 }}</span>
-                      </div>
-                      <span class="font-mono font-bold text-black dark:text-white">1</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- === DETALLES === -->
-      <div v-if="activeTab === 'detalles'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
-        <div class="space-y-8 lg:col-span-8">
-          <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
-            <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Información del Evento</h3>
-            <p class="mb-8 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-              Bienvenidos a la 1ra edición de la bellzCup. Este torneo reúne a los mejores equipos amateurs y semi-pro de la región.
-            </p>
-            <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
-                <i class="mb-2 text-xl ph ph-users text-neon"></i>
-                <div class="text-[10px] text-gray-500 uppercase font-bold">Formato</div>
-                <div class="font-bold text-black dark:text-white">5v5 Draft</div>
-              </div>
-              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
-                <i class="mb-2 text-xl ph ph-desktop text-neon"></i>
-                <div class="text-[10px] text-gray-500 uppercase font-bold">Plataforma</div>
-                <div class="font-bold text-black dark:text-white">PC / Win 11</div>
-              </div>
-              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
-                <i class="mb-2 text-xl ph ph-globe text-neon"></i>
-                <div class="text-[10px] text-gray-500 uppercase font-bold">Región</div>
-                <div class="font-bold text-black dark:text-white">LATAM Norte</div>
-              </div>
-              <div class="p-4 text-center transition border border-gray-200 dark:border-white/10 group hover:border-neon">
-                <i class="mb-2 text-xl ph ph-shield-check text-neon"></i>
-                <div class="text-[10px] text-gray-500 uppercase font-bold">Anti-Cheat</div>
-                <div class="font-bold text-black dark:text-white">Requerido</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
+      
+      <div v-if="activeTab === 'resultados'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
+        
         <aside class="space-y-6 lg:col-span-4">
-          <div class="brutal-card p-6 bg-white dark:bg-[#0a0a0a] border-neon">
-             <div class="flex items-start justify-between mb-4">
-                <div>
-                  <h3 class="text-lg font-bold text-black uppercase font-display dark:text-white">Viewer Drops</h3>
-                  <p class="text-[10px] text-neon font-bold uppercase tracking-wider">Temporada 5</p>
+            <div class="brutal-card p-4 bg-white dark:bg-[#0a0a0a]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xs font-bold tracking-widest text-gray-500 uppercase">Info Torneo</h3>
                 </div>
-                <i class="text-2xl ph ph-gift text-neon animate-bounce"></i>
-             </div>
-             <div class="space-y-4">
-                <div>
-                  <div class="flex justify-between mb-2 text-xs font-bold text-black dark:text-white">
-                    <span>Nivel 3</span>
-                    <span>{{ watchProgress }} / 100 XP</span>
-                  </div>
-                  <div class="w-full h-3 overflow-hidden bg-gray-200 rounded-full dark:bg-gray-800">
-                    <div class="h-3 rounded-full bg-neon" :style="`width: ${watchProgress}%`"></div>
-                  </div>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-2 bg-gray-100 rounded dark:bg-white/5">
+                        <span class="text-[10px] uppercase font-bold text-gray-500">ID Pública</span>
+                        <span class="font-mono text-sm font-bold">{{ tournamentData.id || '---' }}</span>
+                    </div>
+                    <button @click="copyObsLink" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase btn-skew flex items-center justify-center gap-2 group">
+                        <span class="flex items-center gap-2 btn-content"><i class="text-lg ph-bold ph-broadcast"></i> Copiar Tabla OBS</span>
+                    </button>
+                    <p class="text-[9px] text-center text-gray-400">*El link copia los filtros seleccionados.</p>
                 </div>
-                <button class="w-full mt-6 bg-[#6441a5] text-white font-bold py-2 rounded-none btn-skew text-xs hover:bg-[#503484] transition flex items-center justify-center gap-2">
-                  <span class="flex items-center gap-2 btn-content"><i class="fab fa-twitch"></i> Conectar Twitch</span>
-                </button>
-             </div>
-          </div>
+            </div>
+
+            <div>
+                <h3 class="mb-4 text-xs font-bold tracking-widest text-gray-500 uppercase">Historial de Partidas</h3>
+                <div @click="toggleMatchFilter(null)" 
+                    class="flex items-center justify-between p-4 mb-3 transition cursor-pointer brutal-card hover:bg-gray-50 dark:hover:bg-white/5"
+                    :class="!selectedMatchId ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/5' : ''">
+                    <span class="text-sm font-bold">Ranking Global Acumulado</span>
+                    <i class="text-xl ph ph-globe"></i>
+                </div>
+                <div class="space-y-2 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
+                    <div v-for="match in matches" :key="match.id" @click="toggleMatchFilter(match.id)"
+                        class="relative p-3 overflow-hidden transition cursor-pointer brutal-card hover:bg-gray-50 dark:hover:bg-white/5 group"
+                        :class="selectedMatchId === match.id ? 'border-[var(--rankit-neon)]' : ''">
+                        <div class="relative z-10 flex items-center justify-between">
+                            <div>
+                                <div class="text-[10px] font-bold text-gray-500 uppercase">{{ match.mode }}</div>
+                                </div>
+                            <div>
+                                <span v-if="match.is_active" class="px-2 py-1 bg-red-500 text-white text-[9px] font-bold rounded animate-pulse">LIVE</span>
+                                <span v-else class="text-[10px] text-gray-400 font-bold">FINAL</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </aside>
+
+        <div class="lg:col-span-8">
+            <div class="flex flex-col md:flex-row gap-4 justify-between items-center mb-6 p-4 brutal-card bg-white dark:bg-[#0a0a0a]">
+                <div class="flex p-1 bg-gray-200 rounded-lg dark:bg-white/5">
+                    <button @click="changeFilter('type', 'players')" :class="leaderboardType==='players'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Jugadores</button>
+                    <button @click="changeFilter('type', 'teams')" :class="leaderboardType==='teams'?'bg-white dark:bg-gray-800 shadow text-black dark:text-white':'text-gray-500'" class="px-4 py-1 text-xs font-bold uppercase transition rounded">Equipos</button>
+                </div>
+                <div class="flex max-w-full gap-1 p-1 overflow-x-auto bg-gray-200 rounded-lg dark:bg-white/5">
+                      <button v-for="m in ['all', 'solo', 'duo', 'trio', 'squad']" :key="m" @click="changeFilter('mode', m)"
+                        :class="filterMode===m ? 'bg-[var(--rankit-neon)] text-white shadow' : 'text-gray-500 hover:text-black dark:hover:text-white'"
+                        class="px-3 py-1 text-[10px] font-bold uppercase rounded transition whitespace-nowrap">
+                        {{ m }}
+                      </button>
+                </div>
+                <button @click="changeFilter('sort', sortBy==='points'?'kills':'points')" class="text-xs font-bold text-[var(--rankit-neon)] hover:underline uppercase flex items-center gap-1">
+                    <i class="ph-bold" :class="sortBy==='points' ? 'ph-trophy' : 'ph-sword'"></i>
+                    {{ sortBy }}
+                </button>
+            </div>
+
+            <div class="brutal-card bg-white dark:bg-[#0a0a0a] min-h-[400px] relative">
+                  
+                  <div v-if="isLoading" class="absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200 bg-white/80 dark:bg-black/80 backdrop-blur-sm">
+                    <div class="flex flex-col items-center gap-3">
+                        <div class="w-10 h-10 border-4 border-[var(--rankit-neon)] border-t-transparent rounded-full animate-spin"></div>
+                        <span class="text-[10px] font-bold uppercase text-[var(--rankit-neon)] animate-pulse">Actualizando datos...</span>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-gray-500 bg-gray-100 dark:bg-white/5 dark:text-gray-400">
+                            <tr>
+                                <th class="p-4 font-bold uppercase text-[10px]">#</th>
+                                <th class="p-4 font-bold uppercase text-[10px]">Participante</th>
+                                <th class="p-4 font-bold uppercase text-[10px] text-center">Partidas</th>
+                                <th class="p-4 font-bold uppercase text-[10px] text-right">Kills</th>
+                                <th class="p-4 font-bold uppercase text-[10px] text-right">Pts</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-white/5">
+                            <template v-for="(item, idx) in ranking" :key="idx">
+                                <tr @click="expandedRowIndex = expandedRowIndex === idx ? null : idx" class="transition cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5">
+                                    <td class="p-4 text-lg font-bold text-gray-400 font-display">{{ idx + 1 }}</td>
+                                    <td class="p-4 font-bold text-black dark:text-white">
+                                        <div v-if="leaderboardType==='teams'" class="flex flex-wrap gap-1">
+                                            <span v-for="m in item.member_names" :key="m" class="text-[9px] bg-gray-200 dark:bg-white/10 px-1 rounded">{{ m }}</span>
+                                        </div>
+                                        <div v-else>{{ item.player_name }}</div>
+                                    </td>
+                                    <td class="p-4 font-mono text-center text-gray-500">{{ item.games_played }}</td>
+                                    <td class="p-4 font-mono text-right text-red-500">{{ item.total_kills }}</td>
+                                    <td class="p-4 text-right font-mono text-xl font-bold text-[var(--rankit-neon)]">{{ formatDec(item.total_points) }}</td>
+                                </tr>
+                                <tr v-if="expandedRowIndex === idx" class="bg-[var(--rankit-neon)]/5">
+                                    <td colspan="5" class="p-4">
+                                        <div class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                                            <div class="grid flex-1 w-full grid-cols-2 gap-4 text-xs md:grid-cols-4 md:w-auto">
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Puntos</span><span class="text-lg font-bold">{{ formatDec(item.avg_points) }}</span></div>
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Kills</span><span class="text-lg font-bold text-red-500">{{ formatDec(item.avg_kills) }}</span></div>
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Avg Top</span><span class="text-lg font-bold text-yellow-500">#{{ formatDec(item.avg_placement) }}</span></div>
+                                                <div class="p-2 border border-[var(--rankit-neon)]/20 bg-white dark:bg-black rounded"><span class="block text-gray-500 uppercase text-[9px]">Mejor Top</span><span class="text-lg font-bold text-white">#{{ item.best_placement }}</span></div>
+                                            </div>
+                                            <button @click.stop="copyTrackingLink(item)" class="px-3 py-2 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase rounded hover:opacity-80 transition flex items-center gap-2 whitespace-nowrap w-full md:w-auto justify-center">
+                                                <i class="ph ph-target"></i> Copiar Tracking OBS
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr v-if="ranking.length === 0 && !isLoading">
+                                <td colspan="5" class="py-12 text-center text-gray-500">No hay datos disponibles con los filtros actuales.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                  </div>
+            </div>
+        </div>
       </div>
 
-      <!-- === COMUNIDAD (AQUÍ ES DONDE SUMAN PUNTOS) === -->
       <div v-show="activeTab === 'comunidad'" class="space-y-6 animate-fade-in">
         
-        <!-- NEW STATUS BAR -->
         <div class="w-full brutal-card p-4 bg-white dark:bg-[#0a0a0a] border-l-4 transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-4"
              :class="isConnected ? 'border-l-green-500 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : 'border-l-red-500'">
             
@@ -517,12 +592,17 @@ onUnmounted(() => {
                 </div>
                 <div>
                     <h4 class="text-xs font-bold tracking-widest text-gray-500 uppercase">Estado del Viewer</h4>
-                    <div class="flex items-center gap-2 text-xl font-black uppercase font-display" :class="isConnected ? 'text-green-500' : 'text-red-500'">
-                        {{ isConnected ? 'CONECTADO AL DROP SERVER' : 'DESCONECTADO' }}
-                        <span v-if="isConnected" class="relative flex w-3 h-3">
-                          <span class="absolute inline-flex w-full h-full bg-green-400 rounded-full opacity-75 animate-ping"></span>
-                          <span class="relative inline-flex w-3 h-3 bg-green-500 rounded-full"></span>
-                        </span>
+                    <div class="flex flex-col gap-1">
+                      <div class="flex items-center gap-2 text-xl font-black uppercase font-display" :class="isConnected ? 'text-green-500' : 'text-red-500'">
+                          {{ isConnected ? 'CONECTADO AL DROP SERVER' : 'DESCONECTADO' }}
+                          <span v-if="isConnected" class="relative flex w-3 h-3">
+                            <span class="absolute inline-flex w-full h-full bg-green-400 rounded-full opacity-75 animate-ping"></span>
+                            <span class="relative inline-flex w-3 h-3 bg-green-500 rounded-full"></span>
+                          </span>
+                      </div>
+                      <span class="text-xs font-bold text-gray-400">
+                        Quédate viendo el stream aquí para ganar puntos.
+                      </span>
                     </div>
                 </div>
             </div>
@@ -548,41 +628,188 @@ onUnmounted(() => {
              <div class="flex-1 brutal-card bg-white dark:bg-[#0a0a0a] relative overflow-hidden flex flex-col">
                 <div class="flex justify-between p-2 text-xs font-bold text-gray-500 border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                    <span>Chat en Vivo</span>
-                   <span class="flex items-center gap-1 text-green-500"><span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> 12.4k</span>
                 </div>
-                <!-- Chat Iframe Placeholder -->
-                <div class="flex items-center justify-center flex-1 text-xs text-gray-500 bg-gray-100 dark:bg-black/50">
-                   Chat Widget Placeholder
+                <div class="flex-1 overflow-hidden bg-gray-100 dark:bg-black/50">
+                   <iframe
+                      v-if="twitchChatUrl"
+                      :src="twitchChatUrl"
+                      frameborder="0"
+                      scrolling="yes"
+                      height="100%"
+                      width="100%"
+                      class="w-full h-full"
+                   ></iframe>
                 </div>
              </div>
           </div>
         </div>
       </div>
 
-      <!-- === REGLAS === -->
       <div v-show="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
-          <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Oficiales</h3>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Aquí puedes pintar reglas desde DB (Markdown/HTML sanitizado).</p>
+          
+          <div v-if="Number(tournamentData.id) === 7">
+             <div class="pb-4 mb-8 border-b border-gray-700">
+                 <h2 class="text-3xl font-black italic uppercase font-display text-[var(--rankit-neon)] drop-shadow-lg">Reglas Oficiales</h2>
+             </div>
+
+             <div class="grid grid-cols-1 gap-12 md:grid-cols-2">
+                 <div>
+                     <h3 class="mb-6 text-xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
+                        Reglas Generales
+                     </h3>
+                     <ul class="space-y-4 text-sm font-bold text-gray-700 list-none dark:text-gray-300">
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-green-500 ph-fill ph-check-circle"></i> Todo es con construcción</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-green-500 ph-fill ph-check-circle"></i> Quitar el anónimo</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No usar sniper</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No carros</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No usar el arma de Rayos</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No usar medallones de los jefes</li>
+                         <li class="flex items-center gap-3 p-2 transition rounded hover:bg-white/5"><i class="text-xl text-red-500 ph-fill ph-prohibit"></i> No utilizar la varita de la tormenta</li>
+                         
+                         <li class="flex items-center gap-3 p-4 mt-4 text-red-500 border rounded bg-red-500/10 border-red-500/20">
+                             <i class="text-2xl ph-fill ph-warning-octagon"></i> 
+                             <span class="text-lg">No matar ni hacerse daño hasta la 7ma zona</span>
+                         </li>
+                     </ul>
+                 </div>
+
+                 <div>
+                     <h3 class="mb-6 text-xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
+                        Formato y Puntuación
+                     </h3>
+                     
+                     <div class="space-y-6">
+                         <div class="p-6 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10 relative overflow-hidden group hover:border-[var(--rankit-neon)] transition">
+                             <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
+                                <i class="text-6xl ph-fill ph-user"></i>
+                             </div>
+                             <h4 class="mb-1 text-xl font-bold text-white uppercase">Solitario</h4>
+                             <p class="mb-4 font-mono text-xs tracking-widest text-gray-400 uppercase">4 Partidas</p>
+                             <ul class="space-y-2 text-sm">
+                                 <li class="flex items-center justify-between pb-1 border-b border-white/5"><span>Por Kill</span> <span class="font-bold text-[var(--rankit-neon)] bg-black/30 px-2 py-0.5 rounded">1 pt</span></li>
+                                 <li class="flex items-center justify-between pb-1 border-b border-white/5"><span>Por Posición</span> <span class="font-bold text-[var(--rankit-neon)] bg-black/30 px-2 py-0.5 rounded">1 pt</span></li>
+                                 <li class="flex items-center justify-between pt-1"><span class="font-bold text-yellow-400">Victoria Royale</span> <span class="font-bold text-black bg-yellow-400 px-2 py-0.5 rounded shadow-lg shadow-yellow-500/50">5 pts</span></li>
+                             </ul>
+                         </div>
+
+                         <div class="relative p-6 overflow-hidden transition border border-gray-200 bg-gray-50 dark:bg-white/5 rounded-xl dark:border-white/10 group hover:border-green-500">
+                             <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
+                                <i class="text-6xl ph-fill ph-users"></i>
+                             </div>
+                             <h4 class="mb-1 text-xl font-bold text-white uppercase">Duos Random</h4>
+                             <p class="mb-4 font-mono text-xs tracking-widest text-gray-400 uppercase">2 Partidas</p>
+                             <p class="flex items-center gap-2 text-sm font-bold text-green-400">
+                                <i class="ph-fill ph-gift"></i> Premio a los ganadores de cada partida
+                             </p>
+                         </div>
+
+                         <div class="relative p-6 overflow-hidden transition border border-gray-200 bg-gray-50 dark:bg-white/5 rounded-xl dark:border-white/10 group hover:border-purple-500">
+                             <div class="absolute top-0 right-0 p-2 transition opacity-10 group-hover:opacity-20">
+                                <i class="text-6xl ph-fill ph-users-three"></i>
+                             </div>
+                             <h4 class="mb-1 text-xl font-bold text-white uppercase">Trios Random</h4>
+                             <p class="mb-4 font-mono text-xs tracking-widest text-gray-400 uppercase">1 Partida</p>
+                             <p class="flex items-center gap-2 text-sm font-bold text-purple-400">
+                                <i class="ph-fill ph-crown"></i> Ganador de la partida se lo lleva todo
+                             </p>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+          </div>
+
+          <div v-else>
+              <h3 class="mb-4 text-2xl font-bold text-black uppercase dark:text-white font-display">Reglas Generales</h3>
+              <ul class="pl-5 space-y-2 text-sm text-gray-600 list-disc dark:text-gray-400">
+                  <li>El uso de hacks o scripts resultará en descalificación inmediata.</li>
+                  <li>Los equipos deben estar presentes en el lobby 10 minutos antes.</li>
+                  <li>Las repeticiones deben guardarse por 24 horas.</li>
+              </ul>
+          </div>
+        </div>
+      </div>
+
+       <div v-if="activeTab === 'premios'" class="animate-fade-in">
+        <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
+            
+            <div class="mb-12 text-center">
+                <h3 class="text-5xl font-black font-display text-[var(--rankit-neon)] uppercase mb-2 tracking-tight drop-shadow-[0_0_15px_rgba(191,0,255,0.5)]">
+                    <i class="mr-2 ph-fill ph-gift"></i> SORTEOS BELLZCUP
+                </h3>
+                <p class="text-lg font-bold tracking-widest text-gray-400 uppercase">
+                    Exclusivo para espectadores
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-12 lg:grid-cols-2">
+                <div class="flex flex-col justify-center gap-6">
+                    <div class="relative p-6 overflow-hidden border border-yellow-500/30 rounded-xl bg-yellow-500/10 group">
+                         <div class="absolute top-0 right-0 p-4 text-6xl transition duration-500 text-yellow-500/20 group-hover:scale-110">
+                            <i class="ph-fill ph-trophy"></i>
+                         </div>
+                         <h4 class="mb-2 text-3xl font-black text-white uppercase font-display">6 Ganadores</h4>
+                         <p class="mb-4 text-sm font-bold tracking-widest text-yellow-500 uppercase">Premios a elección</p>
+                         <ul class="space-y-3 text-lg font-bold text-gray-300">
+                            <li class="flex items-center gap-3"><i class="text-green-500 ph-fill ph-money"></i> $100.00 MXN en efectivo</li>
+                            <li class="flex items-center gap-3"><i class="text-purple-500 ph-fill ph-mask-happy"></i> Skins de Fortnite (valor equivalente)</li>
+                            <li class="flex items-center gap-3"><i class="text-blue-500 ph-fill ph-gavel"></i> Picos de Fortnite (valor equivalente)</li>
+                         </ul>
+                         <p class="mt-4 text-xs text-gray-500">*Los items del juego no deben superar el valor del premio en efectivo.</p>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="flex items-start gap-4">
+                        <div class="flex items-center justify-center w-12 h-12 text-xl font-black text-black bg-white rounded-full shrink-0 font-display">1</div>
+                        <div>
+                            <h5 class="text-xl font-bold text-white uppercase">Mira el Stream</h5>
+                            <p class="text-sm text-gray-400">Ve a la pestaña <strong>"Comunidad"</strong> en esta página y quédate viendo el directo. No cierres la pestaña.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start gap-4">
+                        <div class="flex items-center justify-center w-12 h-12 text-xl font-black text-white rounded-full bg-[var(--rankit-neon)] shrink-0 font-display">2</div>
+                        <div>
+                            <h5 class="text-xl font-bold text-white uppercase">Acumula Puntos</h5>
+                            <p class="text-sm text-gray-400">El sistema te dará puntos automáticamente cada minuto que estés conectado. ¡Mientras más tiempo, más chances!</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-4">
+                        <div class="flex items-center justify-center w-12 h-12 text-xl font-black text-white bg-green-500 rounded-full shrink-0 font-display">3</div>
+                        <div>
+                            <h5 class="text-xl font-bold text-white uppercase">Reclama tu Premio</h5>
+                            <p class="text-sm text-gray-400">Si resultas ganador en el sorteo, contáctanos inmediatamente:</p>
+                            <div class="flex flex-wrap gap-3 mt-2">
+                                <a href="https://instagram.com/rankit.pro" target="_blank" class="px-3 py-1 text-xs font-bold text-black uppercase bg-white rounded hover:bg-gray-200">
+                                    <i class="ph-bold ph-instagram-logo"></i> @rankit.pro
+                                </a>
+                                <span class="px-3 py-1 text-xs font-bold text-white uppercase border rounded cursor-default border-white/20">
+                                    <i class="ph-bold ph-envelope"></i> Espera nuestro correo
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
       </div>
     </main>
 
-    <!-- Mobile CTA -->
     <div class="fixed bottom-0 w-full bg-white/90 dark:bg-[#0B0C15]/90 backdrop-blur-md border-t border-gray-200 dark:border-white/10 p-4 z-50 lg:hidden">
-      <div class="flex items-center justify-between">
-        <div>
-          <!-- CHANGE: Neon City Cup -> bellzCup -->
-          <div class="text-sm font-bold text-black dark:text-white">{{ tournamentTitle }}</div>
-          <div class="text-[10px] text-green-500">Inscripciones Abiertas</div>
-        </div>
-        <button class="px-6 py-2 text-sm font-bold text-white bg-neon btn-skew">
-          <span class="btn-content">Inscribirse</span>
-        </button>
+      <div class="flex items-center justify-center gap-3">
+         <span class="relative flex w-3 h-3">
+            <span class="absolute inline-flex w-full h-full bg-green-400 rounded-full opacity-75 animate-ping"></span>
+            <span class="relative inline-flex w-3 h-3 bg-green-500 rounded-full"></span>
+         </span>
+         <div class="text-xs font-bold text-center text-black uppercase dark:text-white">
+            Mantente viendo el directo para seguir ganando
+         </div>
       </div>
     </div>
     
-    <!-- MODALES DE REFERIDOS -->
     <div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
       <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
@@ -670,4 +897,7 @@ html:not(.dark) .btn-skew:hover { background-color: black; color: white; box-sha
 .animate-marquee { animation: marquee 30s linear infinite; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--rankit-neon); border-radius: 4px; }
 </style>
