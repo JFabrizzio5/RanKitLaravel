@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
 import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
-import { useRankitSocket } from '@/Composables/useRankitSocket'
 import axios from 'axios'
 
 // --- TIPOS ---
@@ -53,7 +52,7 @@ const props = defineProps<{
   canRegister?: boolean;
 }>()
 
-// --- AUTH & USER (Mover al inicio para disponibilidad) ---
+// --- AUTH & USER ---
 const page = usePage()
 const user = page.props.auth?.user as any
 const me = user // Alias para compatibilidad
@@ -84,7 +83,6 @@ function toggleTheme() {
  */
 const matches = ref<PublicMatch[]>([])
 const ranking = ref<PublicRankingItem[]>([])
-// Inicializamos con los props, pero forzaremos ID 7 (según tu código)
 const tournamentData = ref<TournamentInfo>(props.tournament || { id: 7 })
 const isLoading = ref(true)
 const progressText = ref(props.tournament?.status || "Cargando...")
@@ -101,8 +99,6 @@ let pollInterval: number | undefined
 const loadData = async (showSpinner = false) => {
   try {
     const id = 7; // ID Fijo según tu lógica
-    
-    // Actualizamos el ref local para consistencia
     tournamentData.value.id = id;
 
     if (showSpinner) {
@@ -177,50 +173,131 @@ const copyTrackingLink = (item: PublicRankingItem) => {
 }
 
 /**
- * LOGICA DEL TORNEO & SOCKETS (REPARADA)
+ * =========================================================================
+ * LOGICA DEL WEBSOCKET (PYTHON MICROSERVICE)
+ * =========================================================================
+ * Implementación directa para conectar al puerto 8011 de main.py
  */
 const activeTab = ref('comunidad') 
 
-// ===== Viewer Points (WEBSOCKET INTEGRATION - Lógica Original Funcional) =====
-const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket(
-    'community', 
-    user?.id, // Pasamos el ID explícitamente como en la versión funcional
-    { 
-        autoConnect: false,
-        manageVisibility: false 
+// Estado reactivo del Socket
+const socket = ref<WebSocket | null>(null)
+const isConnected = ref(false)
+const socketError = ref(false)
+let pingInterval: number | undefined
+
+const connectSocket = () => {
+  if (!user?.id) {
+    console.warn('[RankitSocket] ⚠️ Usuario no logueado. No se puede conectar al socket.')
+    return
+  }
+
+  // Si ya existe una conexión abierta, no reconectar
+  if (socket.value && (socket.value.readyState === WebSocket.OPEN || socket.value.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
+  // --- CONSTRUCCIÓN DE LA URL ---
+  // Usamos el hostname actual pero forzamos el puerto 8011
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.hostname // 'localhost' o tu dominio
+  const port = '8011' // Puerto definido en tu docker-compose y .env
+  const path = `/ws/community/${user.id}` // Ruta definida en main.py
+
+  const wsUrl = `${protocol}//${host}:${port}${path}`
+  
+  // --- LOG SOLICITADO ---
+  console.log(`%c[RankitSocket] 🔌 INTENTANDO CONECTAR A: ${wsUrl}`, 'color: #00ffff; font-weight: bold; background: #333; padding: 4px;')
+
+  try {
+    socket.value = new WebSocket(wsUrl)
+
+    socket.value.onopen = () => {
+      console.log(`%c[RankitSocket] ✅ CONEXIÓN EXITOSA`, 'color: #00ff00; font-weight: bold;')
+      isConnected.value = true
+      socketError.value = false
+      
+      // Iniciar Ping-Pong para mantener viva la conexión
+      startPingPong()
     }
-)
 
-watch(isConnected, (newVal) => {
-  console.log('%c[RankitSocket] Estado isConnected cambió a:', 'color: orange; font-weight: bold;', newVal)
-})
+    socket.value.onmessage = (event) => {
+      // Loguear mensajes entrantes (como puntos ganados o progreso)
+      console.log(`%c[RankitSocket] 📩 MENSAJE RECIBIDO:`, 'color: orange', event.data)
+      
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'point_earned') {
+           // Aquí podrías lanzar una notificación toast
+           console.log('💰 ¡Punto ganado!', data.total_points)
+        }
+      } catch (e) {
+        // Ignorar si no es JSON (ej: "pong")
+      }
+    }
 
+    socket.value.onclose = (event) => {
+      console.log(`%c[RankitSocket] ❌ DESCONECTADO (Código: ${event.code})`, 'color: red;')
+      isConnected.value = false
+      stopPingPong()
+      socket.value = null
+    }
+
+    socket.value.onerror = (error) => {
+      console.error('[RankitSocket] ⚠️ ERROR:', error)
+      socketError.value = true
+    }
+
+  } catch (e) {
+    console.error('[RankitSocket] Error crítico al instanciar WebSocket:', e)
+  }
+}
+
+const disconnectSocket = () => {
+  if (socket.value) {
+    console.log('[RankitSocket] Cerrando conexión manualmente...')
+    socket.value.close()
+    socket.value = null
+  }
+  isConnected.value = false
+  stopPingPong()
+}
+
+// Mantener la conexión viva enviando "ping" cada 30s
+const startPingPong = () => {
+  stopPingPong()
+  pingInterval = window.setInterval(() => {
+    if (socket.value && socket.value.readyState === WebSocket.OPEN) {
+      socket.value.send('ping')
+    }
+  }, 30000)
+}
+
+const stopPingPong = () => {
+  if (pingInterval) {
+    clearInterval(pingInterval)
+    pingInterval = undefined
+  }
+}
+
+// Gestión de Tabs y Visibilidad
 const switchTab = (tab: string) => {
   activeTab.value = tab
 
-  // Lógica de conexión basada en el Tab (Restaurada de versión A)
   if (tab === 'comunidad') {
-    console.log('%c[RankitSocket] Tab Comunidad activado. Iniciando conexión...', 'color: cyan; font-weight: bold;')
-    
-    if (!user) {
-        console.warn('[RankitSocket] Usuario no autenticado. No se conectará al socket.')
-    }
-    
     connectSocket()
   } else {
     disconnectSocket()
   }
 }
 
-// Control de visibilidad para pausar socket si minimizan
 const handleVisibilityChange = () => {
   if (document.hidden) {
-    console.log('[RankitSocket] Documento oculto (minimizado). Desconectando...')
+    console.log('[RankitSocket] 🙈 Pestaña oculta. Desconectando para ahorrar recursos...')
     disconnectSocket()
   } else {
-    // Solo reconectar si estamos en el tab correcto
     if (activeTab.value === 'comunidad') {
-      console.log('[RankitSocket] Documento visible. Reconectando...')
+      console.log('[RankitSocket] 👁️ Pestaña visible. Reconectando...')
       connectSocket()
     }
   }
@@ -318,7 +395,6 @@ onMounted(() => {
   // INICIO DE SOCKET
   // Si arrancamos en la pestaña comunidad, conectamos
   if (activeTab.value === 'comunidad') {
-    console.log('[RankitSocket] Mounted en Comunidad. Conectando...')
     connectSocket()
   }
 
@@ -351,7 +427,6 @@ onUnmounted(() => {
       </Link>
 
       <div class="flex items-center gap-4">
-        <!-- Indicador de Puntos Visual -->
         <div v-if="isConnected && activeTab === 'comunidad'" class="items-center hidden gap-2 px-3 py-1 text-xs font-bold text-green-500 border rounded-full md:flex bg-green-500/10 animate-pulse border-green-500/20">
             <span class="w-2 h-2 bg-green-500 rounded-full"></span>
             SUMANDO PUNTOS
@@ -457,7 +532,6 @@ onUnmounted(() => {
 
     <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 min-h-[600px]">
       
-      <!-- === RESULTADOS / TABLA === -->
       <div v-if="activeTab === 'resultados'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
         
         <aside class="space-y-6 lg:col-span-4">
@@ -582,7 +656,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- === COMUNIDAD (SOCKET + STREAM) === -->
       <div v-show="activeTab === 'comunidad'" class="space-y-6 animate-fade-in">
         
         <div class="w-full brutal-card p-4 bg-white dark:bg-[#0a0a0a] border-l-4 transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-4"
@@ -648,7 +721,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- === REGLAS === -->
       <div v-show="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
           
@@ -734,7 +806,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-       <!-- === PREMIOS === -->
        <div v-if="activeTab === 'premios'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
             
@@ -803,7 +874,6 @@ onUnmounted(() => {
       </div>
     </main>
 
-    <!-- Mobile CTA -->
     <div class="fixed bottom-0 w-full bg-white/90 dark:bg-[#0B0C15]/90 backdrop-blur-md border-t border-gray-200 dark:border-white/10 p-4 z-50 lg:hidden">
       <div class="flex items-center justify-center gap-3">
          <span class="relative flex w-3 h-3">
@@ -816,7 +886,6 @@ onUnmounted(() => {
       </div>
     </div>
     
-    <!-- MODALS -->
     <div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
       <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
