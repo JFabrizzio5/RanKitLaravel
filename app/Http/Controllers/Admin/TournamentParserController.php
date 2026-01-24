@@ -317,32 +317,48 @@ class TournamentParserController extends Controller
             
             $currentMatchId = null;
 
+            // BUSCAR SI ESTA FIRMA YA EXISTE EN LA DB
+            $existingCollision = DB::table('tournament_matches')
+                ->where('match_id', $matchUid)
+                ->first();
+
             // 2. DETECCIÓN DE DUPLICADOS O ACTUALIZACIÓN
             if ($targetMatchId) {
                 // Caso A: Overwrite explícito (usuario seleccionó una partida para subir)
+                
+                // Si existe otra partida DIFERENTE con esta misma replay, es un conflicto.
+                if ($existingCollision && $existingCollision->id != $targetMatchId) {
+                    // ESTRATEGIA: "El usuario manda". Si sube la replay aquí, borramos la antigua duplicada.
+                    
+                    // 1. Borrar stats de la partida vieja conflictiva
+                    DB::table('player_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
+                    DB::table('team_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
+                    
+                    // 2. Borrar la partida vieja
+                    DB::table('tournament_matches')->where('id', $existingCollision->id)->delete();
+                    
+                    Log::info("Conflicto de replay resuelto: Partida ID {$existingCollision->id} eliminada en favor de ID {$targetMatchId}");
+                }
+
                 $currentMatchId = $targetMatchId;
                 
                 DB::table('tournament_matches')->where('id', $currentMatchId)->update([
-                    'match_id' => $matchUid, // Actualizamos la firma
+                    'match_id' => $matchUid, // Actualizamos la firma (ahora segura)
                     'raw_data' => json_encode($data),
                     'updated_at' => now(),
                 ]);
-            } else {
-                // Caso B: Subida nueva -> BUSCAR SI YA EXISTE POR FIRMA
-                $duplicateMatch = DB::table('tournament_matches')
-                    ->where('tournament_id', $id)
-                    ->where('match_id', $matchUid) // Buscamos por la firma de contenido
-                    ->first();
 
-                if ($duplicateMatch) {
-                    // ¡ES DUPLICADA! Usamos la existente para no sumar puntos dobles
-                    $currentMatchId = $duplicateMatch->id;
-                    DB::table('tournament_matches')->where('id', $currentMatchId)->update([
+            } else {
+                // Caso B: Subida nueva (Sin target)
+                // Si ya existe, usamos la existente para no duplicar puntos
+                if ($existingCollision) {
+                    $currentMatchId = $existingCollision->id;
+                     DB::table('tournament_matches')->where('id', $currentMatchId)->update([
                         'raw_data' => json_encode($data),
                         'updated_at' => now(),
                     ]);
                 } else {
-                    // ES NUEVA DE VERDAD
+                    // Insertar nueva
                     $currentMatchId = DB::table('tournament_matches')->insertGetId([
                         'tournament_id' => $id,
                         'match_id' => $matchUid,
@@ -557,7 +573,7 @@ class TournamentParserController extends Controller
     private function isJangel($user)
     {
         // Asegúrate de que tu email esté aquí
-        $adminEmails = ['jangel@ejemplo.com', 'admin@jangel.pro', $user->email]; 
+        $adminEmails = ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com', $user->email]; 
         return in_array($user->email, $adminEmails);
     }
 }
