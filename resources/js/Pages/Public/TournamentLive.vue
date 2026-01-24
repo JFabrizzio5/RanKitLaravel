@@ -251,7 +251,7 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <!-- STREAM SECTION -->
+    <!-- STREAM SECTION (Si hay canal) -->
     <div v-if="tournamentData.twitch_channel" class="pt-20 bg-black">
         <div class="w-full aspect-video max-w-7xl mx-auto lg:aspect-[21/9] xl:aspect-[24/9] max-h-[60vh] relative group">
             <iframe
@@ -267,11 +267,18 @@ onUnmounted(() => {
         </div>
     </div>
 
-    <!-- HERO SECTION -->
-    <header class="relative min-h-[500px] h-auto flex items-end overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
+    <!-- HERO SECTION / BANNER (MODIFICADO) -->
+    <header class="relative min-h-[500px] h-auto flex items-end overflow-hidden group pb-20 bg-[#0a0a0a]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
+      
+      <!-- Imagen de Fondo (Estilo Dashboard) -->
       <div class="absolute inset-0 z-0 pointer-events-none">
-        <img src="public/BellzCupBeta/BannerBellzCup.png"  class="w-full h-full object-cover opacity-20 dark:opacity-30 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear grayscale mix-blend-multiply dark:mix-blend-overlay" />
-        <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
+        <img 
+            src="/BellzCupBeta/BannerBellzCup.png"  
+            class="w-full h-full object-cover opacity-90 transform scale-105 group-hover:scale-110 transition duration-[1.5s] ease-out blur-[2px]" 
+            onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"
+        />
+        <!-- Overlay Gradiente -->
+        <div class="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent"></div>
       </div>
 
       <div class="relative z-10 flex flex-col w-full gap-8 px-6 mx-auto max-w-7xl lg:px-8">
@@ -279,7 +286,7 @@ onUnmounted(() => {
           <span class="bg-red-600/90 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(220,38,38,0.6)] animate-pulse flex items-center gap-2 btn-skew">
              <span class="flex items-center gap-2 btn-content"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> EN VIVO</span>
           </span>
-          <span class="bg-white/10 border border-black/10 dark:border-white/10 text-black dark:text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default brutal-card">
+          <span class="bg-white/10 border border-black/10 dark:border-white/10 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default brutal-card backdrop-blur-sm">
             {{ progressText }}
           </span>
           
@@ -291,17 +298,17 @@ onUnmounted(() => {
              </span>
           </button>
 
-          <span class="flex items-center gap-2 text-[10px] font-bold text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-black/50 px-2 py-1 rounded backdrop-blur ml-auto sm:ml-0">
+          <span class="flex items-center gap-2 text-[10px] font-bold text-gray-300 bg-black/50 px-2 py-1 rounded backdrop-blur ml-auto sm:ml-0">
               <i class="ph-fill ph-users text-[var(--rankit-neon)]"></i>
               {{ viewerCount.toLocaleString() }} viewers
           </span>
         </div>
 
         <div class="relative max-w-3xl delay-100 animate-fade-in-up">
-            <h1 class="mb-4 text-5xl font-black leading-none tracking-tight text-black uppercase md:text-7xl font-display dark:text-white">
+            <h1 class="mb-4 text-5xl italic font-black leading-none tracking-tight text-white uppercase md:text-8xl font-display">
               {{ tournamentData.name || 'Torneo' }}
               <br/>
-              <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600">
+              <span class="text-transparent text-stroke">
                 LIVE STATS
               </span>
             </h1>
@@ -457,12 +464,18 @@ onUnmounted(() => {
           
           <!-- CONTENIDO ESPECÍFICO PARA BELLZCUP (ID 7) -->
           <div v-if="Number(tournamentData.id) === 7">
-             <!-- IMAGEN SOLICITADA -->
-             <div class="relative h-[400px] md:h-[500px] overflow-hidden rounded-xl shadow-2xl border border-[var(--rankit-neon)] mb-12 group">
-                 <img src="public/BellzCupBeta/BannerBellzCup.png" 
-                     alt="Banner BellzCup"
-                     class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-[1.5s] ease-out blur-[2px] group-hover:blur-0" 
-                     onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"/>
+             <!-- IMAGEN SOLICITADA PARA REGLAS -->
+             <div class="relative h-[300px] md:h-[400px] overflow-hidden rounded-xl shadow-2xl border border-[var(--rankit-neon)] mb-12 group">
+                 <img 
+                    src="/BellzCupBeta/BannerBellzCup.png" 
+                    alt="Banner BellzCup"
+                    class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-[1.5s] ease-out blur-[2px] group-hover:blur-0" 
+                    onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"
+                />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+                <div class="absolute text-white bottom-6 left-6">
+                    <h2 class="text-3xl font-black italic uppercase font-display text-[var(--rankit-neon)] drop-shadow-lg">Reglas Oficiales</h2>
+                </div>
              </div>
 
              <div class="grid grid-cols-1 gap-12 md:grid-cols-2">
