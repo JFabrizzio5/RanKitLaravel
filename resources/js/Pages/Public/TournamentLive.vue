@@ -72,7 +72,7 @@ const isLoading = ref(true); // Estado de carga inicial/manual
 const viewerCount = ref(1240); 
 
 // Tabs y Filtros
-const activeTab = ref<'resultados' | 'partidas' | 'reglas'>('resultados');
+const activeTab = ref<'resultados' | 'partidas' | 'reglas' | 'premios'>('resultados');
 const selectedMatchId = ref<number | null>(null);
 const leaderboardType = ref<'players' | 'teams'>('players');
 const filterMode = ref<string>('all'); 
@@ -84,7 +84,7 @@ const expandedRowIndex = ref<number | null>(null);
 const availableTabs = computed(() => {
     // Usamos Number() para asegurar que la comparación sea correcta (7 vs "7")
     if (Number(tournamentData.value.id) === 7) {
-        return ['resultados', 'reglas'];
+        return ['resultados', 'reglas', 'premios'];
     }
     return ['resultados', 'partidas', 'reglas'];
 });
@@ -142,7 +142,7 @@ const loadData = async (showSpinner = false) => {
 };
 
 // UI Helpers
-const switchTab = (tab: 'resultados' | 'partidas' | 'reglas') => (activeTab.value = tab);
+const switchTab = (tab: 'resultados' | 'partidas' | 'reglas' | 'premios') => (activeTab.value = tab);
 
 const formatDec = (num: number | string) => {
     const n = typeof num === 'string' ? parseFloat(num) : num;
@@ -549,42 +549,117 @@ onUnmounted(() => {
 
         </div>
       </div>
+
+      <!-- SECCIÓN PREMIOS (Nuevo) -->
+      <div v-if="activeTab === 'premios'" class="animate-fade-in">
+        <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
+            
+            <div class="mb-8 text-center">
+                <h3 class="text-5xl font-black font-display text-[var(--rankit-neon)] uppercase mb-2 tracking-tight drop-shadow-[0_0_15px_rgba(191,0,255,0.5)]">
+                    <i class="mr-2 ph-fill ph-trophy"></i> PREMIOS RANKIT
+                </h3>
+                <p class="text-lg font-bold tracking-widest text-gray-400 uppercase">
+                    Otorgados oficialmente por <span class="text-white">RANKIT</span>
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-3">
+                <!-- MVP -->
+                <div class="p-6 bg-gradient-to-br from-yellow-500/20 to-yellow-900/20 border border-yellow-500/50 rounded-xl text-center relative overflow-hidden group transform hover:scale-105 transition duration-300 shadow-[0_0_30px_rgba(234,179,8,0.2)]">
+                    <div class="absolute transition duration-500 -right-4 -top-4 text-yellow-500/20 text-9xl group-hover:scale-110 animate-pulse">
+                        <i class="ph-fill ph-crown"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="w-20 h-20 mx-auto bg-gradient-to-br from-yellow-400 to-yellow-600 text-black rounded-full flex items-center justify-center text-4xl mb-4 shadow-[0_0_20px_rgba(234,179,8,0.8)] border-4 border-yellow-300">
+                            <i class="ph-bold ph-trophy"></i>
+                        </div>
+                        <h4 class="mb-1 text-3xl font-black tracking-tight text-white uppercase font-display">MVP</h4>
+                        <p class="inline-block px-2 py-1 mb-4 text-xs font-bold tracking-widest text-yellow-300 uppercase border rounded bg-yellow-500/10 border-yellow-500/30">Más Puntos Totales</p>
+                        <div class="text-4xl font-black text-white drop-shadow-md">$200.00 MXN</div>
+                    </div>
+                </div>
+
+                <!-- KILLER -->
+                <div class="p-6 bg-gradient-to-br from-red-500/20 to-red-900/20 border border-red-500/50 rounded-xl text-center relative overflow-hidden group transform hover:scale-105 transition duration-300 shadow-[0_0_30px_rgba(220,38,38,0.2)]">
+                    <div class="absolute transition duration-500 -right-4 -top-4 text-red-500/20 text-9xl group-hover:scale-110 animate-pulse">
+                        <i class="ph-fill ph-crosshair"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="w-20 h-20 mx-auto bg-gradient-to-br from-red-500 to-red-700 text-white rounded-full flex items-center justify-center text-4xl mb-4 shadow-[0_0_20px_rgba(220,38,38,0.8)] border-4 border-red-400">
+                            <i class="ph-bold ph-skull"></i>
+                        </div>
+                        <h4 class="mb-1 text-3xl font-black tracking-tight text-white uppercase font-display">The Killer</h4>
+                        <p class="inline-block px-2 py-1 mb-4 text-xs font-bold tracking-widest text-red-300 uppercase border rounded bg-red-500/10 border-red-500/30">Más Eliminaciones</p>
+                        <div class="text-4xl font-black text-white drop-shadow-md">$100.00 MXN</div>
+                    </div>
+                </div>
+
+                <!-- NOOB -->
+                <div class="p-6 bg-gradient-to-br from-green-500/20 to-green-900/20 border border-green-500/50 rounded-xl text-center relative overflow-hidden group transform hover:scale-105 transition duration-300 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
+                    <div class="absolute transition duration-500 -right-4 -top-4 text-green-500/20 text-9xl group-hover:scale-110 animate-pulse">
+                        <i class="ph-fill ph-baby"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="w-20 h-20 mx-auto bg-gradient-to-br from-green-400 to-green-600 text-black rounded-full flex items-center justify-center text-4xl mb-4 shadow-[0_0_20px_rgba(34,197,94,0.8)] border-4 border-green-300">
+                            <i class="ph-bold ph-smiley-sad"></i>
+                        </div>
+                        <h4 class="mb-1 text-3xl font-black tracking-tight text-white uppercase font-display">El Noob</h4>
+                        <p class="inline-block px-2 py-1 mb-4 text-xs font-bold tracking-widest text-green-300 uppercase border rounded bg-green-500/10 border-green-500/30">Menos Puntos</p>
+                        <div class="text-4xl font-black text-white drop-shadow-md">$100.00 MXN</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Premios Especiales (Consolación) -->
+            <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2">
+                <div class="relative flex items-center gap-6 p-6 overflow-hidden transition border bg-gradient-to-r from-purple-900/40 to-gray-900/40 border-purple-500/50 rounded-xl hover:border-purple-400 group">
+                    <div class="absolute inset-0 transition bg-purple-500/5 group-hover:bg-purple-500/10"></div>
+                    <div class="z-10 flex items-center justify-center flex-shrink-0 w-16 h-16 text-3xl text-white bg-purple-600 shadow-lg rounded-xl shadow-purple-500/30">
+                        <i class="ph-bold ph-paint-brush"></i>
+                    </div>
+                    <div class="z-10">
+                        <h5 class="text-xl font-black tracking-wide text-white uppercase font-display">Premio al Creador</h5>
+                        <p class="mb-1 text-xs font-bold tracking-widest text-purple-300 uppercase">Consolación (Sorteo)</p>
+                        <span class="text-3xl font-black text-white">$100.00 MXN</span>
+                    </div>
+                </div>
+
+                <div class="relative flex items-center gap-6 p-6 overflow-hidden transition border bg-gradient-to-r from-blue-900/40 to-gray-900/40 border-blue-500/50 rounded-xl hover:border-blue-400 group">
+                    <div class="absolute inset-0 transition bg-blue-500/5 group-hover:bg-blue-500/10"></div>
+                    <div class="z-10 flex items-center justify-center flex-shrink-0 w-16 h-16 text-3xl text-white bg-blue-600 shadow-lg rounded-xl shadow-blue-500/30">
+                        <i class="ph-bold ph-microphone-stage"></i>
+                    </div>
+                    <div class="z-10">
+                        <h5 class="text-xl font-black tracking-wide text-white uppercase font-display">Actor de Doblaje</h5>
+                        <p class="mb-1 text-xs font-bold tracking-widest text-blue-300 uppercase">Consolación (Sorteo)</p>
+                        <span class="text-3xl font-black text-white">$100.00 MXN</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-[var(--rankit-neon)]/10 border border-[var(--rankit-neon)] rounded-xl p-6 flex flex-col md:flex-row items-start gap-4">
+                <div class="p-3 bg-[var(--rankit-neon)]/20 rounded-full text-[var(--rankit-neon)]">
+                    <i class="text-2xl ph-fill ph-info"></i>
+                </div>
+                <div class="flex-1 text-sm">
+                    <p class="mb-2 text-lg font-black text-white uppercase font-display">Información Importante:</p>
+                    <ul class="space-y-2 text-gray-300 list-none">
+                        <li class="flex items-start gap-2"><i class="ph-bold ph-check text-[var(--rankit-neon)] mt-0.5"></i> Solo se puede ganar <strong>un premio por persona</strong>.</li>
+                        <li class="flex items-start gap-2"><i class="ph-bold ph-check text-[var(--rankit-neon)] mt-0.5"></i> Los premios de Creador y Actor de Doblaje son de consolación y se eligen al azar.</li>
+                        <li class="flex items-start gap-2"><i class="ph-bold ph-discord-logo text-indigo-400 mt-0.5 text-lg"></i> Todos los premios se entregarán y coordinarán exclusivamente a través de <strong class="text-indigo-400">Discord</strong>.</li>
+                    </ul>
+                    
+                    <div class="pt-4 mt-4 border-t border-white/10">
+                        <p class="mb-1 text-xs font-bold tracking-widest text-gray-400 uppercase">¿Tienes dudas?</p>
+                        <a href="https://instagram.com/rankit.pro" target="_blank" class="inline-flex items-center gap-2 text-lg font-bold text-pink-500 transition hover:text-pink-400 group">
+                            <i class="text-2xl transition ph-bold ph-instagram-logo group-hover:scale-110"></i> Contáctanos en @Rankit.pro
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+      </div>
     </main>
   </div>
 </template>
-
-<style>
-/* Estilos Fuente C */
-:root { --rankit-neon: #bf00ff; }
-.font-display { font-family: "Chakra Petch", sans-serif; }
-.font-sans { font-family: "Archivo", sans-serif; }
-.text-neon { color: var(--rankit-neon); }
-.bg-neon { background-color: var(--rankit-neon); }
-.border-neon { border-color: var(--rankit-neon); }
-
-.bg-tech-grid-dark { background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px); }
-.bg-tech-grid-light { background-image: linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px); }
-
-.brutal-card { position: relative; transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94); border: 1px solid; }
-.dark .brutal-card { background: #0a0a0a; border-color: #333; }
-html:not(.dark) .brutal-card { background: #ffffff; border-color: #e5e5e5; box-shadow: 4px 4px 0px #00000010; }
-.brutal-card:hover { border-color: var(--rankit-neon); transform: translate(-4px, -4px); }
-.dark .brutal-card:hover { box-shadow: 6px 6px 0px var(--rankit-neon); }
-html:not(.dark) .brutal-card:hover { box-shadow: 6px 6px 0px var(--rankit-neon), 6px 6px 0px 2px black; }
-
-.btn-skew { background-color: var(--rankit-neon); color: white; transform: skewX(-10deg); transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-.btn-skew:hover { background-color: white; color: black; box-shadow: 0 0 15px var(--rankit-neon); }
-html:not(.dark) .btn-skew:hover { background-color: black; color: white; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); }
-.btn-content { transform: skewX(10deg); }
-
-.animate-fade-in-up { animation: fadeInUp 0.8s ease-out forwards; opacity: 0; }
-.animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
-.delay-100 { animation-delay: 0.1s; }
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-</style>
