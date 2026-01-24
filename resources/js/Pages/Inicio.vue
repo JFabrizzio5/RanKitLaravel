@@ -433,7 +433,7 @@ onMounted(() => {
         <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           <div class="cursor-pointer brutal-card group">
             <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
-              <img src="BellzCup.png" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="Valorant" />
+              <img src="public/BellzCup.png" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="Valorant" />
               <div class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-black uppercase bg-neon">Esports</div>
             </div>
             <div class="p-6">
@@ -640,7 +640,7 @@ onMounted(() => {
 <img
     src="https://cdn-icons-png.flaticon.com/512/1400/1400487.png"
     alt="Instagram"
-    class="w-8 h-8 object-contain"
+    class="object-contain w-8 h-8"
   />      </div>
 
       <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">
@@ -671,7 +671,7 @@ onMounted(() => {
         <img
     src="https://cdn-icons-png.flaticon.com/512/1400/1400487.png"
           alt="Instagram"
-          class="w-8 h-8 object-contain"
+          class="object-contain w-8 h-8"
         />
       </div>
 
