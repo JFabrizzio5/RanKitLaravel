@@ -69,7 +69,7 @@ const ranking = ref<PublicRankingItem[]>([]);
 const tournamentData = ref<TournamentInfo>(props.tournament || {});
 const progressText = ref("Cargando...");
 const isLoading = ref(true); // Estado de carga inicial/manual
-const viewerCount = ref(1240); 
+// const viewerCount = ref(1240); // Eliminado por solicitud de rendimiento/visualización
 
 // Tabs y Filtros
 const activeTab = ref<'resultados' | 'partidas' | 'reglas' | 'premios'>('resultados');
@@ -103,8 +103,7 @@ const loadData = async (showSpinner = false) => {
             expandedRowIndex.value = null; // Colapsar filas al filtrar
         }
 
-        // Simular fluctuación de viewers
-        viewerCount.value = Math.max(1000, viewerCount.value + Math.floor(Math.random() * 21) - 10);
+        // viewerCount logic removed
 
         const url = `/api/live/${id}/data`;
         const params: any = {
@@ -267,51 +266,40 @@ onUnmounted(() => {
         </div>
     </div>
 
-    <!-- HERO SECTION / BANNER (MODIFICADO) -->
-    <header class="relative min-h-[500px] h-auto flex items-end overflow-hidden group pb-20 bg-[#0a0a0a]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
+    <!-- HERO SECTION / BANNER (OPTIMIZADO / SIN IMAGEN PESADA) -->
+    <header class="relative min-h-[300px] flex items-end pb-12 bg-[#0a0a0a]" :class="tournamentData.twitch_channel ? 'pt-10' : 'pt-24'">
       
-      <!-- Imagen de Fondo (Estilo Dashboard) -->
-      <div class="absolute inset-0 z-0 pointer-events-none">
-        <img 
-            src="/BellzCupBeta/BannerBellzCup.png"  
-            class="w-full h-full object-cover opacity-90 transform scale-105 group-hover:scale-110 transition duration-[1.5s] ease-out blur-[2px]" 
-            onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"
-        />
-        <!-- Overlay Gradiente -->
-        <div class="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent"></div>
-      </div>
+      <!-- Fondo CSS Ligero -->
+      <div class="absolute inset-0 z-0 bg-gradient-to-b from-gray-900 to-black"></div>
+      <div class="absolute inset-0 z-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
 
-      <div class="relative z-10 flex flex-col w-full gap-8 px-6 mx-auto max-w-7xl lg:px-8">
+      <div class="relative z-10 flex flex-col w-full gap-6 px-6 mx-auto max-w-7xl lg:px-8">
         <div class="flex flex-wrap items-center gap-3 animate-fade-in-up">
-          <span class="bg-red-600/90 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(220,38,38,0.6)] animate-pulse flex items-center gap-2 btn-skew">
-             <span class="flex items-center gap-2 btn-content"><span class="w-1.5 h-1.5 bg-white rounded-full"></span> EN VIVO</span>
+          <span class="bg-red-600/90 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-lg animate-pulse flex items-center gap-2 rounded-sm">
+             <span class="w-1.5 h-1.5 bg-white rounded-full"></span> EN VIVO
           </span>
-          <span class="bg-white/10 border border-black/10 dark:border-white/10 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default brutal-card backdrop-blur-sm">
+          <span class="bg-white/10 border border-white/10 text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-default backdrop-blur-sm rounded-sm">
             {{ progressText }}
           </span>
           
           <!-- BOTÓN ACTUALIZAR MANUAL -->
-          <button @click="loadData(true)" class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold text-white uppercase bg-[var(--rankit-neon)] hover:opacity-80 transition btn-skew group">
+          <button @click="loadData(true)" class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold text-white uppercase bg-[var(--rankit-neon)] hover:opacity-80 transition rounded-sm group">
              <span class="flex items-center gap-2 btn-content">
                 <i class="transition-transform duration-500 ph-bold ph-arrows-clockwise group-hover:rotate-180"></i>
                 Actualizar
              </span>
           </button>
-
-          <span class="flex items-center gap-2 text-[10px] font-bold text-gray-300 bg-black/50 px-2 py-1 rounded backdrop-blur ml-auto sm:ml-0">
-              <i class="ph-fill ph-users text-[var(--rankit-neon)]"></i>
-              {{ viewerCount.toLocaleString() }} viewers
-          </span>
+          
+          <!-- Viewers Eliminados por solicitud -->
         </div>
 
-        <div class="relative max-w-3xl delay-100 animate-fade-in-up">
-            <h1 class="mb-4 text-5xl italic font-black leading-none tracking-tight text-white uppercase md:text-8xl font-display">
+        <div class="relative max-w-4xl delay-100 animate-fade-in-up">
+            <h1 class="mb-2 text-4xl italic font-black leading-none tracking-tight text-white uppercase md:text-6xl font-display">
               {{ tournamentData.name || 'Torneo' }}
-              <br/>
-              <span class="text-transparent text-stroke">
-                LIVE STATS
-              </span>
             </h1>
+            <h2 class="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600 font-display italic">
+                LIVE STATS
+            </h2>
         </div>
       </div>
     </header>
@@ -464,24 +452,15 @@ onUnmounted(() => {
           
           <!-- CONTENIDO ESPECÍFICO PARA BELLZCUP (ID 7) -->
           <div v-if="Number(tournamentData.id) === 7">
-             <!-- IMAGEN SOLICITADA PARA REGLAS -->
-             <div class="relative h-[300px] md:h-[400px] overflow-hidden rounded-xl shadow-2xl border border-[var(--rankit-neon)] mb-12 group">
-                 <img 
-                    src="/BellzCupBeta/BannerBellzCup.png" 
-                    alt="Banner BellzCup"
-                    class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-[1.5s] ease-out blur-[2px] group-hover:blur-0" 
-                    onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"
-                />
-                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-                <div class="absolute text-white bottom-6 left-6">
-                    <h2 class="text-3xl font-black italic uppercase font-display text-[var(--rankit-neon)] drop-shadow-lg">Reglas Oficiales</h2>
-                </div>
+             <!-- Imagen Removida -->
+             <div class="pb-4 mb-8 border-b border-gray-700">
+                 <h2 class="text-3xl font-black italic uppercase font-display text-[var(--rankit-neon)] drop-shadow-lg">Reglas Oficiales</h2>
              </div>
 
              <div class="grid grid-cols-1 gap-12 md:grid-cols-2">
                  <!-- COLUMNA REGLAS -->
                  <div>
-                     <h3 class="mb-6 text-3xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
+                     <h3 class="mb-6 text-xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
                         Reglas Generales
                      </h3>
                      <ul class="space-y-4 text-sm font-bold text-gray-700 list-none dark:text-gray-300">
@@ -502,7 +481,7 @@ onUnmounted(() => {
 
                  <!-- COLUMNA FORMATO -->
                  <div>
-                     <h3 class="mb-6 text-3xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
+                     <h3 class="mb-6 text-xl font-bold text-black uppercase dark:text-white font-display text-[var(--rankit-neon)] border-b border-gray-700 pb-2">
                         Formato y Puntuación
                      </h3>
                      
