@@ -8,7 +8,7 @@ import axios from 'axios'
 interface PublicMatch {
   id: number;
   mode: string;
-  code: string; // Se mantiene en tipo pero no se muestra
+  code: string;
   status: string;
   is_active: boolean;
   created_at: string;
@@ -53,6 +53,11 @@ const props = defineProps<{
   canRegister?: boolean;
 }>()
 
+// --- AUTH & USER (Mover al inicio para disponibilidad) ---
+const page = usePage()
+const user = page.props.auth?.user as any
+const me = user // Alias para compatibilidad
+
 /**
  * THEME MANAGEMENT
  */
@@ -79,7 +84,7 @@ function toggleTheme() {
  */
 const matches = ref<PublicMatch[]>([])
 const ranking = ref<PublicRankingItem[]>([])
-// Inicializamos con los props, pero forzaremos ID 7
+// Inicializamos con los props, pero forzaremos ID 7 (según tu código)
 const tournamentData = ref<TournamentInfo>(props.tournament || { id: 7 })
 const isLoading = ref(true)
 const progressText = ref(props.tournament?.status || "Cargando...")
@@ -95,8 +100,7 @@ let pollInterval: number | undefined
 
 const loadData = async (showSpinner = false) => {
   try {
-    // REGLA: La tabla debe ser el torneo ID 7
-    const id = 7; 
+    const id = 7; // ID Fijo según tu lógica
     
     // Actualizamos el ref local para consistencia
     tournamentData.value.id = id;
@@ -152,49 +156,39 @@ const toggleMatchFilter = (matchId: number | null) => {
 }
 
 const copyObsLink = () => {
-  const id = 7 // ID Fijo
-  
+  const id = 7
   const baseUrl = `${window.location.origin}/widget/obs/global/${id}`
   const query = `?type=${leaderboardType.value}&mode=${filterMode.value}&sort=${sortBy.value}&limit=10${selectedMatchId.value ? `&match_id=${selectedMatchId.value}` : ''}`
-  
   navigator.clipboard.writeText(baseUrl + query)
   alert(`✅ Link OBS Copiado!\n\nConfiguración:\n• Modo: ${filterMode.value.toUpperCase()}\n• Vista: ${leaderboardType.value.toUpperCase()}\n• Orden: ${sortBy.value.toUpperCase()}\n• Match: ${selectedMatchId.value ? '#' + selectedMatchId.value : 'Global'}`)
 }
 
 const copyTrackingLink = (item: PublicRankingItem) => {
-  const id = 7 // ID Fijo
-
+  const id = 7
   let targetName = item.player_name
   if (leaderboardType.value === 'teams' && item.member_names && item.member_names.length > 0) {
     targetName = item.member_names[0]
   }
-
   if (!targetName) return
-
   const baseUrl = `${window.location.origin}/widget/obs/global/${id}`
   const query = `?type=${leaderboardType.value}&mode=all&sort=${sortBy.value}&limit=1&search=${encodeURIComponent(targetName)}`
-  
   navigator.clipboard.writeText(baseUrl + query)
   alert(`✅ Tracking OBS copiado para: ${targetName}`)
 }
 
 /**
- * LOGICA DEL TORNEO & SOCKETS
+ * LOGICA DEL TORNEO & SOCKETS (REPARADA)
  */
-// CAMBIO REALIZADO: Pestaña por defecto ahora es 'comunidad'
 const activeTab = ref('comunidad') 
 
-const page = usePage()
-const user = page.props.auth?.user as any
-
-// ===== Viewer Points (WEBSOCKET INTEGRATION) =====
+// ===== Viewer Points (WEBSOCKET INTEGRATION - Lógica Original Funcional) =====
 const { connect: connectSocket, disconnect: disconnectSocket, isConnected } = useRankitSocket(
-  'community', 
-  user?.id, 
-  { 
-    autoConnect: false,
-    manageVisibility: false 
-  }
+    'community', 
+    user?.id, // Pasamos el ID explícitamente como en la versión funcional
+    { 
+        autoConnect: false,
+        manageVisibility: false 
+    }
 )
 
 watch(isConnected, (newVal) => {
@@ -204,14 +198,31 @@ watch(isConnected, (newVal) => {
 const switchTab = (tab: string) => {
   activeTab.value = tab
 
-  // Lógica de conexión basada en el Tab
+  // Lógica de conexión basada en el Tab (Restaurada de versión A)
   if (tab === 'comunidad') {
+    console.log('%c[RankitSocket] Tab Comunidad activado. Iniciando conexión...', 'color: cyan; font-weight: bold;')
+    
     if (!user) {
         console.warn('[RankitSocket] Usuario no autenticado. No se conectará al socket.')
     }
+    
     connectSocket()
   } else {
     disconnectSocket()
+  }
+}
+
+// Control de visibilidad para pausar socket si minimizan
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    console.log('[RankitSocket] Documento oculto (minimizado). Desconectando...')
+    disconnectSocket()
+  } else {
+    // Solo reconectar si estamos en el tab correcto
+    if (activeTab.value === 'comunidad') {
+      console.log('[RankitSocket] Documento visible. Reconectando...')
+      connectSocket()
+    }
   }
 }
 
@@ -222,14 +233,12 @@ const twitchChatUrl = computed(() => {
     if (typeof window === 'undefined') return ''
     const parent = window.location.hostname
     const channel = twitchChannel.value
-    // Usamos darkpopout para que se vea mejor en modo oscuro por defecto
     return `https://www.twitch.tv/embed/${channel}/chat?parent=${parent}&darkpopout`
 })
 
 // ==============================
 // REFERIDOS (MODALES + REDEEM)
 // ==============================
-const me = user 
 const showInviteModal = ref(false)
 const showCodeModal = ref(false)
 const myCode = computed(() => (me?.id ? `${me.id}rankit` : ''))
@@ -257,17 +266,6 @@ function fallbackCopy(text: string) {
   const ta = document.createElement('textarea')
   ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.left = '-1000px'
   document.body.appendChild(ta); ta.select(); try { document.execCommand('copy') } catch (e) {}; document.body.removeChild(ta)
-}
-
-// Control de visibilidad
-const handleVisibilityChange = () => {
-  if (document.hidden) {
-    disconnectSocket()
-  } else {
-    if (activeTab.value === 'comunidad') {
-      connectSocket()
-    }
-  }
 }
 
 onMounted(() => {
@@ -317,8 +315,10 @@ onMounted(() => {
   loadData(true)
   pollInterval = window.setInterval(() => loadData(false), 240000) // 4 min polling
 
-  // CAMBIO REALIZADO: Conectar socket si la pestaña inicial es comunidad
+  // INICIO DE SOCKET
+  // Si arrancamos en la pestaña comunidad, conectamos
   if (activeTab.value === 'comunidad') {
+    console.log('[RankitSocket] Mounted en Comunidad. Conectando...')
     connectSocket()
   }
 
@@ -351,6 +351,7 @@ onUnmounted(() => {
       </Link>
 
       <div class="flex items-center gap-4">
+        <!-- Indicador de Puntos Visual -->
         <div v-if="isConnected && activeTab === 'comunidad'" class="items-center hidden gap-2 px-3 py-1 text-xs font-bold text-green-500 border rounded-full md:flex bg-green-500/10 animate-pulse border-green-500/20">
             <span class="w-2 h-2 bg-green-500 rounded-full"></span>
             SUMANDO PUNTOS
@@ -456,6 +457,7 @@ onUnmounted(() => {
 
     <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 min-h-[600px]">
       
+      <!-- === RESULTADOS / TABLA === -->
       <div v-if="activeTab === 'resultados'" class="grid grid-cols-1 gap-8 animate-fade-in lg:grid-cols-12">
         
         <aside class="space-y-6 lg:col-span-4">
@@ -580,6 +582,7 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- === COMUNIDAD (SOCKET + STREAM) === -->
       <div v-show="activeTab === 'comunidad'" class="space-y-6 animate-fade-in">
         
         <div class="w-full brutal-card p-4 bg-white dark:bg-[#0a0a0a] border-l-4 transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-4"
@@ -645,6 +648,7 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- === REGLAS === -->
       <div v-show="activeTab === 'reglas'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
           
@@ -730,6 +734,7 @@ onUnmounted(() => {
         </div>
       </div>
 
+       <!-- === PREMIOS === -->
        <div v-if="activeTab === 'premios'" class="animate-fade-in">
         <div class="brutal-card p-8 bg-white dark:bg-[#0a0a0a]">
             
@@ -798,6 +803,7 @@ onUnmounted(() => {
       </div>
     </main>
 
+    <!-- Mobile CTA -->
     <div class="fixed bottom-0 w-full bg-white/90 dark:bg-[#0B0C15]/90 backdrop-blur-md border-t border-gray-200 dark:border-white/10 p-4 z-50 lg:hidden">
       <div class="flex items-center justify-center gap-3">
          <span class="relative flex w-3 h-3">
@@ -810,6 +816,7 @@ onUnmounted(() => {
       </div>
     </div>
     
+    <!-- MODALS -->
     <div v-if="showInviteModal" class="fixed inset-0 z-[999] flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/60" @click="showInviteModal=false"></div>
       <div class="relative w-full max-w-lg brutal-card bg-white dark:bg-[#0a0a0a] p-6">
