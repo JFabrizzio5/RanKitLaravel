@@ -176,7 +176,7 @@ const copyTrackingLink = (item: PublicRankingItem) => {
  * =========================================================================
  * LOGICA DEL WEBSOCKET (PYTHON MICROSERVICE)
  * =========================================================================
- * Implementación directa para conectar al puerto 8011 de main.py
+ * Implementación directa para conectar a jos5dev.com
  */
 const activeTab = ref('comunidad') 
 
@@ -198,13 +198,12 @@ const connectSocket = () => {
   }
 
   // --- CONSTRUCCIÓN DE LA URL ---
-  // Usamos el hostname actual pero forzamos el puerto 8011
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = window.location.hostname // 'localhost' o tu dominio
-  const port = '8011' // Puerto definido en tu docker-compose y .env
-  const path = `/ws/community/${user.id}` // Ruta definida en main.py
-
-  const wsUrl = `${protocol}//${host}:${port}${path}`
+  // MODIFICADO: Forzando redirección a jos5dev.com como solicitado
+  const host = 'jos5dev.com'
+  const path = `/ws/community/${user.id}`
+  
+  // URL Hardcodeada a wss://jos5dev.com/...
+  const wsUrl = `wss://${host}${path}`
   
   // --- LOG SOLICITADO ---
   console.log(`%c[RankitSocket] 🔌 INTENTANDO CONECTAR A: ${wsUrl}`, 'color: #00ffff; font-weight: bold; background: #333; padding: 4px;')
