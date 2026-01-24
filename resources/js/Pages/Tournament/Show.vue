@@ -41,6 +41,14 @@ interface LiveDataResponse {
   ranking: PublicRankingItem[];
 }
 
+// --- TIPOS NUEVOS PARA NOTIFICACIONES ---
+interface Toast {
+    id: number;
+    message: string;
+    subtext?: string;
+    type: 'drop' | 'info';
+}
+
 // --- PROPS ---
 const props = defineProps<{
   tournament?: TournamentInfo;
@@ -51,6 +59,15 @@ const props = defineProps<{
   canLogin?: boolean;
   canRegister?: boolean;
 }>()
+
+// --- STATE REACTIVO PARA PUNTOS (INTEGRACIÓN) ---
+// Usamos esto en lugar de props.totalPoints directamente para que el socket pueda actualizarlo
+const livePoints = ref(props.totalPoints ?? 0)
+
+// Si Laravel actualiza la prop (ej. al canjear código manualmente), sincronizamos
+watch(() => props.totalPoints, (newVal) => {
+    if (newVal !== undefined) livePoints.value = newVal
+})
 
 // --- AUTH & USER ---
 const page = usePage()
@@ -174,11 +191,34 @@ const copyTrackingLink = (item: PublicRankingItem) => {
 
 /**
  * =========================================================================
- * LOGICA DEL WEBSOCKET (PYTHON MICROSERVICE)
+ * LOGICA DEL WEBSOCKET (PYTHON MICROSERVICE) E INTEGRACIONES
  * =========================================================================
  * Implementación directa para conectar a jos5dev.com
  */
 const activeTab = ref('comunidad') 
+
+// --- TOASTS & WINNER STATE ---
+const toasts = ref<Toast[]>([])
+const showWinnerScreen = ref(false)
+const winnerData = ref<any>(null)
+
+function addToast(msg: string, sub: string) {
+    const id = Date.now()
+    toasts.value.push({ id, message: msg, subtext: sub, type: 'drop' })
+    // Remover automáticamente después de 6 seg
+    setTimeout(() => {
+        toasts.value = toasts.value.filter(t => t.id !== id)
+    }, 6000)
+}
+
+// Efecto de sonido opcional (moneda de juego)
+const playCoinSound = () => {
+    try {
+        const audio = new Audio('https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3'); 
+        audio.volume = 0.4;
+        audio.play().catch(() => {}); // Ignorar error si el navegador bloquea autoplay
+    } catch(e) {}
+}
 
 // Estado reactivo del Socket
 const socket = ref<WebSocket | null>(null)
@@ -198,7 +238,6 @@ const connectSocket = () => {
   }
 
   // --- CONSTRUCCIÓN DE LA URL ---
-  // MODIFICADO: Forzando redirección a jos5dev.com como solicitado
   const host = 'jos5dev.com'
   const path = `/ws/community/${user.id}`
   
@@ -222,16 +261,33 @@ const connectSocket = () => {
 
     socket.value.onmessage = (event) => {
       // Loguear mensajes entrantes (como puntos ganados o progreso)
-      console.log(`%c[RankitSocket] 📩 MENSAJE RECIBIDO:`, 'color: orange', event.data)
+      // console.log(`%c[RankitSocket] 📩 MENSAJE RECIBIDO:`, 'color: orange', event.data)
       
       try {
+        if(event.data === 'pong') return;
+
         const data = JSON.parse(event.data)
-        if (data.type === 'point_earned') {
-           // Aquí podrías lanzar una notificación toast
+        
+        // --- 1. INTEGRACIÓN: PUNTO GANADO ---
+        if (data.type === 'drop_earned' || data.type === 'point_earned') {
+           // Actualizar variable reactiva en tiempo real
+           livePoints.value = data.total_points
+           
+           // Lanzar Toast solicitado
+           addToast("HAZ GANADO POR VER EN RANKIT.PRO", "2 BOLETOS MAS PARA MAS PROBABILIDADES")
+           playCoinSound()
+           
            console.log('💰 ¡Punto ganado!', data.total_points)
         }
+
+        // --- 2. INTEGRACIÓN: GANADOR ---
+        if (data.type === 'winner_alert') {
+            winnerData.value = data
+            showWinnerScreen.value = true
+        }
+
       } catch (e) {
-        // Ignorar si no es JSON (ej: "pong")
+        // Ignorar si no es JSON
       }
     }
 
@@ -326,7 +382,12 @@ function openCode() { showCodeModal.value = true; redeemForm.clearErrors() }
 function submitCode() {
   redeemForm.post(route('bellzcup.referidos.redeem'), {
     preserveScroll: true,
-    onSuccess: () => { showCodeModal.value = false; redeemForm.reset() },
+    onSuccess: () => { 
+        showCodeModal.value = false; 
+        redeemForm.reset();
+        // livePoints se actualiza gracias al watcher de props
+        alert('¡Código canjeado con éxito!')
+    },
   })
 }
 function copyToClipboard(text: string) {
@@ -415,6 +476,44 @@ onUnmounted(() => {
 
   <div class="overflow-x-hidden selection:bg-[var(--rankit-neon)] selection:text-white bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-white font-sans transition-colors duration-300">
     
+    <!-- NUEVO: SISTEMA DE TOASTS (NOTIFICACIONES FLOTANTES) -->
+    <div class="fixed top-24 right-6 z-[100] flex flex-col gap-4 pointer-events-none">
+        <transition-group name="toast">
+            <div v-for="toast in toasts" :key="toast.id" class="pointer-events-auto bg-black border-2 border-[var(--rankit-neon)] text-white px-6 py-4 rounded-lg shadow-[0_0_20px_rgba(191,0,255,0.5)] brutal-card max-w-sm relative overflow-hidden">
+                 <div class="absolute inset-0 bg-gradient-to-r from-[var(--rankit-neon)]/20 to-transparent"></div>
+                 <div class="relative z-10 flex items-start gap-3">
+                    <i class="mt-1 text-2xl text-yellow-400 ph-fill ph-ticket animate-bounce"></i>
+                    <div>
+                        <h4 class="text-sm font-black italic uppercase font-display text-[var(--rankit-neon)]">{{ toast.message }}</h4>
+                        <p class="text-xs font-bold text-gray-300">{{ toast.subtext }}</p>
+                    </div>
+                 </div>
+            </div>
+        </transition-group>
+    </div>
+
+    <!-- NUEVO: PANTALLA DE GANADOR (OVERLAY) -->
+    <div v-if="showWinnerScreen" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl animate-fade-in">
+        <div class="text-center p-8 border-4 border-yellow-500 rounded-2xl bg-gradient-to-br from-yellow-900/50 to-black brutal-card max-w-2xl w-full mx-4 shadow-[0_0_100px_rgba(234,179,8,0.5)] relative overflow-hidden">
+            <!-- Confetti visual CSS puro -->
+            <div class="absolute inset-0 pointer-events-none opacity-20 bg-[url('https://cdn.dribbble.com/users/129972/screenshots/3964116/75_smile.gif')] bg-cover bg-center"></div>
+            
+            <div class="relative z-10">
+                <i class="mb-4 text-6xl text-yellow-500 ph-fill ph-trophy animate-bounce"></i>
+                <h2 class="mb-2 text-6xl font-black text-white uppercase font-display drop-shadow-xl">¡GANASTE!</h2>
+                <p class="text-2xl font-bold text-yellow-400 uppercase font-display">{{ winnerData?.username }}</p>
+                
+                <div class="w-full h-1 my-8 bg-gradient-to-r from-transparent via-yellow-500 to-transparent"></div>
+                
+                <p class="mb-8 text-lg text-gray-300">{{ winnerData?.message }}</p>
+                
+                <button @click="showWinnerScreen = false" class="px-8 py-4 text-xl font-bold text-black uppercase bg-yellow-500 btn-skew hover:scale-105">
+                    <span class="btn-content">¡ENTENDIDO!</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <nav class="fixed w-full z-50 transition-colors duration-300 bg-white/90 border-b border-gray-200 dark:bg-[#050505]/95 dark:border-white/10 backdrop-blur-md h-20 flex items-center px-6 lg:px-12 justify-between">
       <Link href="/" class="flex items-center gap-3 cursor-pointer group">
         <svg class="w-10 h-10 text-black dark:text-white group-hover:text-[var(--rankit-neon)] transition-colors" viewBox="0 0 100 100" fill="none">
@@ -483,9 +582,10 @@ onUnmounted(() => {
 
           <div class="flex flex-col w-full gap-4 delay-200 lg:w-auto sm:flex-row lg:flex-col animate-fade-in-up">
             <div class="brutal-card px-4 py-3 text-center bg-white dark:bg-[#0a0a0a]">
-              <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total puntos</div>
-              <div class="text-3xl font-black text-black font-display dark:text-white">
-                {{ (props.totalPoints ?? 0).toLocaleString?.() ?? (props.totalPoints ?? 0) }}
+              <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Total boletos</div>
+              <!-- AQUI EL CAMBIO: Usamos livePoints en vez de prop directo -->
+              <div class="text-3xl font-black text-black transition-all duration-300 font-display dark:text-white" :key="livePoints">
+                {{ livePoints.toLocaleString() }}
               </div>
               <div class="text-[10px] text-gray-500">Rifa bellzCup</div>
             </div>
@@ -975,4 +1075,18 @@ html:not(.dark) .btn-skew:hover { background-color: black; color: white; box-sha
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--rankit-neon); border-radius: 4px; }
+
+/* NUEVOS ESTILOS PARA TRANSICIONES DE TOASTS */
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.5s ease;
+}
+.toast-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-30px);
+}
 </style>
