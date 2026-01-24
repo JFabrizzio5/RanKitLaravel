@@ -10,6 +10,7 @@ const props = defineProps({
 const items = ref<any[]>([]);
 const loading = ref(true);
 const errorCount = ref(0);
+const activeLogo = ref(0); // 0 = BellzCup, 1 = Rankit
 
 // Detectar parámetros
 const getParams = () => {
@@ -39,7 +40,6 @@ const update = async () => {
     }
 };
 
-// Buscamos quién tiene más kills para resaltarlo
 const maxKills = computed(() => {
     if (!items.value.length) return 0;
     return Math.max(...items.value.map(i => i.total_kills || 0));
@@ -48,16 +48,26 @@ const maxKills = computed(() => {
 const widgetTitle = computed(() => {
     if (params.search) return 'PLAYER TRACKING';
     let t = params.type === 'teams' ? 'TOP EQUIPOS' : 'TOP PLAYERS';
-    if (params.sort === 'kills') t += ' (BY KILLS)';
+    if (params.sort === 'kills') t += ' (POR KILLS)';
     return t;
 });
 
 onMounted(() => { 
     document.body.style.backgroundColor = 'transparent';
     update(); 
-    // Actualización cada 60s
-    const interval = setInterval(update, 60000); 
-    onUnmounted(() => clearInterval(interval));
+    
+    // Intervalo de actualización de datos
+    const updateInterval = setInterval(update, 60000); 
+    
+    // Intervalo de cambio de logo (cada 5 segundos)
+    const logoInterval = setInterval(() => {
+        activeLogo.value = activeLogo.value === 0 ? 1 : 0;
+    }, 5000);
+
+    onUnmounted(() => {
+        clearInterval(updateInterval);
+        clearInterval(logoInterval);
+    });
 });
 </script>
 
@@ -65,20 +75,13 @@ onMounted(() => {
     <div class="flex items-start w-full min-h-screen p-6 font-sans antialiased select-none">
         
         <!-- VISTA TRACKING INDIVIDUAL (SEARCH) -->
-        <div v-if="params.search && items.length > 0" class="relative animate-slide-in">
-            <div class="relative overflow-hidden bg-[#050505] border-2 border-white shadow-neo-purple min-w-[360px]">
+        <div v-if="params.search && items.length > 0" class="relative animate-slide-in !overflow-visible mb-8">
+            <div class="relative bg-[#050505] border-2 border-white shadow-neo-purple min-w-[360px]">
                 
-                <!-- Header con SVG Rankit -->
+                <!-- Header -->
                 <div class="flex items-center justify-between px-4 py-3 bg-[#0a0a0a] border-b-2 border-[#bf00ff]">
                     <div class="flex items-center gap-3">
-                        <img src="/BellzCup.png" alt="BellzCup" class="h-7">
-                        <div class="w-[30px] h-[30px]">
-                            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/> 
-                                <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
-                                <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="#bf00ff"/>
-                            </svg>
-                        </div>
+                        <span class="text-xs font-black tracking-widest text-white uppercase font-display">SEGUIMIENTO</span>
                     </div>
                     <span class="text-xl italic font-black text-white font-display">#{{ items[0].rank }}</span>
                 </div>
@@ -103,23 +106,34 @@ onMounted(() => {
                         </div>
                     </div>
                 </div>
+
+                <!-- Footer Flotante (Intercambiable) -->
+                <div class="absolute z-50 flex justify-center w-full -translate-x-1/2 pointer-events-none left-1/2 -bottom-4">
+                    <div class="bg-[#050505] border-2 border-white px-5 py-1.5 shadow-[4px_4px_0px_0px_rgba(191,0,255,1)] flex items-center justify-center min-w-[140px] h-[38px] relative overflow-hidden">
+                        <transition name="fade-slide">
+                            <img v-if="activeLogo === 0" src="https://rankit.pro/public/BellzCup.png" class="absolute h-4" alt="BellzCup">
+                            <div v-else class="absolute flex items-center gap-2">
+                                <div class="w-4 h-4">
+                                    <svg viewBox="0 0 100 100" fill="none">
+                                        <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/> 
+                                        <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
+                                        <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="#bf00ff"/>
+                                    </svg>
+                                </div>
+                                <span class="text-[9px] font-black uppercase tracking-widest text-white font-display">Rankit.pro</span>
+                            </div>
+                        </transition>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- VISTA TABLA GENERAL (Fija a 10) -->
-        <div v-else class="w-[400px] animate-slide-in">
-            <div class="overflow-hidden bg-[#050505] border-2 border-white shadow-neo-purple">
+        <!-- VISTA TABLA GENERAL -->
+        <div v-else class="w-[400px] animate-slide-in !overflow-visible relative mb-8">
+            <div class="bg-[#050505] border-2 border-white shadow-neo-purple overflow-hidden">
                 
                 <div class="flex items-center justify-between px-5 py-3 bg-[#0a0a0a] border-b-2 border-[#bf00ff]">
                     <div class="flex items-center gap-3">
-                         <img src="https://rankit.pro/public/BellzCup.png" alt="BellzCup" class="h-6">
-                         <div class="w-[24px] h-[24px]">
-                            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/> 
-                                <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
-                                <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="#bf00ff"/>
-                            </svg>
-                         </div>
                          <h2 class="text-[10px] font-black tracking-widest text-white uppercase font-display">
                             {{ widgetTitle }}
                         </h2>
@@ -135,11 +149,9 @@ onMounted(() => {
                             item.total_kills === maxKills && maxKills > 0 ? 'border-r-4 border-red-600' : ''
                         ]"
                     >
-                        <!-- Barra roja de fondo si es el killer (opcional, muy sutil) -->
                         <div v-if="item.total_kills === maxKills && maxKills > 0" class="absolute inset-0 pointer-events-none bg-red-600/5"></div>
 
                         <div class="relative z-10 flex items-center gap-4">
-                            <!-- Rank con Iconos para Top 3 -->
                             <div class="flex items-center justify-center w-8 h-8 text-xs font-black skew-x-[-10deg] border border-white/20" 
                                 :class="[
                                     idx === 0 ? 'bg-yellow-500 text-black border-yellow-300' : 
@@ -176,15 +188,26 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <div class="p-2 bg-[#000] flex justify-center items-center gap-3 border-t border-white/5">
-                    <div class="w-[14px] h-[14px]">
-                        <svg viewBox="0 0 100 100" fill="none">
-                            <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white" opacity="0.3"/> 
-                            <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white" opacity="0.3"/>
-                            <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="#bf00ff" opacity="0.5"/>
-                        </svg>
-                    </div>
-                    <span class="text-[8px] font-black uppercase tracking-[0.3em] text-white/30">Rankit.pro</span>
+                <!-- Footer Separador -->
+                <div class="h-6 bg-[#000]"></div>
+            </div>
+
+            <!-- Logo Flotante Inferior -->
+            <div class="absolute z-50 flex justify-center w-full -translate-x-1/2 pointer-events-none left-1/2 -bottom-4">
+                <div class="bg-[#050505] border-2 border-white px-5 py-1.5 shadow-[4px_4px_0px_0px_rgba(191,0,255,1)] flex items-center justify-center min-w-[140px] h-[38px] relative overflow-hidden">
+                    <transition name="fade-slide">
+                        <img v-if="activeLogo === 0" src="https://rankit.pro/public/BellzCup.png" class="absolute h-4" alt="BellzCup">
+                        <div v-else class="absolute flex items-center gap-2">
+                            <div class="w-4 h-4">
+                                <svg viewBox="0 0 100 100" fill="none">
+                                    <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/> 
+                                    <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
+                                    <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="#bf00ff"/>
+                                </svg>
+                            </div>
+                            <span class="text-[9px] font-black uppercase tracking-widest text-white font-display">Rankit.pro</span>
+                        </div>
+                    </transition>
                 </div>
             </div>
         </div>
@@ -199,5 +222,11 @@ html, body { background-color: transparent !important; overflow: hidden; }
 .font-display { font-family: 'Chakra Petch', sans-serif; }
 .shadow-neo-purple { box-shadow: 6px 6px 0px 0px #000, 8px 8px 0px 0px #bf00ff; }
 .animate-slide-in { animation: slideIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+
 @keyframes slideIn { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* Animación de los logos intercambiables */
+.fade-slide-enter-active, .fade-slide-leave-active { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+.fade-slide-enter-from { opacity: 0; transform: translateY(15px); }
+.fade-slide-leave-to { opacity: 0; transform: translateY(-15px); }
 </style>
