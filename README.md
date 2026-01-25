@@ -63,7 +63,9 @@
 <div class="section">
 <h2>🔄 Repeticiones (Replays)</h2>
 </html>
-
+Notas:
+Agregar stripe
+Agregar Futbol Layout
 
 
 
