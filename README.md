@@ -66,6 +66,7 @@
 Notas:
 Agregar stripe
 Agregar Futbol Layout
+Codigos de creadores y patrocinios
 
 
 
