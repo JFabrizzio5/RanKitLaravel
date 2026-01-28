@@ -64,9 +64,9 @@
 <h2>🔄 Repeticiones (Replays)</h2>
 </html>
 Notas:
-Agregar stripe
-Agregar Futbol Layout
-Codigos de creadores y patrocinios
+<li>Agregar stripe</li>
+<li>Agregar Futbol Layout</li>
+<li>Codigos de creadores y patrocinios</li>
 
 
 
