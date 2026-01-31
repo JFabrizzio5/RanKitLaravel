@@ -67,6 +67,7 @@ Notas:
 <li>Agregar stripe</li>
 <li>Agregar Futbol Layout</li>
 <li>Codigos de creadores y patrocinios</li>
+<li>Subir Repeticion por jugadores</li>
 
 
 
