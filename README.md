@@ -68,6 +68,7 @@ Notas:
 <li>Agregar Futbol Layout</li>
 <li>Codigos de creadores y patrocinios</li>
 <li>Subir Repeticion por jugadores</li>
+<li>Crear cliente para repeticiones</li>
 
 
 
