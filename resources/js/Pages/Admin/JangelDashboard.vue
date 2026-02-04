@@ -12,14 +12,14 @@ interface Match {
     custom_code: string;
     status: 'pending' | 'processed';
     created_at: string;
+    game_session_id?: string; // AGREGADO para debug
 }
 
 interface Tournament {
     id: number;
     name: string;
-    slug?: string; // Agregado para el enlace público
+    slug?: string;
     twitch_channel?: string;
-    // Campos nuevos
     is_private?: boolean;
     access_code?: string;
     matches: Match[];
@@ -114,7 +114,17 @@ const formReplay = useForm({
     target_match_id: null as number | null 
 });
 
-// EDITAR TORNEO (Updated)
+// FORMULARIO DE APELACIÓN
+const formAppeal = useForm({
+    replay: null as File | null,
+    match_id: null as number | null,
+    // Lógica por defecto:
+    kill_points: 2,       // 2 puntos por kill
+    placement_points: 1,  // 1 punto por top (Placement Base)
+    win_bonus: 5          // 5 puntos extra si Rank == 1 (Ignorando isWinner)
+});
+
+// EDITAR TORNEO
 const formSettings = useForm({
     id: null as number | null,
     name: '',
@@ -128,7 +138,7 @@ const formEditMatch = useForm({
     custom_code: ''
 });
 
-// CREAR TORNEO (Updated)
+// CREAR TORNEO
 const formCreateTournament = useForm({
     name: '',
     twitch_channel: '',
@@ -139,6 +149,7 @@ const formCreateTournament = useForm({
 // Estados UI
 const activeTab = ref<'codes' | 'widget' | 'matches'>('codes');
 const showMatchModal = ref(false);
+const showAppealModal = ref(false); 
 const showSettingsModal = ref(false);
 const showEditMatchModal = ref(false);
 const showCreateModal = ref(false); 
@@ -193,8 +204,7 @@ watch(selectedTournamentId, () => {
 const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) => {
     if(!tn) return;
     if (matchId) selectedMatchId.value = matchId;
-    else selectedMatchId.value = null;
-
+    
     loadingLeaderboard.value = true;
     leaderboard.value = []; 
     expandedRowIndex.value = null;
@@ -202,7 +212,7 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
     try {
         const res = await axios.get(route('jangel.api.leaderboard', { 
             tournamentId: tn.id, 
-            match_id: matchId,
+            match_id: selectedMatchId.value, 
             type: leaderboardType.value,
             mode: filterMode.value, 
             sort: sortBy.value 
@@ -218,7 +228,6 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
 // --- GESTIÓN DE TORNEO ---
 
 const createTournament = () => {
-    // CORRECCIÓN: Usar la ruta 'jangel.tournament.store' definida en web.php
     formCreateTournament.post(route('jangel.tournament.store'), {
         onSuccess: () => {
             showCreateModal.value = false;
@@ -232,7 +241,6 @@ const openSettingsModal = () => {
     formSettings.id = selectedTournament.value.id;
     formSettings.name = selectedTournament.value.name;
     formSettings.twitch_channel = selectedTournament.value.twitch_channel || '';
-    // Cargar datos privados
     formSettings.is_private = Boolean(selectedTournament.value.is_private);
     formSettings.access_code = selectedTournament.value.access_code || '';
     
@@ -241,7 +249,6 @@ const openSettingsModal = () => {
 
 const updateTournament = () => {
     if (!formSettings.id) return;
-    // CORRECCIÓN: Usar la ruta 'jangel.tournament.update'
     formSettings.put(route('jangel.tournament.update', formSettings.id), {
         onSuccess: () => {
             showSettingsModal.value = false;
@@ -254,7 +261,6 @@ const deleteTournament = () => {
     if (!formSettings.id) return;
     if (!confirm('¿Estás seguro de ELIMINAR este torneo? Esta acción no se puede deshacer.')) return;
 
-    // CORRECCIÓN: Usar la ruta 'jangel.tournament.delete'
     router.delete(route('jangel.tournament.delete', formSettings.id), {
         onSuccess: () => {
             showSettingsModal.value = false;
@@ -316,7 +322,52 @@ const deleteMatch = (id: number) => {
     }
 };
 
-// --- SUBIDA REPLAY ---
+// --- APELACIÓN (APPEAL) ---
+const openAppealModal = (matchId: number) => {
+    formAppeal.reset();
+    formAppeal.match_id = matchId;
+    formAppeal.kill_points = 2;
+    formAppeal.placement_points = 1;
+    formAppeal.win_bonus = 5;
+    
+    showAppealModal.value = true;
+    uploadProgress.value = 0;
+}
+
+const handleAppealFileUpload = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.files && target.files[0]) {
+        formAppeal.replay = target.files[0];
+    }
+}
+
+const submitAppeal = () => {
+    if (!formAppeal.match_id || !formAppeal.replay) return;
+    if (!selectedTournament.value) return; // Validación extra
+
+    // CORRECCIÓN CRÍTICA: Enviar selectedTournament.value.id (ID del torneo), NO match_id
+    formAppeal.post(route('tournament.appeal', selectedTournament.value.id), {
+        onProgress: (progress) => {
+            uploadProgress.value = progress?.percentage || 0;
+        },
+        onSuccess: () => {
+            showAppealModal.value = false;
+            uploadProgress.value = 0;
+            alert("✅ Apelación procesada correctamente. Tabla actualizada.");
+            
+            if (selectedTournament.value) {
+                fetchLeaderboard(selectedTournament.value, selectedMatchId.value);
+            }
+        },
+        onError: (err) => {
+            showAppealModal.value = false;
+            alert("Error al apelar: " + JSON.stringify(err));
+        }
+    });
+}
+
+
+// --- SUBIDA REPLAY (GENERAL) ---
 const openUploadModal = (matchId: number | null = null) => {
     formReplay.reset(); 
     formReplay.mode = null; 
@@ -382,11 +433,9 @@ const copyTrackingLink = (targetName: string) => {
     alert(`✅ Tracking OBS copiado para: ${targetName}`);
 };
 
-// --- NUEVA FUNCIÓN PARA COPIAR LINK DE INVITACIÓN ---
 const copyInviteLink = () => {
     if (!selectedTournament.value) return;
     
-    // Generamos la URL absoluta incluyendo el código de acceso
     const url = route('public.tournament.show', {
         slug: selectedTournament.value.slug || selectedTournament.value.id,
         code: selectedTournament.value.access_code
@@ -428,9 +477,8 @@ const copyInviteLink = () => {
         <span class="text-sm font-bold text-[var(--rankit-neon)] hidden sm:inline">Admin Mode</span>
       </div>
 
-      <!-- LINK PÚBLICO CORREGIDO -->
       <a :href="selectedTournament ? route('public.tournament.show', { 
-            slug: selectedTournament.slug || selectedTournament.id, // Usa el slug si existe
+            slug: selectedTournament.slug || selectedTournament.id, 
             code: selectedTournament.access_code 
          }) : '#'" 
          target="_blank" 
@@ -499,7 +547,6 @@ const copyInviteLink = () => {
                     </button>
                 </div>
                 
-                <!-- Badge de Privacidad (ACTUALIZADO CON BOTÓN DE INVITACIÓN) -->
                 <div v-if="selectedTournament?.is_private" class="mt-2">
                     <div class="flex items-center gap-2 mb-1">
                         <span class="text-[9px] bg-red-100 dark:bg-red-900/30 text-red-500 px-2 py-0.5 rounded border border-red-500/20 whitespace-nowrap">
@@ -598,16 +645,26 @@ const copyInviteLink = () => {
                   </div>
                   <div>
                     <div class="font-mono text-xs font-bold text-black uppercase dark:text-white">{{ match.custom_code }}</div>
+                    <!-- MOSTRAR ID DE SESIÓN PARA DEBUG -->
+                    <div v-if="match.game_session_id" class="text-[8px] text-gray-400 font-mono truncate max-w-[150px]" :title="match.game_session_id">
+                        {{ match.game_session_id }}
+                    </div>
+                    
                     <div v-if="match.status === 'pending'" class="text-[9px] text-yellow-500 font-bold animate-pulse">EN VIVO</div>
                     <div v-else class="text-[9px] text-green-500 font-bold">PROCESADA</div>
                   </div>
                 </div>
                 
                 <div class="flex gap-2">
+                    <!-- BOTÓN APELAR (NUEVO) -->
+                    <button @click.stop="openAppealModal(match.id)" class="p-1 text-gray-400 hover:text-yellow-400" title="Apelar (Analyze Summary)">
+                        <i class="ph ph-gavel"></i>
+                    </button>
+
                     <button @click.stop="openEditMatchModal(match)" class="p-1 hover:text-blue-500" title="Editar Código">
                         <i class="ph ph-pencil-simple"></i>
                     </button>
-                    <button @click.stop="openUploadModal(match.id)" class="p-1 hover:text-[var(--rankit-neon)]" title="Subir Replay">
+                    <button @click.stop="openUploadModal(match.id)" class="p-1 hover:text-[var(--rankit-neon)]" title="Subir Replay (Proceso Completo)">
                         <i class="ph ph-upload-simple"></i>
                     </button>
                     <button @click.stop="deleteMatch(match.id)" class="p-1 hover:text-red-500" title="Eliminar">
@@ -727,7 +784,7 @@ const copyInviteLink = () => {
       </div>
     </main>
 
-    <!-- MODAL CREAR TORNEO (ACTUALIZADO CON PRIVACIDAD) -->
+    <!-- MODAL CREAR TORNEO -->
     <Modal :show="showCreateModal" @close="showCreateModal = false" maxWidth="sm">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Nuevo Torneo</h2>
@@ -744,7 +801,6 @@ const copyInviteLink = () => {
                     </div>
                 </div>
 
-                <!-- OPCIONES JANGEL -->
                 <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
                     <label class="flex items-center gap-2 mb-2 cursor-pointer">
                         <input type="checkbox" v-model="formCreateTournament.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
@@ -765,7 +821,7 @@ const copyInviteLink = () => {
         </div>
     </Modal>
 
-    <!-- MODAL SETTINGS (ACTUALIZADO CON PRIVACIDAD) -->
+    <!-- MODAL SETTINGS -->
     <Modal :show="showSettingsModal" @close="showSettingsModal = false" maxWidth="md">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Configurar Torneo</h2>
@@ -782,7 +838,6 @@ const copyInviteLink = () => {
                     </div>
                 </div>
 
-                <!-- OPCIONES JANGEL (EDITAR) -->
                 <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
                     <label class="flex items-center gap-2 mb-2 cursor-pointer">
                         <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
@@ -814,7 +869,7 @@ const copyInviteLink = () => {
         </div>
     </Modal>
 
-    <!-- MODAL EDIT MATCH CODE (SIN CAMBIOS) -->
+    <!-- MODAL EDIT MATCH CODE -->
     <Modal :show="showEditMatchModal" @close="showEditMatchModal = false" maxWidth="sm">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-4 text-lg italic font-bold uppercase font-display">Editar Código</h2>
@@ -826,7 +881,74 @@ const copyInviteLink = () => {
         </div>
     </Modal>
 
-    <!-- MODAL UPLOAD (SIN CAMBIOS) -->
+    <!-- MODAL APELAR (NUEVO) -->
+    <Modal :show="showAppealModal" @close="showAppealModal = false" maxWidth="lg">
+      <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+        <div class="flex items-start justify-between mb-6">
+          <div>
+            <h2 class="flex items-center gap-2 text-xl italic font-bold uppercase font-display">
+              <i class="text-yellow-500 ph-fill ph-gavel"></i> Apelar Resultado
+            </h2>
+            <p class="text-[10px] text-gray-500 mt-1 uppercase font-bold">Analizar resumen y recalcular puntos</p>
+          </div>
+          <button @click="showAppealModal = false" class="text-gray-500 hover:text-red-500">
+            <i class="text-xl ph ph-x"></i>
+          </button>
+        </div>
+
+        <!-- CONFIGURACIÓN DE PUNTOS VISIBLE -->
+        <div class="p-3 mb-4 bg-gray-100 border border-gray-200 rounded dark:bg-white/5 dark:border-white/10">
+            <div class="text-[10px] uppercase font-bold text-gray-500 mb-2">Configuración de Puntos (Apelación)</div>
+            
+            <!-- ALERTA INFORMATIVA -->
+            <div class="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-[9px] text-blue-600 dark:text-blue-400">
+                <i class="ph-bold ph-info"></i> 
+                Se actualizará solo al <b>Equipo del Owner</b> del replay. 
+                Se usará <b>Rank #1</b> para el Bonus de Victoria (ignorando isWinner).
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div>
+                    <label class="text-[9px] block text-gray-500 font-bold mb-1">Puntos x Kill</label>
+                    <input v-model="formAppeal.kill_points" type="number" class="w-full p-1 text-xs transition border rounded outline-none dark:bg-black dark:border-gray-700 focus:border-yellow-500" />
+                </div>
+                <div>
+                     <label class="text-[9px] block text-gray-500 font-bold mb-1">Puntos x Top (Base)</label>
+                     <input v-model="formAppeal.placement_points" type="number" class="w-full p-1 text-xs transition border rounded outline-none dark:bg-black dark:border-gray-700 focus:border-yellow-500" />
+                </div>
+                <div>
+                     <label class="text-[9px] block text-gray-500 font-bold mb-1">Bonus Top #1</label>
+                     <input v-model="formAppeal.win_bonus" type="number" class="w-full p-1 text-xs transition border rounded outline-none dark:bg-black dark:border-gray-700 focus:border-yellow-500" />
+                </div>
+            </div>
+            <p class="text-[9px] text-gray-400 mt-2 italic border-t border-dashed border-gray-300 dark:border-gray-700 pt-1">
+                * Estos valores se enviarán para calcular el puntaje final del usuario apelado.
+            </p>
+        </div>
+
+        <div class="p-4 border bg-yellow-500/5 border-yellow-500/20">
+          <h3 class="flex items-center gap-2 mb-3 text-sm font-bold text-yellow-500 uppercase">
+            <i class="ph ph-file-arrow-up"></i> Seleccionar Replay de Jugador
+          </h3>
+          <div class="space-y-4">
+            <input type="file" @change="handleAppealFileUpload" 
+                class="block w-full text-xs text-gray-500 bg-gray-100 border border-gray-200 cursor-pointer file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-bold file:uppercase file:bg-yellow-500 file:text-black hover:file:bg-black file:cursor-pointer file:transition dark:bg-black/20 dark:border-white/10" />
+            
+            <div v-if="formAppeal.processing" class="w-full h-2 overflow-hidden bg-gray-200 rounded-full dark:bg-gray-800">
+                <div class="h-full transition-all duration-300 bg-yellow-500" :style="{width: uploadProgress + '%'}"></div>
+            </div>
+
+            <button @click="submitAppeal" 
+                :disabled="!formAppeal.replay || formAppeal.processing" 
+                class="w-full py-3 text-xs font-bold text-black uppercase transition bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed">
+              {{ formAppeal.processing ? 'Analizando...' : 'Enviar Apelación' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- MODAL UPLOAD (NORMAL) -->
     <Modal :show="showMatchModal" @close="showMatchModal = false" maxWidth="lg">
       <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
         <div class="flex items-start justify-between mb-6">

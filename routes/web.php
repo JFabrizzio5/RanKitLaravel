@@ -128,7 +128,7 @@ Route::middleware('auth')->group(function () {
 Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
     ->name('api.public.data');
 
-
+ Route::post('/admin/tournaments/{id}/appeal', [TournamentParserController::class, 'appealReplay'])->name('tournament.appeal');
     // Esta ruta acepta el parámetro opcional ?code=XYZ
 Route::get('/t/{slug}', [PublicTournamentController::class, 'show'])->name('public.tournament.show');
 
