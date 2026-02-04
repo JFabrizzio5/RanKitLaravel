@@ -3,6 +3,7 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
 import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRankitSocket } from '@/Composables/useRankitSocket'
 import axios from 'axios'
+import Modal from '@/Components/Modal.vue'
 
 // --- TIPOS ---
 interface PublicMatch {
@@ -34,6 +35,9 @@ interface TournamentInfo {
   hero_image?: string;
   status?: string;
   game?: string;
+  // Nuevos campos
+  rules?: string;
+  prizes?: string;
 }
 
 interface LiveDataResponse {
@@ -73,18 +77,18 @@ function handleAppealFile(e: Event) {
 }
 
 function submitAppeal() {
-  const tournamentId = props.tournament?.id || tournamentData.value.id || 7;
-  // Usamos Inertia o Axios. Usaré Inertia para ver feedback flash.
+  const tournamentId = props.tournament?.id || tournamentData.value.id || 7; // ID dinámico o fallback
+  // Ruta directa al controlador del admin para procesar
   appealForm.post(`/admin/tournaments/${tournamentId}/appeal`, {
     preserveScroll: true,
     onSuccess: () => {
       showAppealModal.value = false
-      alert('✅ Apelación enviada y procesada correctamente.')
+      alert('✅ Apelación recibida. El sistema ha recalculado tus puntos según las reglas del torneo.')
       loadData(true) // Recargar tabla
     },
     onError: (err) => {
       console.error(err)
-      alert('❌ Error al apelar. Verifica que sea el archivo correcto.')
+      alert('❌ Error al procesar. Verifica que el archivo sea un .replay válido.')
     }
   })
 }
@@ -146,12 +150,9 @@ const loadData = async (showSpinner = false) => {
     ranking.value = res.data.ranking
     
     if(res.data.tournament) {
-      if (res.data.tournament.id) {
-        tournamentData.value.id = Number(res.data.tournament.id) 
-      }
-      tournamentData.value.name = res.data.tournament.name
+      // Merge para no perder datos previos si la API no devuelve todo
+      tournamentData.value = { ...tournamentData.value, ...res.data.tournament }
       progressText.value = res.data.tournament.progress || ''
-      tournamentData.value.twitch_channel = res.data.tournament.twitch_channel 
     }
     
   } catch (e) { 
@@ -226,6 +227,7 @@ const switchTab = (tab: string) => {
 const twitchChannel = computed(() => tournamentData.value.twitch_channel ?? props.tournament?.twitch_channel ?? 'Rankit')
 const tournamentTitle = computed(() => tournamentData.value.name ?? 'bellzCup') 
 
+// --- SISTEMA DE REFERIDOS ORIGINAL ---
 const me = user 
 const showInviteModal = ref(false)
 const showCodeModal = ref(false)
@@ -536,20 +538,37 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- TAB COMUNIDAD Y REGLAS SE MANTIENEN IGUAL (Omitido por brevedad, usa tu código original) -->
-      <!-- Usa tu código existente para v-if="activeTab === 'comunidad'" y 'reglas' y 'premios' -->
-      <!-- Simplemente asegúrate de que el cierre del <main> y el <div> root estén correctos -->
-      <div v-show="activeTab === 'comunidad'" class="py-20 text-center text-gray-500">
-         <i class="mb-2 text-4xl ph ph-users"></i>
-         <p>Vista de comunidad y stream.</p>
+      <div v-show="activeTab === 'comunidad'" class="py-20 text-center">
+         <!-- Aquí iría el chat o embed de twitch si se desea -->
+         <div id="twitch-embed" class="w-full overflow-hidden bg-black border border-gray-800 rounded-lg shadow-2xl aspect-video"></div>
       </div>
-      <div v-show="activeTab === 'reglas'" class="py-20 text-center text-gray-500">
-         <i class="mb-2 text-4xl ph ph-book"></i>
-         <p>Reglas del torneo.</p>
+
+      <!-- REGLAS TAB -->
+      <div v-show="activeTab === 'reglas'" class="py-8 animate-fade-in">
+         <div class="brutal-card bg-white dark:bg-[#0a0a0a] p-8 max-w-4xl mx-auto">
+             <div class="flex items-center gap-3 mb-6">
+                 <div class="w-12 h-12 flex items-center justify-center bg-[var(--rankit-neon)]/10 text-[var(--rankit-neon)] rounded-full">
+                     <i class="text-2xl ph-duotone ph-book-open"></i>
+                 </div>
+                 <h2 class="text-3xl font-black uppercase font-display">Reglamento Oficial</h2>
+             </div>
+             
+             <div class="font-sans text-sm leading-relaxed prose whitespace-pre-wrap dark:prose-invert max-w-none">
+                 {{ tournamentData.rules || 'No hay reglas publicadas todavía para este torneo.' }}
+             </div>
+         </div>
       </div>
-      <div v-show="activeTab === 'premios'" class="py-20 text-center text-gray-500">
-         <i class="mb-2 text-4xl ph ph-trophy"></i>
-         <p>Lista de premios.</p>
+
+      <!-- PREMIOS TAB -->
+      <div v-show="activeTab === 'premios'" class="py-8 animate-fade-in">
+          <div class="brutal-card bg-white dark:bg-[#0a0a0a] p-8 max-w-4xl mx-auto text-center">
+             <i class="mb-4 text-6xl text-yellow-500 ph-duotone ph-trophy animate-bounce"></i>
+             <h2 class="mb-8 text-3xl font-black uppercase font-display">Prize Pool & Recompensas</h2>
+             
+             <div class="p-6 font-sans text-sm leading-relaxed prose whitespace-pre-wrap border border-gray-300 border-dashed rounded-lg dark:prose-invert max-w-none bg-gray-50 dark:bg-white/5 dark:border-white/10">
+                 {{ tournamentData.prizes || 'Los premios se anunciarán próximamente.' }}
+             </div>
+         </div>
       </div>
 
     </main>
@@ -572,7 +591,7 @@ onUnmounted(() => {
 
         <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
             Sube el archivo <strong>.replay</strong> de tu partida. El sistema buscará la partida original y recalculará 
-            <strong>únicamente tus puntos</strong> (o los de tu equipo) basándose en este archivo.
+            <strong>tus puntos automáticamente</strong> basándose en las reglas oficiales del torneo.
         </p>
 
         <form @submit.prevent="submitAppeal" class="space-y-6">

@@ -28,28 +28,21 @@ class TournamentParserController extends Controller
                 $table->string('twitch_channel')->nullable();
                 $table->boolean('is_private')->default(false);
                 $table->string('access_code')->nullable();
-                $table->text('rules')->nullable(); // Campo de reglas
-                $table->string('table_name')->nullable(); // Para compatibilidad si es necesario
+                $table->longText('rules')->nullable(); // Reglas
+                $table->longText('prizes')->nullable(); // Premios
+                $table->json('scoring_format')->nullable(); // Configuración de puntos JSON
+                $table->string('table_name')->nullable();
                 $table->timestamps();
             });
         } else {
              Schema::table('tournaments', function (Blueprint $table) {
-                if (!Schema::hasColumn('tournaments', 'twitch_channel')) {
-                    $table->string('twitch_channel')->nullable();
-                }
-                if (!Schema::hasColumn('tournaments', 'is_private')) {
-                    $table->boolean('is_private')->default(false);
-                }
-                if (!Schema::hasColumn('tournaments', 'access_code')) {
-                    $table->string('access_code')->nullable();
-                }
-                if (!Schema::hasColumn('tournaments', 'rules')) {
-                    $table->text('rules')->nullable();
-                }
-                // Asegurar que table_name exista si la DB lo requiere, aunque sea nullable
-                if (!Schema::hasColumn('tournaments', 'table_name')) {
-                    $table->string('table_name')->nullable();
-                }
+                if (!Schema::hasColumn('tournaments', 'twitch_channel')) $table->string('twitch_channel')->nullable();
+                if (!Schema::hasColumn('tournaments', 'is_private')) $table->boolean('is_private')->default(false);
+                if (!Schema::hasColumn('tournaments', 'access_code')) $table->string('access_code')->nullable();
+                if (!Schema::hasColumn('tournaments', 'rules')) $table->longText('rules')->nullable();
+                if (!Schema::hasColumn('tournaments', 'prizes')) $table->longText('prizes')->nullable();
+                if (!Schema::hasColumn('tournaments', 'scoring_format')) $table->json('scoring_format')->nullable();
+                if (!Schema::hasColumn('tournaments', 'table_name')) $table->string('table_name')->nullable();
              });
         }
 
@@ -58,8 +51,8 @@ class TournamentParserController extends Controller
             Schema::create('tournament_matches', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('tournament_id');
-                $table->string('match_id')->unique(); // Firma hash o pending ID
-                $table->string('game_session_id')->nullable()->index(); // EL ID REAL DEL JUEGO (CK-MIATEATRO...)
+                $table->string('match_id')->unique();
+                $table->string('game_session_id')->nullable()->index();
                 $table->string('game_mode')->default('solo');
                 $table->string('map_name')->nullable();
                 $table->string('custom_code')->nullable(); 
@@ -84,7 +77,7 @@ class TournamentParserController extends Controller
                 $table->integer('kills')->default(0);
                 $table->integer('damage_done')->default(0);
                 $table->integer('damage_taken')->default(0);
-                $table->json('extra_stats')->nullable();
+                $table->json('extra_stats')->nullable(); // Aquí guardaremos manual_points
                 $table->timestamps();
             });
         }
@@ -103,6 +96,20 @@ class TournamentParserController extends Controller
                 $table->timestamps();
             });
         }
+
+        // 5. Tabla de Logs de Ajustes Manuales (Audit)
+        if (!Schema::hasTable('tournament_score_logs')) {
+            Schema::create('tournament_score_logs', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('tournament_id');
+                $table->unsignedBigInteger('match_id')->nullable();
+                $table->string('player_name');
+                $table->integer('points_change'); // +10, -5, etc.
+                $table->text('reason');
+                $table->unsignedBigInteger('admin_id')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     public function index()
@@ -111,6 +118,9 @@ class TournamentParserController extends Controller
         $tournaments = DB::table('tournaments')->orderBy('created_at', 'desc')->get();
 
         foreach($tournaments as $tn) {
+            // Decodificar JSON para que el frontend lo lea como objeto
+            $tn->scoring_format = json_decode($tn->scoring_format ?? '{}');
+            
             $tn->matches = DB::table('tournament_matches')
                 ->where('tournament_id', $tn->id)
                 ->orderBy('created_at', 'desc')
@@ -134,11 +144,12 @@ class TournamentParserController extends Controller
             'name' => $request->name,
             'twitch_channel' => $request->twitch_channel,
             'rules' => $request->rules,
+            'prizes' => $request->prizes,
+            'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
             'created_at' => now(), 
             'updated_at' => now()
         ];
 
-        // Lógica de Privacidad
         if ($this->isJangel(auth()->user()) && $request->boolean('is_private')) {
             $data['is_private'] = true;
             $data['access_code'] = $request->access_code;
@@ -151,10 +162,6 @@ class TournamentParserController extends Controller
             $data['slug'] = Str::slug($request->name);
         }
 
-        if (Schema::hasColumn('tournaments', 'table_name')) {
-            $data['table_name'] = 'tn_' . Str::slug($request->name, '_') . '_' . time();
-        }
-
         DB::table('tournaments')->insert($data);
         return back()->with('success', 'Torneo creado.');
     }
@@ -162,16 +169,12 @@ class TournamentParserController extends Controller
     public function update(Request $request, $id) {
         $data = [
             'name' => $request->name,
+            'twitch_channel' => $request->twitch_channel,
+            'rules' => $request->rules,
+            'prizes' => $request->prizes,
+            'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
             'updated_at' => now(),
         ];
-        
-        if (Schema::hasColumn('tournaments', 'twitch_channel')) {
-            $data['twitch_channel'] = $request->twitch_channel;
-        }
-        
-        if (Schema::hasColumn('tournaments', 'rules')) {
-            $data['rules'] = $request->rules;
-        }
 
         // Actualizar Privacidad
         if (Schema::hasColumn('tournaments', 'is_private')) {
@@ -217,16 +220,15 @@ class TournamentParserController extends Controller
             'updated_at' => now()
         ];
 
-        // LOGICA DE RESTABLECIMIENTO (Hard Reset por defecto al editar)
         $shouldReset = $request->boolean('reset_stats') || true;
 
         if ($shouldReset) {
             DB::transaction(function () use ($id, &$updateData) {
-                // 1. Borrar estadísticas asociadas
                 DB::table('player_match_stats')->where('tournament_match_id', $id)->delete();
                 DB::table('team_match_stats')->where('tournament_match_id', $id)->delete();
+                // Limpiar logs asociados a esta partida
+                DB::table('tournament_score_logs')->where('match_id', $id)->delete();
 
-                // 2. Restablecer identificadores para evitar colisiones con el archivo "malo" anterior
                 $updateData['match_id'] = 'pending_' . uniqid(); 
                 $updateData['game_session_id'] = null; 
                 $updateData['raw_data'] = null; 
@@ -235,14 +237,74 @@ class TournamentParserController extends Controller
 
         DB::table('tournament_matches')->where('id', $id)->update($updateData);
 
-        return back()->with('success', 'Partida actualizada y datos restablecidos correctamente.');
+        return back()->with('success', 'Partida actualizada.');
     }
 
     public function deleteMatch($matchId) {
         DB::table('player_match_stats')->where('tournament_match_id', $matchId)->delete();
         DB::table('team_match_stats')->where('tournament_match_id', $matchId)->delete();
+        DB::table('tournament_score_logs')->where('match_id', $matchId)->delete();
         DB::table('tournament_matches')->where('id', $matchId)->delete();
         return back()->with('success', 'Partida eliminada.');
+    }
+
+    // --- LÓGICA DE CÁLCULO DE PUNTOS INTERNA ---
+    private function calculateScore($rank, $kills, $format, $gameMode = 'solo')
+    {
+        $points = 0;
+        
+        // 1. Configuración Personalizada (JSON)
+        if (!empty($format) && isset($format->placement) && is_array($format->placement)) {
+            // Puntos por Kills
+            $killPts = isset($format->kill_points) ? (float)$format->kill_points : 1;
+            $points += ($kills * $killPts);
+
+            // Puntos por Posición (Ranges)
+            foreach ($format->placement as $range) {
+                // Estructura esperada: { "from": 1, "to": 1, "points": 10 }
+                $from = (int)($range->from ?? 0);
+                $to = (int)($range->to ?? 0);
+                $pts = (float)($range->points ?? 0);
+
+                // LÓGICA ACUMULATIVA POR "ESCALÓN" (Step)
+                // Se otorgan puntos por CADA posición superada o igualada dentro del rango.
+                // Ejemplo: Top 5 a 2 (3 pts).
+                // Rank 6: 0 pts.
+                // Rank 5: Suma 3. 
+                // Rank 4: Suma 6 (3 por el #5 + 3 por el #4).
+                // Rank 1: Suma 12 (3 por el #5, #4, #3, #2).
+                
+                // Normalizar: start = peor ranking (mayor numero), end = mejor ranking (menor numero)
+                $start = max($from, $to); 
+                $end = min($from, $to);
+
+                if ($rank <= $start) {
+                    // Si el jugador está dentro o por encima del rango (rank es numéricamente menor o igual a start)
+                    
+                    // El rango efectivo termina en max($rank, $end) porque si el jugador es Top 1
+                    // y el rango termina en 2, solo acumula hasta el 2 (no suma más allá del límite del rango).
+                    // Pero si el jugador es Top 4, acumula desde start(5) hasta 4.
+                    
+                    $effectiveRank = max($rank, $end);
+                    $steps = ($start - $effectiveRank) + 1;
+                    
+                    if ($steps > 0) {
+                        $points += ($steps * $pts);
+                    }
+                }
+            }
+        } 
+        // 2. Modo Automático (Compensación Default si no hay config)
+        else {
+            $points += $kills; // 1 punto por kill base
+
+            if ($rank == 1) $points += 25;
+            elseif ($rank <= 5) $points += 15;
+            elseif ($rank <= 15) $points += 10;
+            elseif ($rank <= 25) $points += 5;
+        }
+
+        return $points;
     }
 
     // --- PROCESAMIENTO PRINCIPAL (ANALYZE) ---
@@ -257,53 +319,46 @@ class TournamentParserController extends Controller
         ]);
 
         try {
+            // Obtener reglas del torneo
+            $tournament = DB::table('tournaments')->where('id', $id)->first();
+            $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
+
             $file = $request->file('replay');
             $mode = (int)$request->input('mode');
             $targetMatchId = $request->input('target_match_id');
             $fileContent = file_get_contents($file->getRealPath());
             $fileName = $file->getClientOriginalName();
 
-            // 1. PRIMERA PETICIÓN: ANALYZE-SUMMARY (Para obtener el ID real de la sesión)
-            // CAMBIO CRITICO: Usamos analyze-summary en lugar de summary
+            // 1. ANALYZE-SUMMARY (Obtener SessionID)
             $summaryResponse = Http::timeout(60)
                 ->attach('file', $fileContent, $fileName)
                 ->post('http://62.72.3.139:5138/api/FortniteParser/analyze-summary');
 
-            // Log de depuración para ver qué devuelve EXACTAMENTE la API
             $sessionID = null;
             if ($summaryResponse->successful()) {
                 $summaryData = $summaryResponse->json();
                 $sessionID = $summaryData['matchId'] ?? null;
-                Log::info("ProcessReplay - RAW Summary matchId: " . json_encode($sessionID));
-            } else {
-                Log::warning("No se pudo obtener matchId del endpoint analyze-summary: " . $summaryResponse->body());
             }
 
-            // NORMALIZACIÓN: Forzar UPPERCASE si existe
-            if ($sessionID) {
-                $sessionID = strtoupper($sessionID);
-                Log::info("ProcessReplay - NORMALIZED matchId guardado en DB: " . $sessionID);
-            }
+            if ($sessionID) $sessionID = strtoupper($sessionID);
 
-            // 2. SEGUNDA PETICIÓN: ANALYZE (Stats completas)
+            // 2. ANALYZE (Stats completas)
             $analyzeResponse = Http::timeout(120)
                 ->attach('file', $fileContent, $fileName)
                 ->post('http://62.72.3.139:5138/api/FortniteParser/analyze', [
                     'mode' => $mode,
-                    'rulesJson' => ''
+                    'rulesJson' => '' // Enviamos vacío, calculamos en PHP
                 ]);
 
-            if (!$analyzeResponse->successful()) throw new \Exception("Error en Analyze (Stats): " . $analyzeResponse->body());
+            if (!$analyzeResponse->successful()) throw new \Exception("Error en Analyze: " . $analyzeResponse->body());
 
             $data = $analyzeResponse->json();
 
             DB::beginTransaction();
 
-            // 3. FIRMA ÚNICA
             $contentSignature = md5(json_encode($data['teamLeaderboard'] ?? []));
             $matchUid = 'sig_' . $contentSignature;
             
-            // Buscar colisión por SessionID (preferido) o Hash
             if ($sessionID) {
                 $existingCollision = DB::table('tournament_matches')->where('game_session_id', $sessionID)->first();
             } else {
@@ -313,7 +368,7 @@ class TournamentParserController extends Controller
             $currentMatchId = null;
 
             if ($targetMatchId) {
-                // Caso A: Overwrite explícito
+                // Overwrite
                 if ($existingCollision && $existingCollision->id != $targetMatchId) {
                     DB::table('player_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
                     DB::table('team_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
@@ -327,7 +382,7 @@ class TournamentParserController extends Controller
                     'updated_at' => now(),
                 ]);
             } else {
-                // Caso B: Nueva subida
+                // Nuevo
                 if ($existingCollision) {
                     $currentMatchId = $existingCollision->id;
                     DB::table('tournament_matches')->where('id', $currentMatchId)->update([
@@ -353,21 +408,26 @@ class TournamentParserController extends Controller
             DB::table('player_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
             DB::table('team_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
 
-            // Insertar Jugadores
+            // Insertar Jugadores (CALCULANDO PUNTOS INTERNAMENTE)
             $players = $data['playerLeaderboard'] ?? [];
             foreach ($players as $p) {
                 if (($p['isBot'] ?? false) || ($p['playerName'] ?? '') === 'Unknown') continue;
 
+                $rank = $p['leaderboardRank'] ?? 0;
+                $kills = $p['kills'] ?? 0;
+                
+                // CÁLCULO INTERNO PHP
+                $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $this->getModeName($mode));
+
                 DB::table('player_match_stats')->insert([
                     'tournament_match_id' => $currentMatchId,
                     'player_name' => $p['playerName'] ?? 'Unknown',
-                    'placement' => $p['leaderboardRank'] ?? 0,
-                    'kills' => $p['kills'] ?? 0,
+                    'placement' => $rank,
+                    'kills' => $kills,
                     'extra_stats' => json_encode([
                         'teamId' => $p['teamId'] ?? -1,
-                        'totalPoints' => $p['totalPoints'] ?? 0,
-                        'killPoints' => $p['killPoints'] ?? 0,
-                        'placementPoints' => $p['placementPoints'] ?? 0
+                        'totalPoints' => $calculatedPoints, // Guardamos el calculado
+                        'manual_points' => 0 // Init manual points
                     ]),
                     'updated_at' => now(), 'created_at' => now(),
                 ]);
@@ -383,14 +443,23 @@ class TournamentParserController extends Controller
                 $members = array_values($members);
                 sort($members); 
                 
+                $teamRank = $t['rank'] ?? ($t['leaderboardRank'] ?? 999);
+                $teamTotalKills = $t['totalKills'] ?? 0;
+                
+                // Recalcular puntos del equipo basado en la suma de sus jugadores (para mantener consistencia)
+                // O usar la lógica de puntos de equipo. Usaremos la suma de jugadores calculados arriba
+                // Pero como no tenemos el ID de jugador aquí fácilmente, usamos calculateScore sobre stats de equipo
+                // NOTA: Esto asume que el formato de puntos de equipo es igual (Rank + Kills)
+                $teamCalculatedPoints = $this->calculateScore($teamRank, $teamTotalKills, $scoringFormat, $this->getModeName($mode));
+
                 DB::table('team_match_stats')->insert([
                     'tournament_match_id' => $currentMatchId,
                     'team_id_in_match' => $t['teamId'],
-                    'rank' => $t['rank'] ?? ($t['leaderboardRank'] ?? 999),
+                    'rank' => $teamRank,
                     'member_names' => json_encode($members),
                     'team_signature' => md5(json_encode($members)),
-                    'total_kills' => $t['totalKills'] ?? 0,
-                    'total_points' => $t['totalPoints'] ?? 0,
+                    'total_kills' => $teamTotalKills,
+                    'total_points' => $teamCalculatedPoints,
                     'created_at' => now(), 'updated_at' => now(),
                 ]);
             }
@@ -404,57 +473,39 @@ class TournamentParserController extends Controller
         }
     }
 
-    // --- APELACIÓN (LOGS AGREGADOS) ---
+    // --- APELACIÓN AUTOMÁTICA ---
     public function appealReplay(Request $request, $tournamentId)
     {
         $this->ensureDatabaseIsReady();
-
-        $request->validate([
-            'replay' => 'required|file',
-            'kill_points' => 'nullable|numeric',
-            'placement_points' => 'nullable|numeric',
-            'win_bonus' => 'nullable|numeric',
-        ]);
+        $request->validate(['replay' => 'required|file']);
 
         try {
+            $tournament = DB::table('tournaments')->where('id', $tournamentId)->first();
+            if (!$tournament) throw new \Exception("Torneo no encontrado");
+            
+            // Obtener reglas del torneo para calcular
+            $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
+
             $file = $request->file('replay');
             $fileName = $file->getClientOriginalName();
             
-            // LOG INICIO
-            Log::info("--- INICIO APELACIÓN ---");
-            Log::info("Tournament ID Recibido: " . $tournamentId);
-            Log::info("Archivo: " . $fileName);
-            Log::info("Inputs Puntos: Kills=" . $request->input('kill_points') . ", Place=" . $request->input('placement_points') . ", WinBonus=" . $request->input('win_bonus'));
+            Log::info("--- INICIO APELACIÓN AUTOMÁTICA --- Tournament: $tournamentId");
 
-            // 1. Obtener datos de la apelación (Summary)
-            // CAMBIO CRÍTICO: Usar endpoint analyze-summary en lugar de summary
+            // 1. Analyze Summary
             $response = Http::timeout(60)
                 ->attach('file', file_get_contents($file->getRealPath()), $fileName)
                 ->post('http://62.72.3.139:5138/api/FortniteParser/analyze-summary'); 
 
-            if (!$response->successful()) {
-                Log::error("Error API Summary (Status " . $response->status() . "): " . $response->body());
-                throw new \Exception("Error al leer archivo de apelación (" . $response->status() . "): " . $response->body());
-            }
+            if (!$response->successful()) throw new \Exception("Error API Summary: " . $response->body());
 
             $appealData = $response->json();
-            Log::info("Datos API Summary:", $appealData);
-
-            $externalMatchId = $appealData['matchId'] ?? null;
+            $externalMatchId = strtoupper($appealData['matchId'] ?? '');
             $playerName = $appealData['replayOwnerName'] ?? null;
-
-            if (!$externalMatchId || !$playerName) {
-                Log::warning("Datos incompletos en Summary. MatchID o PlayerName vacíos.");
-                throw new \Exception("El archivo no es válido o no contiene ID de partida/jugador.");
-            }
-            
-            // NORMALIZACIÓN PARA BÚSQUEDA
-            $externalMatchId = strtoupper($externalMatchId);
             $cleanSessionId = explode('|', $externalMatchId)[0];
-            
-            Log::info("Buscando partida en DB (NORMALIZED) con SessionID: " . $externalMatchId . " o LIKE %" . $cleanSessionId . "%");
 
-            // 2. VALIDAR EXISTENCIA
+            if (!$externalMatchId || !$playerName) throw new \Exception("Replay inválido o corrupto.");
+
+            // 2. Buscar Partida
             $match = DB::table('tournament_matches')
                 ->where('tournament_id', $tournamentId)
                 ->where(function($q) use ($externalMatchId, $cleanSessionId) {
@@ -463,81 +514,66 @@ class TournamentParserController extends Controller
                 })
                 ->first();
 
-            if (!$match) {
-                Log::warning("Partida NO ENCONTRADA en DB para este torneo.");
-                // Loguear qué partidas tiene este torneo para depurar
-                $existingMatches = DB::table('tournament_matches')->where('tournament_id', $tournamentId)->pluck('game_session_id');
-                Log::info("Partidas existentes en este torneo:", $existingMatches->toArray());
-                
-                return back()->with('error', "APELACIÓN RECHAZADA: La partida base con ID '{$externalMatchId}' no existe. El admin debe subir primero la partida general.");
-            }
-            
-            Log::info("Partida ENCONTRADA en DB. ID Interno: " . $match->id);
+            if (!$match) return back()->with('error', "APELACIÓN RECHAZADA: La partida base no ha sido subida por el administrador.");
 
-            // 3. CALCULAR PUNTOS (USANDO INPUTS DEL REQUEST)
+            // 3. DATOS CRUDOS DEL REPLAY DE USUARIO
             $kills = $appealData['kills'] ?? 0;
             $rank = $appealData['rank'] ?? 99;
-            
-            // Reglas desde el formulario (o defaults)
-            $ptsKill = (int)$request->input('kill_points', 1);
-            $ptsPlacement = (int)$request->input('placement_points', 0); 
-            $ptsWin = (int)$request->input('win_bonus', 5);
 
-            $killPoints = $kills * $ptsKill; 
-            
-            // Cálculo dinámico
-            $placementPoints = $ptsPlacement;
-            if ($rank == 1) {
-                $placementPoints += $ptsWin; // Sumar bonus si es Top 1
-            }
-            
-            $totalPoints = $killPoints + $placementPoints;
-            
-            Log::info("Cálculo Puntos: Kills({$kills})*{$ptsKill} + Base({$ptsPlacement}) + WinBonus(" . ($rank==1?$ptsWin:0) . ") = Total: {$totalPoints}");
+            // 4. CÁLCULO AUTOMÁTICO (Usando reglas del torneo + Fix min/max)
+            $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $match->game_mode);
+
+            Log::info("Apelación $playerName: Rank $rank, Kills $kills -> Puntos Calc: $calculatedPoints");
 
             DB::beginTransaction();
 
-            // A. Player Update
+            // A. Update/Insert Player
             $existingPlayer = DB::table('player_match_stats')
                 ->where('tournament_match_id', $match->id)
                 ->where('player_name', $playerName)
                 ->first();
+            
+            // Mantener ajuste manual si existe
+            $extraStats = $existingPlayer ? json_decode($existingPlayer->extra_stats, true) : [];
+            $manualPts = $extraStats['manual_points'] ?? 0;
+            $finalPoints = $calculatedPoints + $manualPts;
+
+            $extraStats['totalPoints'] = $finalPoints;
+            $extraStats['appealed'] = true;
+            // Guardamos tambien los puntos base sin manual para referencia
+            $extraStats['base_points'] = $calculatedPoints; 
 
             if ($existingPlayer) {
-                Log::info("Actualizando jugador existente: " . $playerName);
                 DB::table('player_match_stats')->where('id', $existingPlayer->id)->update([
                     'kills' => $kills,
                     'placement' => $rank,
-                    'extra_stats' => json_encode(array_merge(
-                        json_decode($existingPlayer->extra_stats ?? '{}', true),
-                        ['totalPoints' => $totalPoints, 'appealed' => true]
-                    )),
+                    'extra_stats' => json_encode($extraStats),
                     'updated_at' => now()
                 ]);
             } else {
-                Log::info("Creando nuevo jugador stats: " . $playerName);
                 DB::table('player_match_stats')->insert([
                     'tournament_match_id' => $match->id,
                     'player_name' => $playerName,
                     'kills' => $kills,
                     'placement' => $rank,
-                    'extra_stats' => json_encode(['totalPoints' => $totalPoints, 'appealed' => true]),
+                    'extra_stats' => json_encode($extraStats),
                     'created_at' => now(), 'updated_at' => now()
                 ]);
             }
 
-            // B. Team Update
+            // B. Update Team (Recalculate Totals)
+            // Buscar equipo donde esté este jugador
             $teamStats = DB::table('team_match_stats')
                 ->where('tournament_match_id', $match->id)
                 ->where('member_names', 'LIKE', '%"'.$playerName.'"%')
                 ->first();
 
             if ($teamStats) {
-                Log::info("Actualizando equipo del jugador. Team ID DB: " . $teamStats->id);
                 $members = json_decode($teamStats->member_names);
                 $teamKills = 0;
                 $teamPoints = 0;
                 
+                // Recalcular todo el equipo
                 foreach($members as $m) {
                     $pStat = DB::table('player_match_stats')
                         ->where('tournament_match_id', $match->id)
@@ -550,40 +586,114 @@ class TournamentParserController extends Controller
                     }
                 }
                 
-                Log::info("Nuevos Totales Equipo: Kills={$teamKills}, Points={$teamPoints}");
+                // Actualizar stats del equipo
+                $newRank = min($teamStats->rank, $rank);
                 
                 DB::table('team_match_stats')->where('id', $teamStats->id)->update([
                     'total_kills' => $teamKills,
                     'total_points' => $teamPoints,
-                    'rank' => min($teamStats->rank, $rank),
+                    'rank' => $newRank,
                     'updated_at' => now()
                 ]);
-            } else {
-                Log::warning("No se encontró equipo para el jugador {$playerName}.");
             }
 
             DB::commit();
-            Log::info("--- FIN APELACIÓN EXITOSA ---");
-            return back()->with('success', "Apelación aceptada para {$playerName}. Puntos Totales: {$totalPoints}");
+            return back()->with('success', "Apelación aceptada. Puntos recalculados automáticamente: {$finalPoints}");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("Error Excepción en Apelación: " . $e->getMessage());
+            Log::error("Error Apelación: " . $e->getMessage());
             return back()->with('error', 'Error: ' . $e->getMessage());
+        }
+    }
+
+    // --- AJUSTE MANUAL DE PUNTOS (PENALIZACIONES/BONUS) ---
+    public function adjustPlayerScore(Request $request, $tournamentId)
+    {
+        $this->ensureDatabaseIsReady();
+        $request->validate([
+            'match_id' => 'required|exists:tournament_matches,id',
+            'player_name' => 'required|string',
+            'points_change' => 'required|integer', // Puede ser negativo
+            'reason' => 'required|string|max:255'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $matchId = $request->match_id;
+            $player = $request->player_name;
+            $change = (int)$request->points_change;
+            $reason = $request->reason;
+
+            // 1. Buscar Stats del Jugador
+            $pStat = DB::table('player_match_stats')
+                ->where('tournament_match_id', $matchId)
+                ->where('player_name', $player)
+                ->first();
+
+            if (!$pStat) throw new \Exception("Jugador no encontrado en esta partida.");
+
+            // 2. Actualizar Extra Stats
+            $extra = json_decode($pStat->extra_stats, true) ?? [];
+            $currentManual = $extra['manual_points'] ?? 0;
+            $currentTotal = $extra['totalPoints'] ?? 0;
+
+            $newManual = $currentManual + $change;
+            $newTotal = $currentTotal + $change;
+
+            $extra['manual_points'] = $newManual;
+            $extra['totalPoints'] = $newTotal;
+
+            DB::table('player_match_stats')
+                ->where('id', $pStat->id)
+                ->update(['extra_stats' => json_encode($extra)]);
+
+            // 3. Crear Log de Auditoría
+            DB::table('tournament_score_logs')->insert([
+                'tournament_id' => $tournamentId,
+                'match_id' => $matchId,
+                'player_name' => $player,
+                'points_change' => $change,
+                'reason' => $reason,
+                'admin_id' => auth()->id(),
+                'created_at' => now(), 'updated_at' => now()
+            ]);
+
+            // 4. Actualizar Equipo (Reflejar cambios)
+             $teamStats = DB::table('team_match_stats')
+                ->where('tournament_match_id', $matchId)
+                ->where('member_names', 'LIKE', '%"'.$player.'"%')
+                ->first();
+            
+            if ($teamStats) {
+                $members = json_decode($teamStats->member_names);
+                $teamTotalPoints = 0;
+                foreach($members as $m) {
+                    $ps = DB::table('player_match_stats')->where('tournament_match_id', $matchId)->where('player_name', $m)->first();
+                    if ($ps) {
+                        $ex = json_decode($ps->extra_stats, true);
+                        $teamTotalPoints += ($ex['totalPoints'] ?? 0);
+                    }
+                }
+                DB::table('team_match_stats')->where('id', $teamStats->id)->update(['total_points' => $teamTotalPoints]);
+            }
+
+            DB::commit();
+            return back()->with('success', "Ajuste realizado: {$change} pts a {$player}.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', $e->getMessage());
         }
     }
 
     private function getModeName($modeInt) {
         return match($modeInt) {
-            1 => 'solo',
-            2 => 'duo',
-            3 => 'trio',
-            4 => 'squad',
-            default => 'custom'
+            1 => 'solo', 2 => 'duo', 3 => 'trio', 4 => 'squad', default => 'custom'
         };
     }
 
-    // Endpoint API para Admin Dashboard
     public function getLeaderboard(Request $request, $tournamentId)
     {
         $type = $request->query('type', 'players'); 
@@ -596,7 +706,7 @@ class TournamentParserController extends Controller
 
     protected function getGlobalRanking($tournamentId, $mode = 'all', $viewType = 'players', $matchId = null, $sortBy = 'points')
     {
-         $orderByCol = ($sortBy === 'kills') ? 'total_kills' : 'total_points';
+        $orderByCol = ($sortBy === 'kills') ? 'total_kills' : 'total_points';
         $secondaryOrder = ($sortBy === 'kills') ? 'total_points' : 'total_kills';
 
         if ($viewType === 'teams') {
@@ -629,26 +739,33 @@ class TournamentParserController extends Controller
                 });
         }
 
+        // Players Query
         $query = DB::table('player_match_stats')
             ->join('tournament_matches', 'player_match_stats.tournament_match_id', '=', 'tournament_matches.id')
             ->where('tournament_matches.tournament_id', $tournamentId)
             ->where('player_name', '!=', 'Unknown')
             ->select(
                 'player_name',
+                'tournament_matches.id as match_id', 
                 DB::raw('COUNT(*) as games_played'),
                 DB::raw('SUM(kills) as total_kills'),
                 DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as total_points'),
                 DB::raw('AVG(kills) as avg_kills'),
                 DB::raw('AVG(placement) as avg_placement'),
-                DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as avg_points'),
                 DB::raw('MIN(placement) as best_placement')
             );
 
-        if ($matchId) $query->where('tournament_matches.id', $matchId);
-        elseif ($mode !== 'all') $query->where('tournament_matches.game_mode', $mode);
+        if ($matchId) {
+            $query->where('tournament_matches.id', $matchId);
+             $query->groupBy('player_name', 'tournament_matches.id');
+        } elseif ($mode !== 'all') {
+            $query->where('tournament_matches.game_mode', $mode);
+            $query->groupBy('player_name');
+        } else {
+            $query->groupBy('player_name');
+        }
 
         return $query
-            ->groupBy('player_name')
             ->orderByDesc($orderByCol)
             ->orderByDesc($secondaryOrder)
             ->get();
@@ -661,7 +778,7 @@ class TournamentParserController extends Controller
     }
     
     public function getPublicData(Request $request, $id) {
-         $tournament = DB::table('tournaments')->where('id', $id)->first();
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
         if (!$tournament) return response()->json(['error' => 'Not found'], 404);
 
         $mode = $request->query('mode', 'all');
@@ -692,7 +809,9 @@ class TournamentParserController extends Controller
                 'id' => $tournament->id,
                 'name' => $tournament->name,
                 'progress' => "En Curso",
-                'twitch_channel' => $tournament->twitch_channel
+                'twitch_channel' => $tournament->twitch_channel,
+                'rules' => $tournament->rules, 
+                'prizes' => $tournament->prizes 
             ],
             'matches' => $matchesList,
             'ranking' => $ranking

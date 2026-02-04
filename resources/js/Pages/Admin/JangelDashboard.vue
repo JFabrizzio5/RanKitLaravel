@@ -12,7 +12,7 @@ interface Match {
     custom_code: string;
     status: 'pending' | 'processed';
     created_at: string;
-    game_session_id?: string; // AGREGADO para debug
+    game_session_id?: string;
 }
 
 interface Tournament {
@@ -22,6 +22,13 @@ interface Tournament {
     twitch_channel?: string;
     is_private?: boolean;
     access_code?: string;
+    // Nuevos campos
+    rules?: string;
+    prizes?: string;
+    scoring_format?: {
+        kill_points: number;
+        placement: { from: number; to: number; points: number }[];
+    };
     matches: Match[];
 }
 
@@ -35,6 +42,7 @@ interface LeaderboardItem {
     avg_kills: number;
     avg_placement: number;
     best_placement: number;
+    match_id?: number; // Para ajustes manuales
 }
 
 interface SlotInput {
@@ -107,30 +115,41 @@ const filteredLeaderboard = computed(() => {
     });
 });
 
-// Formularios
+// --- FORMULARIOS ---
+
 const formReplay = useForm({ 
     replay: null as File | null, 
     mode: null as number | null, 
     target_match_id: null as number | null 
 });
 
-// FORMULARIO DE APELACIÓN
+// Apelación Automática (Solo archivo)
 const formAppeal = useForm({
     replay: null as File | null,
-    match_id: null as number | null,
-    // Lógica por defecto:
-    kill_points: 2,       // 2 puntos por kill
-    placement_points: 1,  // 1 punto por top (Placement Base)
-    win_bonus: 5          // 5 puntos extra si Rank == 1 (Ignorando isWinner)
 });
 
-// EDITAR TORNEO
+// Ajuste Manual de Puntos (Logs)
+const formManualAdjust = useForm({
+    match_id: null as number | null,
+    player_name: '',
+    points_change: 0,
+    reason: ''
+});
+
+// Configuración Avanzada (Tabs)
+const settingsTab = ref<'general' | 'scoring' | 'rules' | 'prizes'>('general');
 const formSettings = useForm({
     id: null as number | null,
     name: '',
     twitch_channel: '',
     is_private: false,
-    access_code: ''
+    access_code: '',
+    rules: '',
+    prizes: '',
+    scoring_format: {
+        kill_points: 1,
+        placement: [] as { from: number; to: number; points: number }[]
+    }
 });
 
 const formEditMatch = useForm({
@@ -138,7 +157,6 @@ const formEditMatch = useForm({
     custom_code: ''
 });
 
-// CREAR TORNEO
 const formCreateTournament = useForm({
     name: '',
     twitch_channel: '',
@@ -153,6 +171,7 @@ const showAppealModal = ref(false);
 const showSettingsModal = ref(false);
 const showEditMatchModal = ref(false);
 const showCreateModal = ref(false); 
+const showManualAdjustModal = ref(false);
 const uploadProgress = ref(0);
 
 // --- INICIALIZACIÓN ---
@@ -201,9 +220,12 @@ watch(selectedTournamentId, () => {
 
 // --- ACCIONES DE DATOS ---
 
+// CORRECCIÓN: Permitir que matchId sea null explícitamente para resetear el filtro
 const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) => {
     if(!tn) return;
-    if (matchId) selectedMatchId.value = matchId;
+    
+    // Si se llama con null, reseteamos a vista global. Si se llama con ID, filtramos.
+    selectedMatchId.value = matchId; 
     
     loadingLeaderboard.value = true;
     leaderboard.value = []; 
@@ -212,7 +234,7 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
     try {
         const res = await axios.get(route('jangel.api.leaderboard', { 
             tournamentId: tn.id, 
-            match_id: selectedMatchId.value, 
+            match_id: selectedMatchId.value, // Esto enviará null o el ID
             type: leaderboardType.value,
             mode: filterMode.value, 
             sort: sortBy.value 
@@ -225,7 +247,7 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
     }
 };
 
-// --- GESTIÓN DE TORNEO ---
+// --- GESTIÓN DE TORNEO (CONFIGURACIÓN AVANZADA) ---
 
 const createTournament = () => {
     formCreateTournament.post(route('jangel.tournament.store'), {
@@ -238,13 +260,38 @@ const createTournament = () => {
 
 const openSettingsModal = () => {
     if (!selectedTournament.value) return;
-    formSettings.id = selectedTournament.value.id;
-    formSettings.name = selectedTournament.value.name;
-    formSettings.twitch_channel = selectedTournament.value.twitch_channel || '';
-    formSettings.is_private = Boolean(selectedTournament.value.is_private);
-    formSettings.access_code = selectedTournament.value.access_code || '';
+    const t = selectedTournament.value;
+    
+    formSettings.id = t.id;
+    formSettings.name = t.name;
+    formSettings.twitch_channel = t.twitch_channel || '';
+    formSettings.is_private = Boolean(t.is_private);
+    formSettings.access_code = t.access_code || '';
+    formSettings.rules = t.rules || '';
+    formSettings.prizes = t.prizes || '';
+    
+    // Deep copy del JSON de puntuación o inicializar default
+    if (t.scoring_format) {
+        // Asegurarse de que scoring_format es un objeto, si viene del prop como objeto Laravel
+        // Si viene como string JSON parsearlo
+        let format = t.scoring_format;
+        if (typeof format === 'string') format = JSON.parse(format);
+        
+        formSettings.scoring_format = JSON.parse(JSON.stringify(format));
+        if (!formSettings.scoring_format.placement) formSettings.scoring_format.placement = [];
+    } else {
+        formSettings.scoring_format = { kill_points: 1, placement: [] };
+    }
     
     showSettingsModal.value = true;
+};
+
+// Helpers para array de rangos
+const addPlacementRule = () => {
+    formSettings.scoring_format.placement.push({ from: 1, to: 1, points: 0 });
+};
+const removePlacementRule = (idx: number) => {
+    formSettings.scoring_format.placement.splice(idx, 1);
 };
 
 const updateTournament = () => {
@@ -260,7 +307,6 @@ const updateTournament = () => {
 const deleteTournament = () => {
     if (!formSettings.id) return;
     if (!confirm('¿Estás seguro de ELIMINAR este torneo? Esta acción no se puede deshacer.')) return;
-
     router.delete(route('jangel.tournament.delete', formSettings.id), {
         onSuccess: () => {
             showSettingsModal.value = false;
@@ -269,7 +315,7 @@ const deleteTournament = () => {
     });
 };
 
-// --- GESTIÓN DE PARTIDAS (SLOTS & EDIT) ---
+// --- GESTIÓN DE PARTIDAS ---
 
 const createSlot = () => {
     const tn = selectedTournament.value;
@@ -322,14 +368,36 @@ const deleteMatch = (id: number) => {
     }
 };
 
-// --- APELACIÓN (APPEAL) ---
+// --- AJUSTE MANUAL DE PUNTOS ---
+const openManualAdjust = (item: LeaderboardItem) => {
+    if (!selectedMatchId.value) {
+        alert("Por favor selecciona una partida específica del historial para ajustar puntos.");
+        return;
+    }
+    
+    formManualAdjust.reset();
+    formManualAdjust.match_id = selectedMatchId.value;
+    formManualAdjust.player_name = item.player_name;
+    // member_names logic for teams if needed, but usually adjust per player
+    showManualAdjustModal.value = true;
+};
+
+const submitManualAdjust = () => {
+    if (!selectedTournament.value) return;
+    formManualAdjust.post(route('jangel.score.adjust', selectedTournament.value.id), {
+        onSuccess: () => {
+            showManualAdjustModal.value = false;
+            alert("✅ Ajuste realizado y log guardado.");
+            fetchLeaderboard(selectedTournament.value!, selectedMatchId.value);
+        },
+        onError: (err) => alert("Error: " + JSON.stringify(err))
+    });
+};
+
+
+// --- APELACIÓN AUTOMÁTICA ---
 const openAppealModal = (matchId: number) => {
     formAppeal.reset();
-    formAppeal.match_id = matchId;
-    formAppeal.kill_points = 2;
-    formAppeal.placement_points = 1;
-    formAppeal.win_bonus = 5;
-    
     showAppealModal.value = true;
     uploadProgress.value = 0;
 }
@@ -342,22 +410,15 @@ const handleAppealFileUpload = (event: Event) => {
 }
 
 const submitAppeal = () => {
-    if (!formAppeal.match_id || !formAppeal.replay) return;
-    if (!selectedTournament.value) return; // Validación extra
-
-    // CORRECCIÓN CRÍTICA: Enviar selectedTournament.value.id (ID del torneo), NO match_id
+    if (!formAppeal.replay || !selectedTournament.value) return;
+    // Usamos ID del torneo en ruta
     formAppeal.post(route('tournament.appeal', selectedTournament.value.id), {
-        onProgress: (progress) => {
-            uploadProgress.value = progress?.percentage || 0;
-        },
+        onProgress: (progress) => { uploadProgress.value = progress?.percentage || 0; },
         onSuccess: () => {
             showAppealModal.value = false;
             uploadProgress.value = 0;
-            alert("✅ Apelación procesada correctamente. Tabla actualizada.");
-            
-            if (selectedTournament.value) {
-                fetchLeaderboard(selectedTournament.value, selectedMatchId.value);
-            }
+            alert("✅ Apelación procesada automáticamente con las reglas del torneo.");
+            fetchLeaderboard(selectedTournament.value!, selectedMatchId.value);
         },
         onError: (err) => {
             showAppealModal.value = false;
@@ -365,7 +426,6 @@ const submitAppeal = () => {
         }
     });
 }
-
 
 // --- SUBIDA REPLAY (GENERAL) ---
 const openUploadModal = (matchId: number | null = null) => {
@@ -385,16 +445,10 @@ const handleFileUpload = (event: Event) => {
 
 const submitReplay = () => {
     if (!selectedTournament.value || !formReplay.replay) return;
-    
-    if (!formReplay.mode) {
-        alert("¡Debes seleccionar un Modo de Juego!");
-        return;
-    }
+    if (!formReplay.mode) { alert("¡Debes seleccionar un Modo de Juego!"); return; }
 
     formReplay.post(route('jangel.match.process', selectedTournament.value.id), {
-        onProgress: (progress) => {
-            uploadProgress.value = progress?.percentage || 0;
-        },
+        onProgress: (progress) => { uploadProgress.value = progress?.percentage || 0; },
         onSuccess: () => {
             showMatchModal.value = false;
             uploadProgress.value = 0;
@@ -435,17 +489,12 @@ const copyTrackingLink = (targetName: string) => {
 
 const copyInviteLink = () => {
     if (!selectedTournament.value) return;
-    
     const url = route('public.tournament.show', {
         slug: selectedTournament.value.slug || selectedTournament.value.id,
         code: selectedTournament.value.access_code
     });
-
     navigator.clipboard.writeText(url).then(() => {
         alert('✅ Link de invitación copiado al portapapeles:\n' + url);
-    }).catch(err => {
-        console.error(err);
-        prompt("Copia el link manualmente:", url);
     });
 };
 
@@ -469,7 +518,7 @@ const copyInviteLink = () => {
           <span class="text-xs font-bold tracking-wider uppercase text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
              {{ selectedTournament?.name || 'Selecciona Torneo' }}
           </span>
-          <button @click="openSettingsModal" class="p-1 hover:text-[var(--rankit-neon)] transition" title="Configurar / Eliminar Torneo">
+          <button @click="openSettingsModal" class="p-1 hover:text-[var(--rankit-neon)] transition" title="Configurar Torneo">
              <i class="ph-bold ph-gear"></i>
           </button>
         </div>
@@ -542,7 +591,7 @@ const copyInviteLink = () => {
                     <div class="text-xl italic font-bold uppercase font-display text-black dark:text-white truncate max-w-[200px]">
                         {{ selectedTournament?.name }}
                     </div>
-                    <button @click="openSettingsModal" class="text-gray-400 hover:text-[var(--rankit-neon)] transition" title="Editar Información">
+                    <button @click="openSettingsModal" class="text-gray-400 hover:text-[var(--rankit-neon)] transition">
                         <i class="ph-bold ph-pencil-simple"></i>
                     </button>
                 </div>
@@ -552,15 +601,10 @@ const copyInviteLink = () => {
                         <span class="text-[9px] bg-red-100 dark:bg-red-900/30 text-red-500 px-2 py-0.5 rounded border border-red-500/20 whitespace-nowrap">
                             🔒 CÓDIGO: {{ selectedTournament.access_code }}
                         </span>
-                        <button 
-                            @click="copyInviteLink" 
-                            class="text-[9px] font-bold text-[var(--rankit-neon)] hover:text-white hover:bg-[var(--rankit-neon)] px-2 py-0.5 rounded transition uppercase flex items-center gap-1 border border-[var(--rankit-neon)]/20" 
-                            title="Copiar enlace directo con código"
-                        >
-                            <i class="ph-bold ph-link"></i> Copiar Link Invitación
+                        <button @click="copyInviteLink" class="text-[9px] font-bold text-[var(--rankit-neon)] hover:underline uppercase">
+                            Copiar Link
                         </button>
                     </div>
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">Link directo para entrar sin escribir código.</p>
                 </div>
               </div>
               <div class="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded self-start">
@@ -623,7 +667,6 @@ const copyInviteLink = () => {
               <button @click="copyGlobalObsLink" class="px-4 py-2 text-[10px] font-bold uppercase border hover:border-[var(--rankit-neon)] transition flex items-center justify-center gap-2 mx-auto text-black dark:text-white border-gray-300 dark:border-gray-600 bg-white dark:bg-black w-full">
                 <i class="ph ph-copy"></i> Copiar Link {{ searchQuery ? '(Filtrado)' : '(General)' }}
               </button>
-              <p class="text-[9px] text-gray-400 mt-2">Usa el buscador para filtrar qué mostrar en OBS</p>
             </div>
           </div>
 
@@ -645,26 +688,19 @@ const copyInviteLink = () => {
                   </div>
                   <div>
                     <div class="font-mono text-xs font-bold text-black uppercase dark:text-white">{{ match.custom_code }}</div>
-                    <!-- MOSTRAR ID DE SESIÓN PARA DEBUG -->
-                    <div v-if="match.game_session_id" class="text-[8px] text-gray-400 font-mono truncate max-w-[150px]" :title="match.game_session_id">
-                        {{ match.game_session_id }}
-                    </div>
-                    
                     <div v-if="match.status === 'pending'" class="text-[9px] text-yellow-500 font-bold animate-pulse">EN VIVO</div>
                     <div v-else class="text-[9px] text-green-500 font-bold">PROCESADA</div>
                   </div>
                 </div>
                 
                 <div class="flex gap-2">
-                    <!-- BOTÓN APELAR (NUEVO) -->
-                    <button @click.stop="openAppealModal(match.id)" class="p-1 text-gray-400 hover:text-yellow-400" title="Apelar (Analyze Summary)">
+                    <button @click.stop="openAppealModal(match.id)" class="p-1 text-gray-400 hover:text-yellow-400" title="Apelar (Auto)">
                         <i class="ph ph-gavel"></i>
                     </button>
-
                     <button @click.stop="openEditMatchModal(match)" class="p-1 hover:text-blue-500" title="Editar Código">
                         <i class="ph ph-pencil-simple"></i>
                     </button>
-                    <button @click.stop="openUploadModal(match.id)" class="p-1 hover:text-[var(--rankit-neon)]" title="Subir Replay (Proceso Completo)">
+                    <button @click.stop="openUploadModal(match.id)" class="p-1 hover:text-[var(--rankit-neon)]" title="Subir Replay">
                         <i class="ph ph-upload-simple"></i>
                     </button>
                     <button @click.stop="deleteMatch(match.id)" class="p-1 hover:text-red-500" title="Eliminar">
@@ -765,9 +801,14 @@ const copyInviteLink = () => {
                                     <div><span class="block text-gray-500">Avg Top</span> <span class="font-bold">#{{ formatDec(item.avg_placement) }}</span></div>
                                     <div><span class="block text-gray-500">Best Top</span> <span class="font-bold">#{{ item.best_placement }}</span></div>
                                 </div>
-                                <button @click.stop="copyTrackingLink(item.player_name)" class="px-3 py-2 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase rounded hover:opacity-80 transition flex items-center gap-2 whitespace-nowrap">
-                                    <i class="ph ph-target"></i> Copiar Tracking OBS
-                                </button>
+                                <div class="flex gap-2">
+                                     <button @click.stop="copyTrackingLink(item.player_name)" class="px-3 py-2 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase rounded hover:opacity-80 transition flex items-center gap-2 whitespace-nowrap">
+                                        <i class="ph ph-target"></i> Tracking
+                                    </button>
+                                    <button v-if="selectedMatchId" @click.stop="openManualAdjust(item)" class="px-3 py-2 bg-red-500 text-white text-[10px] font-bold uppercase rounded hover:bg-red-600 transition flex items-center gap-2 whitespace-nowrap">
+                                        <i class="ph ph-warning"></i> Gestionar Puntos
+                                    </button>
+                                </div>
                             </div>
                         </td>
                     </tr>
@@ -821,49 +862,107 @@ const copyInviteLink = () => {
         </div>
     </Modal>
 
-    <!-- MODAL SETTINGS -->
-    <Modal :show="showSettingsModal" @close="showSettingsModal = false" maxWidth="md">
-        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+    <!-- MODAL SETTINGS (ADVANCED TABS) -->
+    <Modal :show="showSettingsModal" @close="showSettingsModal = false" maxWidth="2xl">
+        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white h-[600px] flex flex-col">
             <h2 class="mb-4 text-xl italic font-bold uppercase font-display">Configurar Torneo</h2>
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre del Torneo</label>
-                    <input v-model="formSettings.name" type="text" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Canal de Twitch (Opcional)</label>
-                    <div class="flex items-center gap-2 bg-gray-100 dark:bg-white/5 rounded p-2 border border-transparent focus-within:border-[#9146FF]">
-                        <i class="ph-bold ph-twitch-logo text-[#9146FF]"></i>
-                        <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full p-0 text-sm bg-transparent border-none outline-none focus:ring-0" />
+            
+            <!-- Tabs Header -->
+            <div class="flex mb-4 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+                <button v-for="tab in ['general', 'scoring', 'rules', 'prizes']" :key="tab"
+                    @click="settingsTab = tab as any"
+                    class="px-4 py-2 text-xs font-bold uppercase transition border-b-2 whitespace-nowrap"
+                    :class="settingsTab === tab ? 'border-[var(--rankit-neon)] text-[var(--rankit-neon)]' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-white'">
+                    {{ tab === 'scoring' ? 'Puntuación' : tab }}
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 pr-2 space-y-4 overflow-y-auto custom-scrollbar">
+                
+                <!-- GENERAL TAB -->
+                <div v-if="settingsTab === 'general'" class="space-y-4">
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre del Torneo</label>
+                        <input v-model="formSettings.name" type="text" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Canal de Twitch</label>
+                        <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
+                    </div>
+                    <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
+                        <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                            <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                            <span class="text-xs font-bold uppercase">Torneo Privado</span>
+                        </label>
+                        <div v-if="formSettings.is_private">
+                            <input v-model="formSettings.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                        </div>
                     </div>
                 </div>
 
-                <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
-                    <label class="flex items-center gap-2 mb-2 cursor-pointer">
-                        <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
-                        <span class="text-xs font-bold uppercase">Torneo Privado</span>
-                    </label>
-                    <div v-if="formSettings.is_private">
-                        <input v-model="formSettings.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
-                        <p class="text-[9px] text-gray-400 mt-1">Los usuarios deberán usar este código para ver el torneo.</p>
+                <!-- SCORING TAB -->
+                <div v-if="settingsTab === 'scoring'" class="space-y-4">
+                    <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded text-[10px] text-blue-500 dark:text-blue-400">
+                        <i class="ph-bold ph-info"></i> El sistema usará estas reglas para calcular los puntos automáticamente al subir replays. Si está vacío, usará el modo por defecto.
+                    </div>
+                    
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Puntos por Kill</label>
+                        <input v-model="formSettings.scoring_format.kill_points" type="number" class="w-24 bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
+                    </div>
+
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-[10px] font-bold uppercase text-gray-500">Rangos de Posición</label>
+                            <button @click="addPlacementRule" class="text-[10px] bg-[var(--rankit-neon)] text-white px-2 py-1 rounded hover:opacity-80 transition">+ Agregar Regla</button>
+                        </div>
+                        
+                        <div v-for="(rule, idx) in formSettings.scoring_format.placement" :key="idx" class="flex items-center gap-2 p-2 mb-2 border border-gray-200 rounded bg-gray-50 dark:bg-white/5 dark:border-white/10">
+                            <span class="text-xs font-bold text-gray-500">Top</span>
+                            <input type="number" v-model="rule.from" class="w-16 p-1 text-xs text-center bg-white border border-gray-300 rounded dark:bg-black dark:border-gray-700" placeholder="1" />
+                            <span class="text-xs font-bold text-gray-500">a</span>
+                            <input type="number" v-model="rule.to" class="w-16 p-1 text-xs text-center bg-white border border-gray-300 rounded dark:bg-black dark:border-gray-700" placeholder="1" />
+                            <span class="text-xs font-bold text-gray-500">=</span>
+                            <input type="number" v-model="rule.points" class="w-16 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded p-1 text-center text-xs font-bold text-[var(--rankit-neon)]" placeholder="10" />
+                            <span class="text-xs font-bold text-gray-500">pts</span>
+                            <button @click="removePlacementRule(idx)" class="p-1 ml-auto text-red-500 rounded hover:bg-red-500/10"><i class="ph-bold ph-trash"></i></button>
+                        </div>
+                        
+                        <div v-if="formSettings.scoring_format.placement.length === 0" class="py-4 text-xs italic text-center text-gray-400">
+                            No hay reglas definidas.
+                        </div>
                     </div>
                 </div>
 
-                <div class="flex gap-2 pt-2">
-                    <button @click="updateTournament" :disabled="formSettings.processing" class="flex-1 py-3 bg-[var(--rankit-neon)] text-white font-bold uppercase text-xs hover:opacity-90 transition">
+                <!-- RULES TAB -->
+                <div v-if="settingsTab === 'rules'" class="h-full">
+                    <textarea v-model="formSettings.rules" class="w-full h-64 bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-3 text-sm outline-none resize-none" placeholder="Escribe las reglas aquí (Soporta texto simple)..."></textarea>
+                </div>
+
+                <!-- PRIZES TAB -->
+                <div v-if="settingsTab === 'prizes'" class="h-full">
+                     <textarea v-model="formSettings.prizes" class="w-full h-64 bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-3 text-sm outline-none resize-none" placeholder="Lista de premios..."></textarea>
+                </div>
+
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="flex items-center justify-between pt-4 mt-auto border-t border-gray-200 dark:border-white/10">
+                 <button 
+                    v-if="selectedTournament?.matches.length === 0" 
+                    @click="deleteTournament" 
+                    class="px-3 py-2 text-xs font-bold text-red-500 uppercase transition rounded hover:bg-red-500/10"
+                >
+                    <i class="ph-bold ph-trash"></i> Eliminar Torneo
+                </button>
+                <div v-else></div>
+
+                <div class="flex gap-2">
+                    <button @click="showSettingsModal = false" class="px-4 py-2 text-xs font-bold uppercase border border-gray-300 rounded dark:border-gray-700">Cancelar</button>
+                    <button @click="updateTournament" :disabled="formSettings.processing" class="px-4 py-2 bg-[var(--rankit-neon)] text-white font-bold uppercase text-xs rounded hover:opacity-90 transition">
                         Guardar Cambios
                     </button>
-                    <button 
-                        v-if="selectedTournament?.matches.length === 0" 
-                        @click="deleteTournament" 
-                        class="px-4 py-3 text-xs font-bold text-red-500 uppercase transition border bg-red-500/10 border-red-500/50 hover:bg-red-500 hover:text-white"
-                        title="Eliminar Torneo (Solo si está vacío)"
-                    >
-                        <i class="ph-bold ph-trash"></i>
-                    </button>
-                    <div v-else class="flex items-center justify-center px-4 text-gray-400 border border-gray-200 cursor-not-allowed dark:border-gray-800" title="No puedes borrar un torneo con partidas">
-                        <i class="ph-bold ph-trash"></i>
-                    </div>
                 </div>
             </div>
         </div>
@@ -881,7 +980,30 @@ const copyInviteLink = () => {
         </div>
     </Modal>
 
-    <!-- MODAL APELAR (NUEVO) -->
+    <!-- MODAL MANUAL ADJUST (NUEVO) -->
+    <Modal :show="showManualAdjustModal" @close="showManualAdjustModal=false" maxWidth="sm">
+        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+            <h2 class="mb-2 text-lg italic font-bold text-red-500 uppercase font-display">Ajuste Manual</h2>
+            <p class="mb-4 text-xs font-bold text-gray-500 uppercase">Jugador: {{ formManualAdjust.player_name }}</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Puntos a sumar/restar</label>
+                    <input type="number" v-model="formManualAdjust.points_change" class="w-full p-2 font-bold bg-gray-100 border-none rounded dark:bg-white/5" placeholder="-10 o 10" />
+                    <p class="text-[9px] text-gray-400 mt-1">Usa números negativos para penalizar (ej: -10).</p>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Razón (Requerido)</label>
+                    <input type="text" v-model="formManualAdjust.reason" class="w-full p-2 text-sm bg-gray-100 border-none rounded dark:bg-white/5" placeholder="Ej: Uso de bug, Toxicidad..." />
+                </div>
+                <button @click="submitManualAdjust" :disabled="formManualAdjust.processing || !formManualAdjust.reason" class="w-full py-3 text-xs font-bold text-white uppercase transition bg-red-500 rounded hover:bg-red-600">
+                    Confirmar Ajuste
+                </button>
+            </div>
+        </div>
+    </Modal>
+
+    <!-- MODAL APELAR (AUTOMÁTICA) -->
     <Modal :show="showAppealModal" @close="showAppealModal = false" maxWidth="lg">
       <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
         <div class="flex items-start justify-between mb-6">
@@ -889,44 +1011,14 @@ const copyInviteLink = () => {
             <h2 class="flex items-center gap-2 text-xl italic font-bold uppercase font-display">
               <i class="text-yellow-500 ph-fill ph-gavel"></i> Apelar Resultado
             </h2>
-            <p class="text-[10px] text-gray-500 mt-1 uppercase font-bold">Analizar resumen y recalcular puntos</p>
+            <p class="text-[10px] text-gray-500 mt-1 uppercase font-bold">Cálculo automático basado en reglas del torneo</p>
           </div>
           <button @click="showAppealModal = false" class="text-gray-500 hover:text-red-500">
             <i class="text-xl ph ph-x"></i>
           </button>
         </div>
 
-        <!-- CONFIGURACIÓN DE PUNTOS VISIBLE -->
-        <div class="p-3 mb-4 bg-gray-100 border border-gray-200 rounded dark:bg-white/5 dark:border-white/10">
-            <div class="text-[10px] uppercase font-bold text-gray-500 mb-2">Configuración de Puntos (Apelación)</div>
-            
-            <!-- ALERTA INFORMATIVA -->
-            <div class="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-[9px] text-blue-600 dark:text-blue-400">
-                <i class="ph-bold ph-info"></i> 
-                Se actualizará solo al <b>Equipo del Owner</b> del replay. 
-                Se usará <b>Rank #1</b> para el Bonus de Victoria (ignorando isWinner).
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-                <div>
-                    <label class="text-[9px] block text-gray-500 font-bold mb-1">Puntos x Kill</label>
-                    <input v-model="formAppeal.kill_points" type="number" class="w-full p-1 text-xs transition border rounded outline-none dark:bg-black dark:border-gray-700 focus:border-yellow-500" />
-                </div>
-                <div>
-                     <label class="text-[9px] block text-gray-500 font-bold mb-1">Puntos x Top (Base)</label>
-                     <input v-model="formAppeal.placement_points" type="number" class="w-full p-1 text-xs transition border rounded outline-none dark:bg-black dark:border-gray-700 focus:border-yellow-500" />
-                </div>
-                <div>
-                     <label class="text-[9px] block text-gray-500 font-bold mb-1">Bonus Top #1</label>
-                     <input v-model="formAppeal.win_bonus" type="number" class="w-full p-1 text-xs transition border rounded outline-none dark:bg-black dark:border-gray-700 focus:border-yellow-500" />
-                </div>
-            </div>
-            <p class="text-[9px] text-gray-400 mt-2 italic border-t border-dashed border-gray-300 dark:border-gray-700 pt-1">
-                * Estos valores se enviarán para calcular el puntaje final del usuario apelado.
-            </p>
-        </div>
-
-        <div class="p-4 border bg-yellow-500/5 border-yellow-500/20">
+        <div class="p-4 border rounded-lg bg-yellow-500/5 border-yellow-500/20">
           <h3 class="flex items-center gap-2 mb-3 text-sm font-bold text-yellow-500 uppercase">
             <i class="ph ph-file-arrow-up"></i> Seleccionar Replay de Jugador
           </h3>
@@ -941,7 +1033,7 @@ const copyInviteLink = () => {
             <button @click="submitAppeal" 
                 :disabled="!formAppeal.replay || formAppeal.processing" 
                 class="w-full py-3 text-xs font-bold text-black uppercase transition bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed">
-              {{ formAppeal.processing ? 'Analizando...' : 'Enviar Apelación' }}
+              {{ formAppeal.processing ? 'Analizando...' : 'Procesar Apelación' }}
             </button>
           </div>
         </div>
@@ -998,7 +1090,6 @@ const copyInviteLink = () => {
 </template>
 
 <style>
-/* Estilos Globales MANTENIDOS */
 :root { --rankit-neon: #bf00ff; }
 .font-display { font-family: "Chakra Petch", sans-serif; }
 .font-sans { font-family: "Archivo", sans-serif; }
@@ -1017,5 +1108,8 @@ html:not(.dark) .brutal-input { color: black; border-color: #e5e5e5; }
 html:not(.dark) .btn-skew:hover { background-color: black; color: white; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); }
 .btn-content { transform: skewX(10deg); }
 .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 </style>
