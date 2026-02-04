@@ -38,6 +38,7 @@ interface TournamentInfo {
   // Nuevos campos
   rules?: string;
   prizes?: string;
+  scoring_format?: any; // Puede ser string JSON u objeto
 }
 
 interface LiveDataResponse {
@@ -226,6 +227,16 @@ const switchTab = (tab: string) => {
 
 const twitchChannel = computed(() => tournamentData.value.twitch_channel ?? props.tournament?.twitch_channel ?? 'Rankit')
 const tournamentTitle = computed(() => tournamentData.value.name ?? 'bellzCup') 
+
+// --- COMPUTED PARA SCORING FORMAT ---
+const parsedScoring = computed(() => {
+    let raw = tournamentData.value.scoring_format;
+    if (!raw) return null;
+    if (typeof raw === 'string') {
+        try { return JSON.parse(raw); } catch { return null; }
+    }
+    return raw;
+})
 
 // --- SISTEMA DE REFERIDOS ORIGINAL ---
 const me = user 
@@ -543,8 +554,45 @@ onUnmounted(() => {
          <div id="twitch-embed" class="w-full overflow-hidden bg-black border border-gray-800 rounded-lg shadow-2xl aspect-video"></div>
       </div>
 
-      <!-- REGLAS TAB -->
-      <div v-show="activeTab === 'reglas'" class="py-8 animate-fade-in">
+      <!-- REGLAS TAB CON SISTEMA DE PUNTOS -->
+      <div v-show="activeTab === 'reglas'" class="py-8 space-y-8 animate-fade-in">
+         
+         <!-- SISTEMA DE PUNTOS VISUAL -->
+         <div v-if="parsedScoring" class="brutal-card bg-white dark:bg-[#0a0a0a] p-8 max-w-4xl mx-auto border-l-4 border-l-[var(--rankit-neon)]">
+             <div class="flex items-center gap-3 mb-6">
+                 <div class="w-10 h-10 flex items-center justify-center bg-[var(--rankit-neon)] text-white rounded font-bold">
+                     <i class="text-xl ph-bold ph-chart-bar"></i>
+                 </div>
+                 <h2 class="text-2xl font-black uppercase font-display">Sistema de Puntuación</h2>
+             </div>
+
+             <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
+                 <!-- KILLS -->
+                 <div class="flex flex-col items-center justify-center p-6 text-center border border-gray-200 rounded-lg bg-gray-50 dark:bg-white/5 dark:border-white/10">
+                     <div class="mb-2 text-xs font-bold tracking-widest text-gray-500 uppercase">Eliminaciones</div>
+                     <div class="text-5xl font-black font-display text-[var(--rankit-neon)] mb-1">
+                         +{{ parsedScoring.kill_points }}
+                     </div>
+                     <div class="text-sm font-bold">Puntos por Kill</div>
+                 </div>
+
+                 <!-- PLACEMENT TABLE -->
+                 <div class="p-6 border border-gray-200 rounded-lg bg-gray-50 dark:bg-white/5 dark:border-white/10">
+                     <div class="mb-4 text-xs font-bold tracking-widest text-center text-gray-500 uppercase">Posicionamiento</div>
+                     <div v-if="parsedScoring.placement && parsedScoring.placement.length > 0" class="space-y-2">
+                         <div v-for="(rule, idx) in parsedScoring.placement" :key="idx" 
+                              class="flex items-center justify-between p-2 bg-white border border-gray-100 rounded dark:bg-black/20 dark:border-white/5">
+                             <span class="text-sm font-bold">Top {{ rule.from }} - {{ rule.to }}</span>
+                             <span class="font-mono font-bold text-[var(--rankit-neon)]">+{{ rule.points }} pts</span>
+                         </div>
+                     </div>
+                     <div v-else class="text-sm italic text-center text-gray-400">
+                         Sistema por defecto Rankit (Top 1, 5, 15, 25)
+                     </div>
+                 </div>
+             </div>
+         </div>
+
          <div class="brutal-card bg-white dark:bg-[#0a0a0a] p-8 max-w-4xl mx-auto">
              <div class="flex items-center gap-3 mb-6">
                  <div class="w-12 h-12 flex items-center justify-center bg-[var(--rankit-neon)]/10 text-[var(--rankit-neon)] rounded-full">

@@ -369,6 +369,8 @@ const deleteMatch = (id: number) => {
 };
 
 // --- AJUSTE MANUAL DE PUNTOS ---
+const availablePlayers = ref<string[]>([]); // Para el modal de ajuste
+
 const openManualAdjust = (item: LeaderboardItem) => {
     if (!selectedMatchId.value) {
         alert("Por favor selecciona una partida específica del historial para ajustar puntos.");
@@ -377,8 +379,19 @@ const openManualAdjust = (item: LeaderboardItem) => {
     
     formManualAdjust.reset();
     formManualAdjust.match_id = selectedMatchId.value;
-    formManualAdjust.player_name = item.player_name;
-    // member_names logic for teams if needed, but usually adjust per player
+
+    // Detectar si es equipo o jugador individual
+    if (item.member_names && item.member_names.length > 0) {
+        // Es un equipo: llenamos la lista de jugadores disponibles
+        availablePlayers.value = item.member_names;
+        // Pre-seleccionamos el primero para evitar errores
+        formManualAdjust.player_name = item.member_names[0];
+    } else {
+        // Es individual (o fallback)
+        availablePlayers.value = [item.player_name];
+        formManualAdjust.player_name = item.player_name;
+    }
+
     showManualAdjustModal.value = true;
 };
 
@@ -984,7 +997,20 @@ const copyInviteLink = () => {
     <Modal :show="showManualAdjustModal" @close="showManualAdjustModal=false" maxWidth="sm">
         <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
             <h2 class="mb-2 text-lg italic font-bold text-red-500 uppercase font-display">Ajuste Manual</h2>
-            <p class="mb-4 text-xs font-bold text-gray-500 uppercase">Jugador: {{ formManualAdjust.player_name }}</p>
+            
+            <!-- Selector de Jugador si es Equipo -->
+            <div class="mb-4">
+                 <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Jugador Objetivo</label>
+                 <div v-if="availablePlayers.length > 1">
+                     <select v-model="formManualAdjust.player_name" class="w-full p-2 bg-gray-100 dark:bg-white/5 border border-gray-300 dark:border-gray-700 rounded text-sm font-bold outline-none focus:border-[var(--rankit-neon)]">
+                         <option v-for="p in availablePlayers" :key="p" :value="p">{{ p }}</option>
+                     </select>
+                     <p class="text-[9px] text-gray-400 mt-1">Selecciona a quién aplicar los puntos (afecta al equipo).</p>
+                 </div>
+                 <div v-else>
+                     <span class="text-lg font-bold">{{ formManualAdjust.player_name }}</span>
+                 </div>
+            </div>
             
             <div class="space-y-4">
                 <div>
