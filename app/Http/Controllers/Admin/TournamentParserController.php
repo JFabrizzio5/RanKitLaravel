@@ -1,3 +1,4 @@
+8
 <?php
 
 namespace App\Http\Controllers\Admin;
@@ -43,7 +44,36 @@ class TournamentParserController extends Controller
                 if (!Schema::hasColumn('tournaments', 'prizes')) $table->longText('prizes')->nullable();
                 if (!Schema::hasColumn('tournaments', 'scoring_format')) $table->json('scoring_format')->nullable();
                 if (!Schema::hasColumn('tournaments', 'table_name')) $table->string('table_name')->nullable();
+                
+                // Nuevas Columnas (Fase 2)
+                if (!Schema::hasColumn('tournaments', 'user_id')) $table->foreignId('user_id')->nullable()->after('id'); // Owner
+                if (!Schema::hasColumn('tournaments', 'entry_fee')) $table->integer('entry_fee')->default(0); // Cents
+                if (!Schema::hasColumn('tournaments', 'currency')) $table->string('currency')->default('mxn');
              });
+        }
+
+        // 1.5. Tabla de Registros (Pagos de Entrada)
+        if (!Schema::hasTable('tournament_registrations')) {
+            Schema::create('tournament_registrations', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+                $table->foreignId('tournament_id')->constrained()->cascadeOnDelete();
+                $table->boolean('has_paid')->default(false);
+                $table->string('payment_intent_id')->nullable();
+                $table->integer('amount_paid')->default(0);
+                $table->string('currency')->default('mxn');
+                $table->timestamps();
+
+                $table->unique(['user_id', 'tournament_id']);
+            });
+        }
+
+        // Actualización de Usuarios (Roles y Stripe Connect)
+        if (Schema::hasTable('users')) {
+            Schema::table('users', function (Blueprint $table) {
+                if (!Schema::hasColumn('users', 'role')) $table->string('role')->default('player'); // player, organizer, admin
+                if (!Schema::hasColumn('users', 'stripe_connect_id')) $table->string('stripe_connect_id')->nullable(); // Para recibir pagos
+            });
         }
 
         // 2. Tabla de Partidas (Matches)
@@ -108,6 +138,26 @@ class TournamentParserController extends Controller
                 $table->text('reason');
                 $table->unsignedBigInteger('admin_id')->nullable();
                 $table->timestamps();
+            });
+        }
+
+        // 6. Tabla de Premios (Prizes)
+        if (!Schema::hasTable('tournament_prizes')) {
+            Schema::create('tournament_prizes', function (Blueprint $table) {
+                $table->id();
+                 // Constrained to tournaments table which is defined above
+                $table->foreignId('tournament_id')->constrained()->cascadeOnDelete();
+                $table->foreignId('user_id')->nullable()->constrained()->onDelete('set null'); // Winner
+                $table->string('title'); // e.g. "1st Place"
+                $table->unsignedInteger('amount'); // In cents
+                $table->string('currency')->default('usd');
+                $table->enum('status', ['pending', 'ready', 'paid', 'failed'])->default('pending');
+                $table->string('stripe_transfer_id')->nullable();
+                $table->timestamp('paid_at')->nullable();
+                $table->timestamps();
+
+                // Index for faster queries
+                $table->index(['tournament_id', 'status']);
             });
         }
     }
@@ -785,5 +835,42 @@ class TournamentParserController extends Controller
          // ... (implementación similar si se usa desde aquí)
          // Por ahora devolvemos vacío ya que se usa PublicTournamentController
          return response()->json([]);
+    }
+
+    // --- GESTIÓN DE USUARIOS (ADMIN JANGEL) ---
+    public function searchUsers(Request $request)
+    {
+        // Solo Jangel puede buscar
+        if (!$this->isJangel(auth()->user())) abort(403);
+
+        $query = $request->query('query');
+        if (!$query) return response()->json([]);
+
+        $users = DB::table('users')
+            ->where('email', 'LIKE', "%{$query}%")
+            ->orWhere('name', 'LIKE', "%{$query}%")
+            ->select('id', 'name', 'email', 'role', 'stripe_connect_id')
+            ->limit(10)
+            ->get();
+            
+        return response()->json($users);
+    }
+
+    public function assignRole(Request $request)
+    {
+        // Solo Jangel puede asignar
+        if (!$this->isJangel(auth()->user())) abort(403);
+
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'role' => 'required|in:player,organizer,admin'
+        ]);
+
+        DB::table('users')->where('id', $request->user_id)->update([
+            'role' => $request->role,
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', "Rol actualizado correctamente.");
     }
 }
