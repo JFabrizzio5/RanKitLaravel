@@ -1,102 +1,239 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, ref, onMounted } from 'vue';
+
+const props = defineProps<{
+    myTournaments?: any[];
+    publicTournaments?: any[];
+}>();
+
+const user = usePage().props.auth.user;
+const isOrganizer = computed(() => user.role === 'admin' || user.role === 'organizer' || user.email === '18jangel18@gmail.com');
+
+const searchQuery = ref('');
+const filteredPublicTournaments = computed(() => {
+    if (!props.publicTournaments) return [];
+    if (!searchQuery.value) return props.publicTournaments;
+    const q = searchQuery.value.toLowerCase();
+    return props.publicTournaments.filter(t => 
+        t.name.toLowerCase().includes(q) || 
+        (t.game && t.game.toLowerCase().includes(q)) ||
+        (t.creator_name && t.creator_name.toLowerCase().includes(q))
+    );
+});
+
+onMounted(() => {
+    document.documentElement.classList.add('dark');
+});
 </script>
 
 <template>
-    <Head title="BellzCup - Dashboard" />
+    <Head title="Dashboard" />
 
     <AuthenticatedLayout>
-        <!-- Contenedor Principal Centrado -->
-        <div class="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-            
-            <!-- Elementos de fondo decorativos -->
-            <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-[var(--rankit-neon)]/10 rounded-full blur-[100px] pointer-events-none"></div>
-
-            <!-- Tarjeta Principal "BellzCup" -->
-            <div class="brutal-card w-full max-w-5xl bg-[#0a0a0a] border border-gray-800 overflow-hidden relative group">
+        <div class="min-h-screen bg-[#050505] text-white py-12 font-sans selection:bg-[var(--rankit-neon)] selection:text-white">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
                 
-                <!-- Imagen de Fondo (Con desenfoque y colores originales) -->
-                <div class="relative h-[400px] md:h-[500px] overflow-hidden">
-                    <img src="public/BellzCupBeta/BannerBellzCup.png" 
-                         alt="Banner BellzCup"
-                         class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-[1.5s] ease-out blur-[2px]" 
-                         onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"/>
+                <!-- HEADER & ACTIONS -->
+                <div class="brutal-card bg-[#0a0a0a] p-8 flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-[var(--rankit-neon)]/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
                     
-                    <!-- Overlay Gradiente -->
-                    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
+                    <div class="relative z-10 text-center md:text-left">
+                        <h2 class="text-4xl md:text-5xl font-display font-black italic uppercase tracking-tighter mb-2">
+                            Hola, <span class="text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400">{{ user.name }}</span> <span class="not-italic">👋</span>
+                        </h2>
+                        <p class="text-gray-400 font-bold uppercase tracking-widest text-xs">
+                            Bienvenido a tu panel de control
+                        </p>
+                    </div>
 
-                    <!-- Contenido Sobre la Imagen -->
-                    <div class="absolute bottom-0 left-0 flex flex-col items-end justify-between w-full gap-8 p-8 md:p-12 md:flex-row">
-                        
-                        <!-- Texto Principal -->
-                        <div class="relative z-10 max-w-2xl">
-                            <div class="flex flex-wrap items-center gap-3 mb-4">
-                                <span class="bg-[var(--rankit-neon)] text-white text-[10px] font-bold uppercase px-3 py-1 btn-skew tracking-widest">
-                                    <span class="btn-content">Evento Principal</span>
-                                </span>
-                                <span class="flex items-center gap-2 text-[10px] font-bold uppercase text-red-500 tracking-widest bg-black/50 px-3 py-1 border border-red-500/30 backdrop-blur-sm">
-                                    <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_red]"></span>
-                                    En Vivo
-                                </span>
-                                <!-- Badge de recompensas MUY VISIBLE -->
-                                <span class="bg-yellow-400 text-black text-[11px] font-black uppercase px-4 py-1 btn-skew tracking-tighter animate-bounce shadow-[0_0_20px_rgba(250,204,21,0.5)]">
-                                    <span class="btn-content">🎁 SKINS + PREMIOS EN STREAM</span>
-                                </span>
+                    <div v-if="isOrganizer" class="flex flex-wrap justify-center gap-4 relative z-10">
+                        <Link :href="route('jangel.indexdos')" class="btn-skew px-6 py-3 bg-[var(--rankit-neon)] hover:bg-white hover:text-black text-white font-black uppercase tracking-wider text-xs transition-all duration-300 shadow-[4px_4px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_rgba(255,255,255,0.4)] hover:-translate-y-1">
+                            <div class="btn-content flex items-center gap-2">
+                                <i class="ph-bold ph-kanban text-lg"></i>
+                                Panel Organizador
+                            </div>
+                        </Link>
+                        <Link :href="route('profile.edit')" class="btn-skew px-6 py-3 bg-[#1a1a1a] border border-white/10 hover:border-[var(--rankit-neon)] text-gray-300 hover:text-[var(--rankit-neon)] font-bold uppercase tracking-wider text-xs transition-all duration-300">
+                            <div class="btn-content flex items-center gap-2">
+                                <i class="ph-bold ph-credit-card text-lg"></i>
+                                Pagos
+                            </div>
+                        </Link>
+                    </div>
+                </div>
+
+                <!-- PUBLIC TOURNAMENTS SECTION -->
+                <div class="space-y-6">
+                    <div class="flex flex-col md:flex-row justify-between items-end gap-4 border-b border-white/10 pb-4">
+                        <div>
+                            <h3 class="text-2xl font-display font-black italic uppercase tracking-tighter text-white flex items-center gap-3">
+                                <i class="ph-bold ph-globe text-[var(--rankit-neon)]"></i> Torneos Públicos
+                            </h3>
+                            <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">Explora y compite</p>
+                        </div>
+                        <div class="relative w-full md:w-72">
+                            <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                            <input v-model="searchQuery" type="text" placeholder="BUSCAR TORNEO..." 
+                                   class="w-full pl-10 pr-4 py-3 bg-[#0a0a0a] border border-white/10 focus:border-[var(--rankit-neon)] focus:ring-0 text-xs font-bold uppercase text-white placeholder-gray-600 transition-all outline-none" />
+                        </div>
+                    </div>
+
+                    <div v-if="filteredPublicTournaments.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div v-for="tournament in filteredPublicTournaments" :key="tournament.id" 
+                             class="brutal-card group bg-[#0a0a0a] p-5 h-full flex flex-col justify-between hover:z-10 relative">
+                            <div>
+                                <div class="flex justify-between items-start mb-4">
+                                    <span class="bg-white/5 border border-white/10 text-[var(--rankit-neon)] text-[10px] font-black px-2 py-1 uppercase tracking-wider">
+                                        {{ tournament.game || 'GENERAL' }}
+                                    </span>
+                                    <span class="text-[10px] text-gray-600 font-mono font-bold">{{ new Date(tournament.created_at).toLocaleDateString() }}</span>
+                                </div>
+                                
+                                <h4 class="text-xl font-display font-black italic uppercase text-white mb-1 leading-none group-hover:text-[var(--rankit-neon)] transition-colors truncate">
+                                    {{ tournament.name }}
+                                </h4>
+                                <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-1">
+                                    CREATED BY {{ tournament.creator_name || 'ANONYMOUS' }}
+                                </p>
                             </div>
 
-                            <h1 class="text-6xl md:text-8xl font-display font-black text-white uppercase italic tracking-tighter leading-[0.9] mb-4">
-                                Bellz<span class="text-transparent text-stroke">Cup</span>
-                            </h1>
-
-                            <p class="max-w-lg pl-4 text-sm font-medium leading-relaxed text-gray-100 border-l-4 border-yellow-500 md:text-lg drop-shadow-lg">
-                                Ve la BellzCup y gana <span class="italic font-bold text-yellow-400 underline">Skins exclusivas y dinero en efectivo</span> solo por ver el stream. Creadores y actores de doblaje compitiendo en modalidades que nunca han jugado.
-                            </p>
-                        </div>
-
-                        <!-- Botón de Acción -->
-                        <div class="relative z-10 w-full md:w-auto">
-                            <Link :href="route('tournaments.show', 1)" class="block w-full px-8 py-5 text-center text-black transition-colors bg-white md:w-auto btn-skew group hover:bg-yellow-400">
-                                <span class="flex flex-col items-center btn-content">
-                                    <span class="flex items-center gap-2 text-xl font-bold tracking-widest uppercase">
-                                        VER Y GANAR <i class="transition-transform ph-bold ph-play-circle group-hover:scale-110"></i>
-                                    </span>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider mt-1">Sintoniza el Directo</span>
-                                </span>
+                            <Link :href="`/t/${tournament.slug || tournament.id}`"
+                               class="block w-full text-center py-3 bg-[#111] border border-white/10 text-gray-400 text-[10px] font-black uppercase tracking-widest hover:bg-[var(--rankit-neon)] hover:text-white hover:border-[var(--rankit-neon)] transition-all duration-200">
+                                VER DETALLES
                             </Link>
                         </div>
                     </div>
+                    <div v-else class="py-12 text-center border border-dashed border-white/10 bg-[#0a0a0a]">
+                        <p class="text-gray-500 text-xs font-bold uppercase sticky">No se encontraron torneos públicos.</p>
+                    </div>
                 </div>
 
-                <!-- Footer de la Tarjeta (RECALCADO) -->
-                <div class="grid grid-cols-2 gap-4 p-6 border-t bg-black/95 border-white/10 md:grid-cols-4 backdrop-blur-xl">
-                    <div class="flex flex-col">
-                        <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Premio Jugadores</span>
-                        <span class="text-xl font-bold text-white font-display">$1,200</span>
+                <!-- MY TOURNAMENTS SECTION -->
+                <div v-if="myTournaments && myTournaments.length > 0" class="space-y-6 pt-8 border-t border-dashed border-white/10">
+                    <div>
+                        <h3 class="text-2xl font-display font-black italic uppercase tracking-tighter text-white flex items-center gap-3">
+                            <i class="ph-bold ph-trophy text-yellow-500"></i> Mis Torneos
+                        </h3>
+                        <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">Gestiona tus competencias</p>
                     </div>
-                    <div class="flex flex-col">
-                        <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Formato</span>
-                        <span class="text-xl font-bold text-white font-display">Battle Royale</span>
-                    </div>
-                    <!-- SECCIÓN VIEWERS EN GRANDE -->
-                    <div class="flex flex-col p-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 shadow-[inset_0_0_15px_rgba(234,179,8,0.1)]">
-                        <span class="text-[10px] text-yellow-500 uppercase font-black tracking-widest flex items-center gap-1">
-                            <i class="ph-fill ph-gift"></i> Premio Viewers
-                        </span>
-                        <span class="text-2xl font-black leading-tight text-yellow-400 font-display">
-                            $600 + <span class="italic text-white">SKINS</span>
-                        </span>
-                    </div>
-                    <div class="flex flex-col justify-center">
-                         <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider mb-1">Patrocinado por</div>
-                         <div class="flex flex-wrap items-center gap-3">
-                             <span class="text-xs font-bold text-white/80">RanKit</span>
-                             <span class="text-xs font-bold text-[var(--rankit-neon)]">bellz_z11</span>
-                             <span class="text-xs font-bold text-white/80">GameStarXpo</span>
-                         </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div v-for="tournament in myTournaments" :key="tournament.id" 
+                             class="brutal-card bg-[#0a0a0a] p-6 hover:bg-[#0f0f0f]">
+                            <div class="flex justify-between items-start mb-4">
+                                <h4 class="text-xl font-display font-black italic uppercase text-white truncate pr-2" :title="tournament.name">
+                                    {{ tournament.name }}
+                                </h4>
+                                <span class="px-2 py-1 text-[9px] font-black uppercase tracking-wider border"
+                                      :class="tournament.is_private ? 'border-red-500/30 text-red-500 bg-red-500/5' : 'border-green-500/30 text-green-500 bg-green-500/5'">
+                                    {{ tournament.is_private ? 'PRIVADO' : 'PÚBLICO' }}
+                                </span>
+                            </div>
+                            
+                            <div class="space-y-2 mb-6">
+                                <p class="text-xs text-gray-400 font-bold uppercase">
+                                    <span class="text-gray-600">JUEGO:</span> {{ tournament.game }}
+                                </p>
+                                <p v-if="tournament.twitch_channel" class="text-xs text-[#a970ff] font-bold uppercase flex items-center gap-1">
+                                    <i class="ph-bold ph-twitch-logo"></i> {{ tournament.twitch_channel }}
+                                </p>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <Link :href="route('public.live', tournament.id)" 
+                                      class="py-2 px-3 bg-[#1a1a1a] hover:bg-white hover:text-black text-white text-[10px] font-bold uppercase tracking-wider text-center transition-colors border border-white/5">
+                                    LIVE VIEW
+                                </Link>
+                                <Link v-if="isOrganizer" :href="route('jangel.indexdos')" 
+                                      class="py-2 px-3 border border-white/20 hover:border-[var(--rankit-neon)] hover:text-[var(--rankit-neon)] text-gray-400 text-[10px] font-bold uppercase tracking-wider text-center transition-colors">
+                                    GESTIONAR
+                                </Link>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                
+                <div v-else-if="isOrganizer" class="py-16 text-center bg-[#0a0a0a] border border-dashed border-white/10 brutal-card group">
+                    <i class="ph-duotone ph-game-controller text-5xl text-gray-700 mb-4 group-hover:text-[var(--rankit-neon)] transition-colors"></i>
+                    <p class="text-gray-500 text-sm font-bold uppercase mb-6">Aún no has creado ningún torneo.</p>
+                    <Link :href="route('jangel.indexdos')" class="inline-block px-6 py-3 bg-white text-black font-black uppercase text-xs tracking-wider hover:bg-[var(--rankit-neon)] hover:text-white transition-all transform hover:-translate-y-1">
+                        Crear mi primer torneo
+                    </Link>
+                </div>
+
+
+                <!-- FEATURED EVENT (BellzCup) -->
+                <div class="pt-12 border-t border-white/10">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-xs font-black text-gray-500 uppercase tracking-[0.2em]">Evento Destacado</h3>
+                        <span class="w-full h-px bg-gradient-to-r from-gray-800 to-transparent ml-4"></span>
+                    </div>
+                    
+                    <div class="brutal-card w-full bg-[#0a0a0a] border border-white/10 overflow-hidden relative group h-[250px] md:h-[350px]">
+                        <!-- Imagen de Fondo -->
+                        <div class="absolute inset-0">
+                            <img src="/BellzCupBeta/BannerBellzCup.png" 
+                                 alt="Banner BellzCup"
+                                 class="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 group-hover:opacity-80 group-hover:scale-105 transition-all duration-[1.5s] ease-out" 
+                                 onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80'"/>
+                            <div class="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent mix-blend-multiply"></div>
+                            <div class="absolute inset-0 bg-gradient-to-r from-black/80 via-transparent to-transparent"></div>
+                        </div>
+                        
+                        <div class="absolute bottom-0 left-0 p-8 md:p-12 w-full max-w-2xl">
+                            <div class="overflow-hidden mb-2">
+                                <span class="bg-[var(--rankit-neon)] text-white text-[10px] font-black uppercase px-3 py-1 inline-block transform -skew-x-12">Oficial</span>
+                            </div>
+                            <h2 class="text-5xl md:text-7xl font-display font-black text-white uppercase italic tracking-tighter mb-4 leading-[0.9]">
+                                Bellz<span class="text-transparent text-stroke">Cup</span>
+                            </h2>
+                            <p class="text-gray-300 font-bold uppercase text-xs tracking-wider mb-6 max-w-md line-clamp-2">
+                                Participa en el torneo más competitivo de la temporada. Premios exclusivos y transmisión en vivo.
+                            </p>
+                            
+                            <div class="flex gap-4">
+                                <Link :href="route('tournaments.show', 1)" class="btn-skew px-8 py-4 bg-white hover:bg-[var(--rankit-neon)] hover:text-white text-black font-black uppercase text-sm transition-all shadow-[6px_6px_0px_rgba(0,0,0,0.5)] hover:shadow-[8px_8px_0px_rgba(0,0,0,0.5)] hover:-translate-y-1">
+                                    <span class="btn-content">Ver Detalles</span>
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </AuthenticatedLayout>
 </template>
+
+<style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;900&display=swap');
+
+.font-display { font-family: 'Outfit', sans-serif; }
+
+.brutal-card {
+  border: 1px solid rgba(255,255,255,0.05);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+}
+
+.brutal-card:hover {
+  transform: translate(-4px, -4px);
+  box-shadow: 6px 6px 0px var(--rankit-neon), 6px 6px 20px rgba(0,0,0,0.5);
+  border-color: var(--rankit-neon);
+}
+
+.text-stroke {
+  -webkit-text-stroke: 1px white;
+  color: transparent;
+}
+
+.btn-skew {
+    transform: skewX(-10deg);
+}
+
+.btn-content {
+    transform: skewX(10deg);
+}
+</style>

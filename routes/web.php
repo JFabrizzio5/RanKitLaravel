@@ -29,19 +29,46 @@ Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name
 
 // --- DASHBOARD USUARIO ---
 Route::get('/dashboard', function () {
-    if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
-        return redirect()->route('jangel.indexdos');
-    }
-    return Inertia::render('Dashboard');
+    $user = auth()->user();
+    
+    // Fetch tournaments created by the user (or all if admin/jangel?)
+    // Let's stick to "My Tournaments" for standard dashboard.
+    // Admin dashboard handles the "All Tournaments" view.
+    
+    // 1. Torneos del Usuario (Mis Torneos)
+    $myTournaments = \Illuminate\Support\Facades\DB::table('tournaments')
+        ->where('user_id', $user->id)
+        ->orderByDesc('created_at')
+        ->get();
+
+    // 2. Torneos Públicos (Para unirse/ver)
+    // Excluir los privados y los que el usuario ya creó (opcional, pero mejor mostrar todos los públicos)
+    $publicTournaments = \Illuminate\Support\Facades\DB::table('tournaments')
+        ->leftJoin('users', 'tournaments.user_id', '=', 'users.id')
+        ->where('tournaments.is_private', false)
+        ->orderByDesc('tournaments.created_at')
+        ->select(
+            'tournaments.id',
+            'tournaments.name',
+            'tournaments.game',
+            'tournaments.slug',
+            'tournaments.twitch_channel',
+            'tournaments.created_at',
+            'users.name as creator_name'
+        )
+        ->limit(20) // Limit initial load
+        ->get();
+
+    return Inertia::render('Dashboard', [
+        'myTournaments' => $myTournaments,
+        'publicTournaments' => $publicTournaments
+    ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 // --- RUTAS RESTAURADAS ---
 
 // 1. Perfil Rankit
 Route::get('/profile/rankit', function () {
-    if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
-        return redirect()->route('jangel.indexdos');
-    }
     return app()->call([ProfilePageController::class, 'show']);
 })->name('rankit.profile');
 
@@ -123,6 +150,10 @@ Route::middleware('auth')->group(function () {
         // API Leaderboard
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
+
+        // GESTIÓN DE USUARIOS
+        Route::get('/users/search', [TournamentParserController::class, 'searchUsers'])->name('jangel.users.search');
+        Route::post('/users/assign', [TournamentParserController::class, 'assignRole'])->name('jangel.users.assign');
     });
 });
 Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
@@ -134,7 +165,17 @@ Route::post('/admin/tournaments/{tournament}/adjust-score', [TournamentParserCon
  Route::post('/admin/tournaments/{id}/appeal', [TournamentParserController::class, 'appealReplay'])->name('tournament.appeal');
     
  
- // Esta ruta acepta el parámetro opcional ?code=XYZ
+// Esta ruta acepta el parámetro opcional ?code=XYZ
 Route::get('/t/{slug}', [PublicTournamentController::class, 'show'])->name('public.tournament.show');
+
+// --- STRIPE CONNECT ROUTES ---
+Route::middleware('auth')->group(function () {
+    Route::get('/stripe/connect', [App\Http\Controllers\StripeConnectController::class, 'connect'])->name('stripe.connect');
+    Route::get('/stripe/connect/callback', [App\Http\Controllers\StripeConnectController::class, 'callback'])->name('stripe.connect.callback');
+
+    // Payments
+    Route::post('/tournament/{id}/join', [App\Http\Controllers\TournamentPaymentController::class, 'checkout'])->name('tournament.join');
+    Route::get('/payment/success', [App\Http\Controllers\TournamentPaymentController::class, 'success'])->name('payment.success');
+});
 
 require __DIR__.'/auth.php';

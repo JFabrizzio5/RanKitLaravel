@@ -18,9 +18,27 @@ class ProfileController extends Controller
      */
     public function edit(Request $request): Response
     {
+        $user = $request->user();
+
+        // Obtener torneos a los que se ha unido
+        $joinedTournaments = \Illuminate\Support\Facades\DB::table('tournament_registrations')
+            ->join('tournaments', 'tournament_registrations.tournament_id', '=', 'tournaments.id')
+            ->where('tournament_registrations.user_id', $user->id)
+            ->select(
+            'tournaments.id',
+            'tournaments.name',
+            'tournaments.slug',
+            'tournaments.access_code',
+            'tournament_registrations.has_paid',
+            'tournament_registrations.created_at'
+        )
+            ->orderByDesc('tournament_registrations.created_at')
+            ->get();
+
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => session('status'),
+            'joinedTournaments' => $joinedTournaments,
         ]);
     }
 

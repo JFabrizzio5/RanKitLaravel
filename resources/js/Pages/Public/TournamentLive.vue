@@ -48,6 +48,7 @@ interface LiveDataResponse {
 }
 
 // --- PROPS ---
+// --- PROPS ---
 const props = defineProps<{
   tournament?: TournamentInfo;
   sponsors?: any[];
@@ -56,7 +57,43 @@ const props = defineProps<{
   phpVersion?: string;
   canLogin?: boolean;
   canRegister?: boolean;
+  // Payment Props
+  accessCode?: string | null;
+  requiresPayment?: boolean;
+  hasPaid?: boolean;
+  isOwner?: boolean;
+  entryFee?: number;
 }>()
+
+// ... (existing code) ...
+
+const formatCurrency = (amount?: number) => {
+    if (!amount) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount / 100);
+}
+
+const handlePayment = () => {
+    if (!confirm(`¿Ir a pagar la entrada de ${formatCurrency(props.entryFee)}?`)) return;
+    const tournamentId = props.tournament?.id || tournamentData.value.id;
+    if (tournamentId) {
+        // Usamos useForm para hacer post (Inertia) o window.location si fuera externo,
+        // pero aquí definimos rutas inertia/laravel. Usaremos router.post de inertia
+        // import { router } from '@inertiajs/vue3' -> need to add import if not present,
+        // or just use form helper const form = useForm({}); form.post(...)
+        const form = useForm({});
+        form.post(route('tournament.join', tournamentId));
+    }
+}
+
+const copyCode = () => {
+    if (props.accessCode) {
+        copyToClipboard(props.accessCode);
+        alert('Código copiado: ' + props.accessCode);
+    }
+}
+// ...
+
+// --- END SCRIPTS ---
 
 // --- STATE DE APELACIÓN ---
 const showAppealModal = ref(false)

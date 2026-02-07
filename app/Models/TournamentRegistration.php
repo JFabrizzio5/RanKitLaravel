@@ -1,0 +1,34 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class TournamentRegistration extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'tournament_id',
+        'has_paid',
+        'payment_intent_id',
+        'amount_paid',
+        'currency'
+    ];
+
+    protected $casts = [
+        'has_paid' => 'boolean',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function tournament()
+    {
+        return $this->belongsTo(Tournament::class);
+    }
+}

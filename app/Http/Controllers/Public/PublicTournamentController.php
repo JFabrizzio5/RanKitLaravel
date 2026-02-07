@@ -22,18 +22,47 @@ class PublicTournamentController extends Controller
 
         if (!$tournament) abort(404);
 
-        // --- LÓGICA DE PRIVACIDAD ---
-        if (isset($tournament->is_private) && $tournament->is_private) {
-            $providedCode = $request->query('code'); 
-            
-            if ($providedCode !== $tournament->access_code) {
-                return Inertia::render('Public/RestrictedAccess', [
-                    'tournamentName' => $tournament->name,
-                    'slug' => $tournament->slug ?? $tournament->id,
-                    'tournamentId' => $tournament->id
-                ]);
+        // --- LÓGICA DE PRIVACIDAD & PAGOS ---
+        $user = $request->user();
+        $isOwner = $user && ($user->id === $tournament->user_id || $user->role === 'admin' || $this->isJangel($user));
+        
+        $requiresPayment = false;
+        $hasPaid = false;
+
+        // 1. Check Entry Fee
+        if ($tournament->entry_fee > 0) {
+            $requiresPayment = true;
+            if ($user) {
+                $registration = DB::table('tournament_registrations')
+                    ->where('user_id', $user->id)
+                    ->where('tournament_id', $tournament->id)
+                    ->where('has_paid', true)
+                    ->first();
+                
+                if ($registration) $hasPaid = true;
             }
         }
+
+        // 2. Access Code Visibility
+        $showCode = false;
+        if ($isOwner) {
+            $showCode = true;
+        } elseif ($requiresPayment && $hasPaid) {
+            $showCode = true;
+        } elseif (!$requiresPayment && !$tournament->is_private) {
+            // Free & Public
+            $showCode = true; 
+        } elseif (!$requiresPayment && $tournament->is_private) {
+            // Free & Private -> Check URL param
+             $providedCode = $request->query('code');
+             if ($providedCode === $tournament->access_code) $showCode = true;
+        }
+
+        // Hide code if not allowed
+        if (!$showCode) {
+            $tournament->access_code = null; 
+        }
+        
         // -----------------------------
 
         $matchesProcessed = DB::table('tournament_matches')
@@ -46,7 +75,11 @@ class PublicTournamentController extends Controller
 
         return Inertia::render('Public/TournamentLive', [
             'tournament' => $tournament,
-            'accessCode' => $request->query('code')
+            'accessCode' => $showCode ? ($tournament->access_code ?? 'CODE_HIDDEN') : null,
+            'requiresPayment' => $requiresPayment,
+            'hasPaid' => $hasPaid,
+            'isOwner' => $isOwner,
+            'entryFee' => $tournament->entry_fee
         ]);
     }
 
@@ -213,5 +246,11 @@ class PublicTournamentController extends Controller
             ->orderByDesc($orderByCol)
             ->orderByDesc($secondaryOrder)
             ->get();
+    }
+    private function isJangel($user) {
+        if (!$user) return false;
+        return in_array($user->email, [
+            'jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com', 'jos5dev@gmail.com'
+        ]);
     }
 }

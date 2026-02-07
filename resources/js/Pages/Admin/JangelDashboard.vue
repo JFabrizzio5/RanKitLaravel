@@ -165,7 +165,7 @@ const formCreateTournament = useForm({
 });
 
 // Estados UI
-const activeTab = ref<'codes' | 'widget' | 'matches'>('codes');
+const activeTab = ref<'codes' | 'widget' | 'matches'>('matches');
 const showMatchModal = ref(false);
 const showAppealModal = ref(false); 
 const showSettingsModal = ref(false);
