@@ -131,7 +131,8 @@ class PublicTournamentController extends Controller
                 'progress' => "Partida $matchesProcessed / {$expected}",
                 'twitch_channel' => $tournament->twitch_channel ?? null,
                 // Agregamos esto para poder mostrar la tabla de puntos en el frontend
-                'scoring_format' => $tournament->scoring_format ?? null 
+                'scoring_format' => $tournament->scoring_format ?? null,
+                'bracket_data' => $tournament->bracket_data ?? null 
             ],
             'matches' => $matchesList,
             'ranking' => $ranking
@@ -239,6 +240,21 @@ class PublicTournamentController extends Controller
             );
 
         if ($matchId) $query->where('tournament_matches.id', $matchId);
+        elseif ($mode !== 'all') $query->where('tournament_matches.game_mode', $mode);
+
+        return $query
+            ->groupBy('player_name')
+            ->orderByDesc($orderByCol)
+            ->orderByDesc($secondaryOrder)
+            ->get();
+    }
+    private function isJangel($user) {
+        if (!$user) return false;
+        return in_array($user->email, [
+            'jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com', 'jos5dev@gmail.com'
+        ]);
+    }
+}       if ($matchId) $query->where('tournament_matches.id', $matchId);
         elseif ($mode !== 'all') $query->where('tournament_matches.game_mode', $mode);
 
         return $query

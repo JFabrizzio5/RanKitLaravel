@@ -116,6 +116,7 @@ Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublic
 // 2. Widgets OBS Nuevos
 Route::get('/widget/obs/global/{id}', [PublicTournamentController::class, 'widgetGlobal'])->name('widget.obs.global');
 Route::get('/widget/obs/player/{id}/{playerName}', [PublicTournamentController::class, 'widgetPlayer'])->name('widget.obs.player');
+Route::get('/widget/obs/bracket/{id}', [PublicTournamentController::class, 'widgetBracket'])->name('widget.obs.bracket');
 Route::get('/api/widget/{id}/stats', [PublicTournamentController::class, 'getWidgetStats'])->name('api.widget.stats');
 
 
