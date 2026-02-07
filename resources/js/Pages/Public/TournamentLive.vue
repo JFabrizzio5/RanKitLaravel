@@ -39,6 +39,7 @@ interface TournamentInfo {
   rules?: string;
   prizes?: string;
   scoring_format?: any; // Puede ser string JSON u objeto
+  bracket_data?: any; // Brackets
 }
 
 interface LiveDataResponse {
@@ -275,6 +276,19 @@ const parsedScoring = computed(() => {
     return raw;
 })
 
+const parsedBracket = computed(() => {
+    let raw = tournamentData.value.bracket_data;
+    if (!raw) return null;
+    if (typeof raw === 'string') {
+        try { return JSON.parse(raw); } catch { return null; }
+    }
+    return raw;
+})
+
+const bracketRounds = computed(() => {
+    return parsedBracket.value?.rounds || [];
+})
+
 // --- SISTEMA DE REFERIDOS ORIGINAL ---
 const me = user 
 const showInviteModal = ref(false)
@@ -452,7 +466,7 @@ onUnmounted(() => {
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
         <button
-          v-for="tab in ['resultados', 'comunidad', 'reglas', 'premios']"
+          v-for="tab in ['resultados', 'comunidad', 'reglas', 'premios', ...(parsedBracket ? ['brackets'] : [])]"
           :key="tab"
           @click="switchTab(tab)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
@@ -462,6 +476,7 @@ onUnmounted(() => {
           <i v-if="tab === 'comunidad'" class="transition ph ph-users group-hover:text-neon"></i>
           <i v-if="tab === 'reglas'" class="transition ph ph-book-open group-hover:text-neon"></i>
           <i v-if="tab === 'premios'" class="transition ph ph-trophy group-hover:text-neon"></i>
+          <i v-if="tab === 'brackets'" class="transition ph ph-tree-structure group-hover:text-neon"></i>
           {{ tab }}
         </button>
       </div>
@@ -654,6 +669,57 @@ onUnmounted(() => {
                  {{ tournamentData.prizes || 'Los premios se anunciarán próximamente.' }}
              </div>
          </div>
+      </div>
+
+      <!-- BRACKETS TAB -->
+      <div v-show="activeTab === 'brackets' && parsedBracket" class="py-8 animate-fade-in">
+          <div class="brutal-card bg-white dark:bg-[#0a0a0a] p-8 max-w-7xl mx-auto overflow-x-auto">
+              <div class="flex items-center gap-3 mb-6 sticky left-0">
+                  <div class="w-10 h-10 flex items-center justify-center bg-[var(--rankit-neon)] text-white rounded font-bold">
+                      <i class="text-xl ph-bold ph-tree-structure"></i>
+                  </div>
+                  <h2 class="text-2xl font-black uppercase font-display">Bracket del Torneo</h2>
+              </div>
+
+              <!-- BRACKET TREE -->
+              <div class="flex gap-8 pb-4 min-w-max">
+                  <div v-for="round in bracketRounds" :key="round.name" class="flex flex-col gap-4 min-w-[200px]">
+                      <div class="text-xs font-bold uppercase text-center bg-gray-100 dark:bg-white/5 py-2 rounded mb-2 text-[var(--rankit-neon)] tracking-widest border-b-2 border-[var(--rankit-neon)]">
+                          {{ round.name }}
+                      </div>
+                      <div class="flex flex-col justify-around h-full gap-4"> 
+                        <!-- Nota: justify-around funciona si la altura es fija, en bracket dinamico a veces se usa gap + espaciadores.
+                             Para simplicidad, usaremos gap uniforme por ahora. -->
+                          <div v-for="match in round.matches" :key="match.id" 
+                               class="relative bg-gray-50 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded p-3 transition hover:border-[var(--rankit-neon)] group">
+                              
+                              <!-- Connector Lines (Visual enhancement logic would go here, skipping for basic CSS flex) -->
+                              
+                              <div class="flex justify-between items-center mb-2 border-b border-dashed border-gray-200 dark:border-white/5 pb-1">
+                                  <span class="text-[9px] font-mono text-gray-400">{{ match.id }}</span>
+                                  <span v-if="match.winner" class="text-[9px] font-bold text-green-500">FINALIZADO</span>
+                                  <span v-else class="text-[9px] font-bold text-yellow-500 animate-pulse">PENDIENTE</span>
+                              </div>
+
+                              <div class="flex flex-col gap-2">
+                                  <!-- P1 -->
+                                  <div class="flex justify-between items-center p-1 rounded transition"
+                                       :class="match.winner === match.p1 ? 'bg-[var(--rankit-neon)]/10 text-[var(--rankit-neon)] font-bold' : 'text-gray-600 dark:text-gray-300'">
+                                      <span class="truncate max-w-[120px] text-xs">{{ match.p1 }}</span>
+                                      <span class="font-mono text-xs">{{ match.score1 || '-' }}</span>
+                                  </div>
+                                  <!-- P2 -->
+                                  <div class="flex justify-between items-center p-1 rounded transition"
+                                       :class="match.winner === match.p2 ? 'bg-[var(--rankit-neon)]/10 text-[var(--rankit-neon)] font-bold' : 'text-gray-600 dark:text-gray-300'">
+                                      <span class="truncate max-w-[120px] text-xs">{{ match.p2 }}</span>
+                                      <span class="font-mono text-xs">{{ match.score2 || '-' }}</span>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
       </div>
 
     </main>
