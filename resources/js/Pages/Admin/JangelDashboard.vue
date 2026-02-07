@@ -161,7 +161,11 @@ const formCreateTournament = useForm({
     name: '',
     twitch_channel: '',
     is_private: false,
-    access_code: ''
+    access_code: '',
+    image: null as File | null,
+    entry_fee: 0,
+    has_prizes: false,
+    game_type: 'fortnite'
 });
 
 // Estados UI
@@ -173,6 +177,99 @@ const showEditMatchModal = ref(false);
 const showCreateModal = ref(false); 
 const showManualAdjustModal = ref(false);
 const uploadProgress = ref(0);
+
+// --- GESTIÓN DE BRACKETS (NUEVO) ---
+const showBracketModal = ref(false);
+const bracketGeneratorText = ref('');
+const bracketRounds = ref<any[]>([]);
+
+// Helper to shuffle array
+const shuffleArray = (array: any[]) => {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+};
+
+// Interactive Bracket State
+const showBracketMatchModal = ref(false);
+const editingMatch = ref<any>(null);
+const editingRoundIdx = ref(-1);
+const editingMatchIdx = ref(-1);
+
+const openBracketMatchModal = (match: any, rIdx: number, mIdx: number) => {
+    // Deep copy to avoid mutating while editing
+    editingMatch.value = JSON.parse(JSON.stringify(match));
+    editingRoundIdx.value = rIdx;
+    editingMatchIdx.value = mIdx;
+    showBracketMatchModal.value = true;
+};
+
+const saveBracketMatch = () => {
+    if (editingRoundIdx.value === -1 || editingMatchIdx.value === -1) return;
+
+    const round = bracketRounds.value[editingRoundIdx.value];
+    const match = round.matches[editingMatchIdx.value];
+
+    // Update match data
+    match.score1 = editingMatch.value.score1;
+    match.score2 = editingMatch.value.score2;
+    match.winner = editingMatch.value.winner;
+
+    // Auto-advance Logic
+    if (match.winner) {
+        const nextRoundIdx = editingRoundIdx.value + 1;
+        if (nextRoundIdx < bracketRounds.value.length) {
+            const nextRound = bracketRounds.value[nextRoundIdx];
+            const nextMatchIdx = Math.floor(editingMatchIdx.value / 2);
+            
+            if (nextMatchIdx < nextRound.matches.length) {
+                 const nextMatch = nextRound.matches[nextMatchIdx];
+                 const isP1 = (editingMatchIdx.value % 2 === 0);
+                 
+                 // Place winner in next match slot
+                 if (isP1) nextMatch.p1 = match.winner;
+                 else nextMatch.p2 = match.winner;
+                 
+                 // If the *other* slot in next match was occupied by previous winner/loser of this match (re-editing), 
+                 // it might stay? Yes, that's desired behavior. 
+                 // If re-editing and changing winner, it overwrites. Correct.
+            }
+        }
+    }
+
+    saveBracket(); 
+    showBracketMatchModal.value = false;
+};
+
+
+const usersTabSearch = ref('');
+const usersList = ref<any[]>([]);
+const loadingUsers = ref(false);
+
+const searchUsers = async () => {
+    if (usersTabSearch.value.length < 3) return;
+    loadingUsers.value = true;
+    try {
+        const res = await axios.get(route('jangel.users.search', { query: usersTabSearch.value }));
+        usersList.value = res.data;
+    } catch (e) {
+        console.error(e);
+    } finally {
+        loadingUsers.value = false;
+    }
+};
+
+const assignRole = async (userId: number, role: string) => {
+    if (!confirm(`¿Asignar rol ${role} a este usuario?`)) return;
+    try {
+        await router.post(route('jangel.users.assign'), { user_id: userId, role });
+        searchUsers(); // Refresh list
+    } catch (e) {
+        alert("Error al asignar rol.");
+    }
+};
 
 // --- INICIALIZACIÓN ---
 const initSlotInputs = () => {
@@ -217,6 +314,28 @@ watch(selectedTournamentId, () => {
         fetchLeaderboard(selectedTournament.value);
     }
 });
+
+watch(() => selectedTournament.value, (newVal) => {
+    if (newVal && newVal.bracket_data) {
+        try {
+            // @ts-ignore
+            const data = typeof newVal.bracket_data === 'string' 
+                ? JSON.parse(newVal.bracket_data) 
+                : newVal.bracket_data;
+            
+            if (data && data.rounds) {
+                bracketRounds.value = data.rounds;
+            } else {
+                bracketRounds.value = [];
+            }
+        } catch (e) {
+            console.error("Error parsing bracket data", e);
+            bracketRounds.value = [];
+        }
+    } else {
+        bracketRounds.value = [];
+    }
+}, { immediate: true });
 
 // --- ACCIONES DE DATOS ---
 
@@ -476,6 +595,148 @@ const submitReplay = () => {
     });
 };
 
+// --- GESTIÓN DE RESULTADOS MANUALES (NUEVO) ---
+const showManualResultModal = ref(false);
+const formManualResult = useForm({
+    match_id: null as number | null,
+    player_name: '',
+    team_name: '',
+    kills: 0,
+    placement: 1,
+    points: 0
+});
+
+const openManualResultModal = (matchId: number) => {
+    formManualResult.reset();
+    formManualResult.match_id = matchId;
+    showManualResultModal.value = true;
+};
+
+const submitManualResult = () => {
+    if (!selectedTournament.value) return;
+    formManualResult.post(route('jangel.match.manual_result', selectedTournament.value.id), {
+        onSuccess: () => {
+             // Keep modal open for rapid entry? Or close? Let's keep open and reset player fields
+             formManualResult.player_name = '';
+             formManualResult.kills = 0;
+             formManualResult.placement = (formManualResult.placement || 0) + 1; // Auto increment rank
+             // formManualResult.points = 0; 
+             alert("✅ Resultado Agregado");
+             // Refresh leaderboard
+             fetchLeaderboard(selectedTournament.value!, selectedMatchId.value);
+        },
+        onError: (err) => alert("Error: " + JSON.stringify(err))
+    });
+};
+
+
+
+const triggerBracketGeneration = () => {
+    const lines = bracketGeneratorText.value.split('\n').map(l => l.trim()).filter(l => l);
+    if (lines.length < 2) {
+        alert("Necesitas al menos 2 participantes.");
+        return;
+    }
+
+    // Shuffle participants for randomness
+    const participants = shuffleArray([...lines]);
+
+    // Next power of 2
+    let size = 2;
+    while (size < participants.length) size *= 2;
+
+    // Fill with BYEs if needed (or just placeholders? Let's use "BYE")
+    while (participants.length < size) {
+        participants.push('BYE');
+    }
+
+    const rounds = [];
+    let currentRoundParticipants = participants;
+    let roundNum = 1;
+
+    while (currentRoundParticipants.length > 1) {
+        const matches = [];
+        for (let i = 0; i < currentRoundParticipants.length; i += 2) {
+            const p1 = currentRoundParticipants[i];
+            const p2 = currentRoundParticipants[i + 1];
+            
+            // Auto-advance if BYE
+            let winner = null;
+            if (p2 === 'BYE') winner = p1;
+            if (p1 === 'BYE') winner = p2; // Should not happen with standard seeding but safety
+
+            matches.push({
+                id: `R${roundNum}_M${matches.length + 1}`,
+                p1: p1,
+                p2: p2,
+                score1: 0,
+                score2: 0,
+                winner: winner // If BYE, we set winner immediately
+            });
+        }
+        
+        rounds.push({
+            name: `Round ${roundNum}`,
+            matches: matches
+        });
+
+        // Prepare next round (winners)
+        // For generation, we just create placeholders for next round based on current matches
+        // Actually, we usually only generate the FIRST round fully populated, and subsequent rounds empty.
+        // But for visual purposes, let's generate the structure.
+        
+        const nextRoundSize = currentRoundParticipants.length / 2;
+        currentRoundParticipants = new Array(nextRoundSize).fill('TBD'); 
+        
+        // If we want to intelligently link matches, we can do that later.
+        // For now: Simple List of Rounds.
+        
+        roundNum++;
+    }
+
+    bracketRounds.value = rounds;
+    saveBracket();
+};
+
+const saveBracket = () => {
+    if (!selectedTournament.value) return;
+
+    const form = useForm({
+        bracket_data: {
+            format: 'single_elimination',
+            rounds: bracketRounds.value
+        }
+    });
+
+    form.put(route('jangel.tournament.update', selectedTournament.value.id), {
+        onSuccess: () => alert("Bracket Generado y Guardado"),
+        onError: (e) => alert("Error al guardar bracket: " + JSON.stringify(e))
+    });
+};
+
+const openBracketModal = () => {
+    if (!selectedTournament.value) return;
+    if (selectedTournament.value.bracket_data) {
+        try {
+            // @ts-ignore
+            const data = typeof selectedTournament.value.bracket_data === 'string' 
+                ? JSON.parse(selectedTournament.value.bracket_data) 
+                : selectedTournament.value.bracket_data;
+            
+            if (data && data.rounds) {
+                bracketRounds.value = data.rounds;
+            }
+        } catch (e) {
+            console.error("Error parsing bracket data", e);
+        }
+    }
+    showBracketModal.value = true;
+};
+
+// ... (Rest of logic will be implemented in a dedicated component if complex, 
+// for now keeping it simple or just Manual Match Entry is what user prioritized)
+
+
 // --- HELPERS ---
 const formatDec = (num: number | string) => {
     const n = typeof num === 'string' ? parseFloat(num) : num;
@@ -629,10 +890,15 @@ const copyInviteLink = () => {
 
           <!-- Tabs -->
           <div class="flex border-b border-gray-200 dark:border-white/10">
-            <button v-for="tab in ['codes', 'widget', 'matches']" :key="tab" @click="activeTab = tab as any"
+            <button v-for="tab in ['codes', 'widget', 'matches', 'brackets']" :key="tab" @click="activeTab = tab as any"
               class="flex-1 py-3 text-[10px] font-bold uppercase tracking-wider text-center transition"
               :class="activeTab === tab ? 'bg-[var(--rankit-neon)] text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'">
               {{ tab }}
+            </button>
+            <button v-if="isJangel" @click="activeTab = 'users' as any"
+                class="flex-1 py-3 text-[10px] font-bold uppercase tracking-wider text-center transition"
+                :class="activeTab === 'users' ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'">
+                USERS
             </button>
           </div>
 
@@ -707,6 +973,9 @@ const copyInviteLink = () => {
                 </div>
                 
                 <div class="flex gap-2">
+                    <button @click.stop="openManualResultModal(match.id)" class="p-1 hover:text-green-500" title="Gestionar Resultados (Manual)">
+                        <i class="ph ph-list-plus"></i>
+                    </button>
                     <button @click.stop="openAppealModal(match.id)" class="p-1 text-gray-400 hover:text-yellow-400" title="Apelar (Auto)">
                         <i class="ph ph-gavel"></i>
                     </button>
@@ -722,12 +991,127 @@ const copyInviteLink = () => {
                 </div>
               </div>
           </div>
+
+          <!-- TAB: USERS -->
+          <div v-if="activeTab === 'users'" class="p-4 space-y-4 animate-fade-in">
+              <div class="relative">
+                  <input v-model="usersTabSearch" @keyup.enter="searchUsers" type="text" placeholder="Buscar por email o nombre..." 
+                         class="w-full text-xs font-bold bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 outline-none" />
+                  <button @click="searchUsers" class="absolute right-2 top-1.5 text-gray-400 hover:text-[var(--rankit-neon)]">
+                      <i class="ph-bold ph-magnifying-glass"></i>
+                  </button>
+              </div>
+              
+              <div class="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                  <div v-if="loadingUsers" class="text-center py-4"><i class="ph-bold ph-spinner animate-spin"></i></div>
+                  <div v-else-if="usersList.length === 0" class="text-center text-[10px] text-gray-500 py-4">Sin resultados.</div>
+                  
+                  <div v-for="u in usersList" :key="u.id" class="p-2 border border-gray-200 dark:border-white/10 rounded flex flex-col gap-2">
+                      <div class="flex justify-between items-start">
+                          <div>
+                              <div class="text-xs font-bold">{{ u.name }}</div>
+                              <div class="text-[10px] text-gray-500">{{ u.email }}</div>
+                          </div>
+                          <span class="text-[9px] px-1 rounded uppercase font-bold" :class="u.role==='admin'?'bg-red-500 text-white':(u.role==='organizer'?'bg-blue-500 text-white':'bg-gray-200 text-gray-500')">
+                              {{ u.role }}
+                          </span>
+                      </div>
+                      <div class="flex gap-1">
+                          <button @click="assignRole(u.id, 'admin')" class="flex-1 py-1 text-[9px] border border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition rounded uppercase font-bold">Admin</button>
+                          <button @click="assignRole(u.id, 'organizer')" class="flex-1 py-1 text-[9px] border border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white transition rounded uppercase font-bold">Org</button>
+                          <button @click="assignRole(u.id, 'player')" class="flex-1 py-1 text-[9px] border border-gray-500 text-gray-500 hover:bg-gray-500 hover:text-white transition rounded uppercase font-bold">Player</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+
+          <!-- TAB: BRACKETS (NEW) -->
+          <div v-if="activeTab === 'brackets' && selectedTournament" class="p-4 space-y-4 animate-fade-in">
+              <div class="p-4 text-center border border-dashed rounded bg-gray-50 dark:bg-white/5 border-gray-300 dark:border-white/10">
+                  <div class="text-sm font-bold opacity-75">Generador de Brackets (BETA)</div>
+                  <p class="text-[10px] text-gray-500 mb-4">Pega los nombres de los participantes (uno por línea) para generar un bracket simple.</p>
+                  
+                  <textarea v-model="bracketGeneratorText" rows="6" class="w-full text-xs font-mono p-2 bg-white dark:bg-black border border-gray-200 dark:border-white/10 rounded mb-2" placeholder="Jugador 1&#10;Jugador 2&#10;..."></textarea>
+                  
+                  <button @click="triggerBracketGeneration" class="px-4 py-2 text-xs font-bold uppercase bg-black text-white dark:bg-white dark:text-black rounded hover:opacity-80">
+                      Generar Bracket
+                  </button>
+              </div>
+
+              <!-- Bracket Visualization -->
+              <div v-if="bracketRounds.length > 0" class="mt-4 space-y-4">
+                  <div v-for="(round, rIdx) in bracketRounds" :key="round.name" class="border border-gray-200 dark:border-white/10 p-2 rounded">
+                      <div class="text-xs font-bold uppercase mb-2 text-center bg-gray-100 dark:bg-white/5 py-1">{{ round.name }}</div>
+                      <div class="space-y-1">
+                          <div v-for="(match, mIdx) in round.matches" :key="match.id" 
+                               @click="openBracketMatchModal(match, rIdx, mIdx)"
+                               class="flex justify-between items-center text-[10px] bg-gray-50 dark:bg-black p-2 rounded border border-transparent hover:border-[var(--rankit-neon)] transition cursor-pointer">
+                              <span class="truncate max-w-[40%]" :class="{'text-[var(--rankit-neon)] font-bold': match.winner === match.p1, 'text-gray-500': match.winner && match.winner !== match.p1}">
+                                  {{ match.p1 }}
+                              </span>
+                              <div class="flex flex-col items-center">
+                                  <span class="text-gray-300 text-[8px]">VS</span>
+                                  <span v-if="match.score1 || match.score2" class="text-[8px] font-mono">{{ match.score1 }} - {{ match.score2 }}</span>
+                              </div>
+                              <span class="truncate max-w-[40%] text-right" :class="{'text-[var(--rankit-neon)] font-bold': match.winner === match.p2, 'text-gray-500': match.winner && match.winner !== match.p2}">
+                                  {{ match.p2 }}
+                              </span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
         </div>
       </aside>
 
       <!-- CENTER COLUMN -->
       <div class="space-y-6 lg:col-span-8">
         <!-- Header & Filters & Search -->
+
+
+
+    <!-- MODAL MANUAL RESULT -->
+    <Modal :show="showManualResultModal" @close="showManualResultModal = false">
+        <div class="p-6 brutal-card bg-white dark:bg-[#111]">
+            <h2 class="text-lg font-bold uppercase mb-4 text-[var(--rankit-neon)]">Agregar Resultado Manual</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre Jugador *</label>
+                    <input v-model="formManualResult.player_name" type="text" class="w-full p-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded text-sm text-black dark:text-white" placeholder="Ej: Ninja" />
+                </div>
+                
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre Equipo (Opcional)</label>
+                    <input v-model="formManualResult.team_name" type="text" class="w-full p-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded text-sm text-black dark:text-white" placeholder="Ej: Team Liquid" />
+                    <p class="text-[9px] text-gray-500 mt-1">Si pones el mismo nombre de equipo para varios jugadores, se agruparán.</p>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Top / Rank *</label>
+                        <input v-model="formManualResult.placement" type="number" class="w-full p-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded text-sm text-black dark:text-white" />
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Kills</label>
+                        <input v-model="formManualResult.kills" type="number" class="w-full p-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded text-sm text-black dark:text-white" />
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Puntos Totales (Override)</label>
+                        <input v-model="formManualResult.points" type="number" step="0.1" class="w-full p-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded text-sm text-black dark:text-white" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button @click="showManualResultModal = false" class="px-4 py-2 text-xs font-bold uppercase text-gray-500 hover:text-white transition">Cancelar</button>
+                <button @click="submitManualResult" class="px-6 py-2 text-xs font-bold uppercase bg-[var(--rankit-neon)] text-white hover:opacity-90 transition btn-skew">
+                    <span class="btn-content">Guardar</span>
+                </button>
+            </div>
+        </div>
+    </Modal>
         <div class="flex flex-col gap-4 pb-4 border-b border-gray-300 dark:border-gray-800">
           <div class="flex flex-col items-start justify-between md:flex-row md:items-center">
               <div>
@@ -853,6 +1237,32 @@ const copyInviteLink = () => {
                         <i class="ph-bold ph-twitch-logo text-[#9146FF]"></i>
                         <input v-model="formCreateTournament.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full p-0 text-sm bg-transparent border-none outline-none focus:ring-0" />
                     </div>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Imagen de Portada</label>
+                    <input type="file" @change="e => formCreateTournament.image = (e.target as HTMLInputElement).files?.[0] || null" class="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-bold file:uppercase file:bg-[var(--rankit-neon)] file:text-white hover:file:bg-black file:cursor-pointer file:transition cursor-pointer bg-gray-100 dark:bg-white/5 rounded" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Costo Entrada ($)</label>
+                        <input v-model="formCreateTournament.entry_fee" type="number" step="0.01" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" placeholder="0.00" />
+                    </div>
+                    <div>
+                         <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Juego</label>
+                         <select v-model="formCreateTournament.game_type" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none">
+                             <option value="fortnite">Fortnite</option>
+                             <option value="lol">League of Legends</option>
+                             <option value="valorant">Valorant</option>
+                             <option value="fifa">FIFA/EAFC</option>
+                         </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" v-model="formCreateTournament.has_prizes" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                     <span class="text-xs font-bold uppercase text-gray-500">¿Tiene Premios?</span>
                 </div>
 
                 <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
@@ -1111,6 +1521,64 @@ const copyInviteLink = () => {
           </div>
         </div>
       </div>
+    </Modal>
+    <!-- MODAL BRACKET MATCH -->
+    <Modal :show="showBracketMatchModal" @close="showBracketMatchModal = false">
+        <div class="p-6 brutal-card bg-white dark:bg-[#111]">
+            <h2 class="text-lg font-bold uppercase mb-4 text-[var(--rankit-neon)]">Editar Partida</h2>
+            
+            <div v-if="editingMatch" class="space-y-6">
+                <div class="flex justify-between items-center gap-4">
+                    <!-- Player 1 -->
+                    <div class="flex-1 text-center p-2 rounded border" 
+                         :class="editingMatch.winner === editingMatch.p1 ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/10' : 'border-gray-200 dark:border-white/10'">
+                        <div class="font-bold text-sm mb-2 truncate">{{ editingMatch.p1 }}</div>
+                        <input v-model.number="editingMatch.score1" type="number" 
+                               class="w-16 p-2 text-center text-lg font-bold bg-gray-100 dark:bg-black border border-gray-300 dark:border-gray-700 rounded outline-none focus:border-[var(--rankit-neon)]" />
+                    </div>
+
+                    <div class="font-bold text-xl opacity-50">VS</div>
+
+                     <!-- Player 2 -->
+                    <div class="flex-1 text-center p-2 rounded border"
+                         :class="editingMatch.winner === editingMatch.p2 ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/10' : 'border-gray-200 dark:border-white/10'">
+                        <div class="font-bold text-sm mb-2 truncate">{{ editingMatch.p2 }}</div>
+                        <input v-model.number="editingMatch.score2" type="number" 
+                               class="w-16 p-2 text-center text-lg font-bold bg-gray-100 dark:bg-black border border-gray-300 dark:border-gray-700 rounded outline-none focus:border-[var(--rankit-neon)]" />
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold uppercase mb-2 text-gray-500">Seleccionar Ganador (Avanza Siguiente Ronda)</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button @click="editingMatch.winner = null" 
+                                class="p-2 text-xs font-bold uppercase border rounded transition"
+                                :class="!editingMatch.winner ? 'bg-gray-200 dark:bg-white/20' : 'border-gray-200 dark:border-white/10'">
+                            Pendiente
+                        </button>
+                        <button @click="editingMatch.winner = editingMatch.p1" 
+                                class="p-2 text-xs font-bold uppercase border rounded transition truncate"
+                                :class="editingMatch.winner === editingMatch.p1 ? 'bg-[var(--rankit-neon)] text-white border-[var(--rankit-neon)]' : 'border-gray-200 dark:border-white/10'">
+                            {{ editingMatch.p1 }}
+                        </button>
+                        <button @click="editingMatch.winner = editingMatch.p2" 
+                                class="p-2 text-xs font-bold uppercase border rounded transition truncate"
+                                :class="editingMatch.winner === editingMatch.p2 ? 'bg-[var(--rankit-neon)] text-white border-[var(--rankit-neon)]' : 'border-gray-200 dark:border-white/10'">
+                            {{ editingMatch.p2 }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-4 border-t border-gray-100 dark:border-white/5">
+                    <button @click="showBracketMatchModal = false" class="px-4 py-2 text-xs font-bold uppercase border border-gray-200 dark:border-white/10 rounded hover:bg-gray-50 dark:hover:bg-white/5">
+                        Cancelar
+                    </button>
+                    <button @click="saveBracketMatch" class="px-6 py-2 text-xs font-bold uppercase bg-[var(--rankit-neon)] text-white rounded hover:opacity-90 btn-skew">
+                        <span class="btn-content">Guardar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </Modal>
   </div>
 </template>

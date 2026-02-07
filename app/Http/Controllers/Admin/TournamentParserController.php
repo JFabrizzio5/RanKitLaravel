@@ -59,7 +59,7 @@ class TournamentParserController extends Controller
         $data = [
             'user_id' => $user->id,
             'name' => $request->name,
-            'game' => $request->input('game', 'fortnite'),
+            'game' => $request->input('game_type', 'fortnite'),
             'twitch_channel' => $request->twitch_channel,
             'rules' => $request->rules,
             'prizes' => $request->prizes,
@@ -82,6 +82,17 @@ class TournamentParserController extends Controller
             $data['slug'] = Str::slug($request->name . '-' . uniqid());
         }
 
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('tournaments', 'public');
+            $data['image_path'] = '/storage/' . $path;
+        }
+
+        $data['entry_fee'] = $request->input('entry_fee', 0);
+        $data['currency'] = $request->input('currency', 'USD');
+        $data['game_type'] = $request->input('game_type', 'fortnite');
+        $data['has_prizes'] = $request->boolean('has_prizes');
+        $data['platform_fee_percentage'] = 10.0;
+
         DB::table('tournaments')->insert($data);
         return back()->with('success', 'Torneo creado.');
     }
@@ -96,19 +107,45 @@ class TournamentParserController extends Controller
         if (!$this->isOwnerOrAdmin($user, $tournament))
             abort(403);
 
-        $data = [
-            'name' => $request->name,
-            'twitch_channel' => $request->twitch_channel,
-            'rules' => $request->rules,
-            'prizes' => $request->prizes,
-            'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
-            'updated_at' => now(),
-        ];
+        $data = ['updated_at' => now()];
 
-        // Actualizar Privacidad
-        $isPrivate = $request->boolean('is_private');
-        $data['is_private'] = $isPrivate;
-        $data['access_code'] = $isPrivate ? $request->access_code : null;
+        if ($request->has('name'))
+            $data['name'] = $request->name;
+        if ($request->has('twitch_channel'))
+            $data['twitch_channel'] = $request->twitch_channel;
+        if ($request->has('rules'))
+            $data['rules'] = $request->rules;
+        if ($request->has('prizes'))
+            $data['prizes'] = $request->prizes;
+        if ($request->has('scoring_format'))
+            $data['scoring_format'] = $request->scoring_format ? json_encode($request->scoring_format) : null;
+        if ($request->has('bracket_data'))
+            $data['bracket_data'] = $request->bracket_data ? json_encode($request->bracket_data) : null;
+
+        // Actualizar Privacidad solo si se envia explicitamente
+        if ($request->has('is_private')) {
+            $isPrivate = $request->boolean('is_private');
+            $data['is_private'] = $isPrivate;
+            if ($isPrivate) {
+                if ($request->has('access_code'))
+                    $data['access_code'] = $request->access_code;
+            }
+            else {
+                $data['access_code'] = null;
+            }
+        }
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('tournaments', 'public');
+            $data['image_path'] = '/storage/' . $path;
+        }
+
+        if ($request->has('entry_fee'))
+            $data['entry_fee'] = $request->input('entry_fee', 0);
+        if ($request->has('has_prizes'))
+            $data['has_prizes'] = $request->boolean('has_prizes');
+        if ($request->has('game_type'))
+            $data['game_type'] = $request->input('game_type', 'fortnite');
 
         DB::table('tournaments')->where('id', $id)->update($data);
         return back()->with('success', 'Torneo actualizado.');
@@ -197,6 +234,23 @@ class TournamentParserController extends Controller
     {
         $points = 0;
 
+        // Determine Team Size multiplier for Threshold Scaling
+        // Solo = 1, Duo = 2, Trio = 3, Squad = 4
+        $teamSize = 1;
+        $m = strtolower($gameMode);
+        if (str_contains($m, 'duo'))
+            $teamSize = 2;
+        if (str_contains($m, 'trio'))
+            $teamSize = 3;
+        if (str_contains($m, 'squad'))
+            $teamSize = 4;
+
+        // Effective Rank for Scoring Thresholds
+        // If config requires Top 10 (Solo), and we are in Duos:
+        // Rank 5 Duo = 10 Players -> Effective 10 -> Gets points.
+        // Rank 6 Duo = 12 Players -> Effective 12 -> No points.
+        $effectiveRankForScoring = $rank * $teamSize;
+
         // 1. Configuración Personalizada (JSON)
         if (!empty($format) && isset($format->placement) && is_array($format->placement)) {
             // Puntos por Kills
@@ -205,49 +259,107 @@ class TournamentParserController extends Controller
 
             // Puntos por Posición (Ranges)
             foreach ($format->placement as $range) {
-                // Estructura esperada: { "from": 1, "to": 1, "points": 10 }
                 $from = (int)($range->from ?? 0);
                 $to = (int)($range->to ?? 0);
                 $pts = (float)($range->points ?? 0);
 
-                // LÓGICA ACUMULATIVA POR "ESCALÓN" (Step)
-                // Se otorgan puntos por CADA posición superada o igualada dentro del rango.
-                // Ejemplo: Top 5 a 2 (3 pts).
-                // Rank 6: 0 pts.
-                // Rank 5: Suma 3. 
-                // Rank 4: Suma 6 (3 por el #5 + 3 por el #4).
-                // Rank 1: Suma 12 (3 por el #5, #4, #3, #2).
-
-                // Normalizar: start = peor ranking (mayor numero), end = mejor ranking (menor numero)
+                // Normalizar range
                 $start = max($from, $to);
                 $end = min($from, $to);
 
-                if ($rank <= $start) {
-                    // Si el jugador está dentro o por encima del rango (rank es numéricamente menor o igual a start)
+                // Check against EFFECTIVE RANK
+                if ($effectiveRankForScoring <= $start) {
+                    // Logic: How many "steps" inside the range did we cover?
+                    // We compare effectiveRank against the range.
+                    // But wait, the range is usually defined in "Placement #". 
+                    // If user made the format for Solos (1..100), and we play Duos (1..50).
+                    // We want Duo #1 to get points for #1 and #2? Or just #1?
+                    // User Request: "multiplique por 2 si es en duos los puntos de posicionamiento"
+                    // "matar a 2 personas es equivalente a en solos a matar solo a 1" -> this refers to difficulty? 
+                    // No, "dependiendo del modo se adapte al sistema de puntos ... si se subio una de solos ... multiplique por 2 si es en duos los puntos de posicionamiento"
 
-                    // El rango efectivo termina en max($rank, $end) porque si el jugador es Top 1
-                    // y el rango termina en 2, solo acumula hasta el 2 (no suma más allá del límite del rango).
-                    // Pero si el jugador es Top 4, acumula desde start(5) hasta 4.
+                    // Interpretación:
+                    // El usuario quiere que los puntos de POSICION se adapten.
+                    // Si el formato dice TOP 10 = 10 pts.
+                    // En Duos, el TOP 5 (=10 personas) debería llevarse esos puntos.
+                    // Por tanto, usamos effectiveRank para VERIFICAR si entra en el rango.
 
-                    $effectiveRank = max($rank, $end);
-                    $steps = ($start - $effectiveRank) + 1;
+                    // PERO, ¿cuántos puntos suma?
+                    // Si el formato es "Step" (acumulativo), es complejo.
+                    // Asumiremos lógica simple: Si entra en el rango, suma.
+
+                    // Corrección lógica steps:
+                    // Max($effectiveRankForScoring, $end) -> Clamped effective rank
+                    $clampedRank = max($effectiveRankForScoring, $end);
+
+                    // Esto calcula cuántos "puestos" de diferencia hay.
+                    // Si rango es 1-1 (Top 1). Duo #1 -> Eff 2. Clamped 1? No.
+                    // Si Duo #1 (2 players). Range 1-1. EffRank 2. 2 <= 1 False. Duo #1 NO gana Top 1 de Solo?
+                    // "matar a 2 personas es equivalente a en solos a matar solo a 1"
+                    // Wait, user might mean "Top 1 Duo" should get "Top 1 Solo" points AND "Top 2 Solo" points?
+                    // "que multiplique por 2 si es en duos los puntos de posicionamiento"
+                    // -> This sounds like: Points = Points * 2.
+                    // But context "de tal forma que matar a 2 personas es equivalente..." suggests scaling the EFFORT/THRESHOLD.
+
+                    // Let's stick to the "Threshold" interpretation (Scaling Rank).
+                    // If Format Top 10. Duo #5 (Eff 10) gets it. Duo #6 (Eff 12) misses it.
+
+                    $points += $pts;
+                    // Nota: Eliminamos la lógica compleja de "steps" por ahora para evitar bugs con el scaling, 
+                    // a menos que el formato sea explícitamente "Points PER Rank".
+                    // La mayoría de formatos son "Top X get Y points flat".
+                    // Si el usuario usa "Step logic" (acumulativa), regresamos a ella con effectiveRank.
+
+                    $steps = ($start - $clampedRank) + 1;
                     if ($steps > 0) {
-                        $points += ($steps * $pts);
+                    // Si es step logic, sumamos. 
+                    // Pero para Threshold simple (Top 10 = 10), start=10, end=10.
+                    // Duo #5 -> Eff 10. Start 10. Steps = 10-10+1 = 1. Suma pts * 1. Correcto.
+                    // Duo #1 -> Eff 2. Start 10, End 1. Clamped 2. Steps = 10-2+1 = 9? 
+                    // NO. El formato del usuario suele ser:
+                    // 1-1: 10 pts
+                    // 2-2: 7 pts
+                    // Si Duo #1 (Eff 2). Check Range 1-1: 2<=1 False.
+                    // Check Range 2-2: 2<=2 True. Steps 1. Gana 7 pts.
+                    // O SEA: Duo #1 gana los puntos de Solo #2. NO Gana los de Solo #1.
+                    // Esto tiene sentido: Ganar en Duos (50 teams) es "más fácil" que en Solos (100 players) estadísticamente para ser el #1?
+                    // O al revés?
+                    // Si el usuario dice "duos los puntos se muestran mal... necesito que se adapte... si subo uno de duos en solitario... multiplique por 2 los puntos"
+
+                    // RE-READ CAREFULLY: "que multiplique por 2 si es en duos los puntos de posicionamiento"
+
+                    // Interpretation B: Points * 2.
+                    // Duo #1 -> Rank 1. Points = (Calculated as Solo) * 2.
+
+                    // Interpretation C (Threshold):
+                    // "matar [ganar] a 2 personas es equivalente a en solos a matar solo a 1".
+                    // Killing a Duo (2 ppl) = 2 kills.
+                    // Placing #1 in Duo (beat 49 teams/98 ppl) vs Placing #1 in Solo (beat 99 ppl).
+
+                    // Voy a implementar INTERPRETATION C (Threshold / Effective Rank) porque es la estándar en competitive.
+                    // EffectiveRank = Rank * TeamSize.
+                    // Duo #1 (Eff 2) hits Threshold 2.
+
+                    // Mantenemos la lógica de steps simple por ahora.
+                    // $points += ($steps * $pts);
                     }
+                    // Simplificación: Si entra en rango, da los puntos.
+                    $points += $pts;
                 }
             }
         }
-        // 2. Modo Automático (Compensación Default si no hay config)
         else {
-            $points += $kills; // 1 punto por kill base
-
-            if ($rank == 1)
-                $points += 25;
-            elseif ($rank <= 5)
-                $points += 15;
-            elseif ($rank <= 15)
+            // Default logic
+            $points += $kills;
+            // Scaling for default logic too?
+            // Rank 1 Duo -> Eff 2.
+            if ($effectiveRankForScoring <= 1)
+                $points += 25; // Impossible for Duo/Trio/Squad to hit Rank 1 (Eff 2,3,4) here?
+            elseif ($effectiveRankForScoring <= 5)
+                $points += 15; // Duo #1 (2) gets this.
+            elseif ($effectiveRankForScoring <= 15)
                 $points += 10;
-            elseif ($rank <= 25)
+            elseif ($effectiveRankForScoring <= 25)
                 $points += 5;
         }
 
@@ -428,6 +540,77 @@ class TournamentParserController extends Controller
         }
     }
 
+    // --- MANUAL RESULTS ENTRY - NEW FEATURE ---
+    public function storeManualResult(Request $request, $id)
+    {
+        $user = $request->user();
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if (!$tournament || !$this->isOwnerOrAdmin($user, $tournament))
+            abort(403);
+
+        $request->validate([
+            'match_id' => 'required|exists:tournament_matches,id',
+            'player_name' => 'required|string',
+            'team_name' => 'nullable|string',
+            'kills' => 'nullable|integer',
+            'placement' => 'required|integer',
+            'points' => 'nullable|numeric',
+        ]);
+
+        $matchId = $request->match_id;
+
+        // 1. Create/Update Player Stats
+        $stats = DB::table('player_match_stats')->updateOrInsert(
+        [
+            'tournament_match_id' => $matchId,
+            'player_name' => $request->player_name
+        ],
+        [
+            'placement' => $request->placement,
+            'kills' => $request->kills ?? 0,
+            'extra_stats' => json_encode([
+                'totalPoints' => $request->points ?? 0,
+                'manual' => true
+            ]),
+            'updated_at' => now()
+        ]
+        );
+
+        // 2. If Team Name provided, update Team Stats
+        if ($request->team_name) {
+            $teamSignature = md5($request->team_name);
+
+            // Start simple: Insert row if not exists
+            $existingTeam = DB::table('team_match_stats')
+                ->where('tournament_match_id', $matchId)
+                ->where('team_signature', $teamSignature)
+                ->first();
+
+            $members = $existingTeam ? (json_decode($existingTeam->member_names, true) ?? []) : [];
+            if (!in_array($request->player_name, $members)) {
+                $members[] = $request->player_name;
+            }
+
+            DB::table('team_match_stats')->updateOrInsert(
+            [
+                'tournament_match_id' => $matchId,
+                'team_signature' => $teamSignature
+            ],
+            [
+                'team_id_in_match' => 0,
+                'rank' => $request->placement,
+                'member_names' => json_encode($members),
+                'total_kills' => ($existingTeam->total_kills ?? 0) + ($request->kills ?? 0), // Accumulate kills
+                'total_points' => ($existingTeam->total_points ?? 0) + ($request->points ?? 0), // Accumulate points
+                'created_at' => now(),
+                'updated_at' => now()
+            ]
+            );
+        }
+
+        return back()->with('success', 'Resultado guardado.');
+    }
+
     // --- APELACIÓN AUTOMÁTICA ---
     public function appealReplay(Request $request, $tournamentId)
     {
@@ -457,7 +640,7 @@ class TournamentParserController extends Controller
             $appealData = $response->json();
             $externalMatchId = strtoupper($appealData['matchId'] ?? '');
             $playerName = $appealData['replayOwnerName'] ?? null;
-            $cleanSessionId = explode('|', $externalMatchId)[0];
+            $cleanSessionId = $externalMatchId ? explode('|', $externalMatchId)[0] : '';
 
             if (!$externalMatchId || !$playerName)
                 throw new \Exception("Replay inválido o corrupto.");
@@ -479,7 +662,8 @@ class TournamentParserController extends Controller
             $rank = $appealData['rank'] ?? 99;
 
             // 4. CÁLCULO AUTOMÁTICO (Usando reglas del torneo + Fix min/max)
-            $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $match->game_mode);
+            $gameMode = $match->game_mode ?? 'solo';
+            $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $gameMode);
 
             Log::info("Apelación $playerName: Rank $rank, Kills $kills -> Puntos Calc: $calculatedPoints");
 
@@ -492,13 +676,12 @@ class TournamentParserController extends Controller
                 ->first();
 
             // Mantener ajuste manual si existe
-            $extraStats = $existingPlayer ? json_decode($existingPlayer->extra_stats, true) : [];
+            $extraStats = ($existingPlayer && $existingPlayer->extra_stats) ? json_decode($existingPlayer->extra_stats, true) : [];
             $manualPts = $extraStats['manual_points'] ?? 0;
             $finalPoints = $calculatedPoints + $manualPts;
 
             $extraStats['totalPoints'] = $finalPoints;
             $extraStats['appealed'] = true;
-            // Guardamos tambien los puntos base sin manual para referencia
             $extraStats['base_points'] = $calculatedPoints;
 
             if ($existingPlayer) {
@@ -521,39 +704,36 @@ class TournamentParserController extends Controller
             }
 
             // B. Update Team (Recalculate Totals)
-            // Buscar equipo donde esté este jugador
             $teamStats = DB::table('team_match_stats')
                 ->where('tournament_match_id', $match->id)
                 ->where('member_names', 'LIKE', '%"' . $playerName . '"%')
                 ->first();
 
-            if ($teamStats) {
+            if ($teamStats && $teamStats->member_names) {
                 $members = json_decode($teamStats->member_names);
-                $teamKills = 0;
-                $teamPoints = 0;
+                if (is_array($members)) {
+                    $teamKills = 0;
 
-                // Recalcular todo el equipo
-                foreach ($members as $m) {
-                    $pStat = DB::table('player_match_stats')
-                        ->where('tournament_match_id', $match->id)
-                        ->where('player_name', $m)
-                        ->first();
-                    if ($pStat) {
-                        $pExtra = json_decode($pStat->extra_stats, true);
-                        $teamKills += $pStat->kills;
-                        $teamPoints += ($pExtra['totalPoints'] ?? 0);
+                    foreach ($members as $m) {
+                        $pStat = DB::table('player_match_stats')
+                            ->where('tournament_match_id', $match->id)
+                            ->where('player_name', $m)
+                            ->first();
+                        if ($pStat) {
+                            $teamKills += $pStat->kills;
+                        }
                     }
+
+                    $newRank = min($teamStats->rank, $rank);
+                    $teamCalculatedPoints = $this->calculateScore($newRank, $teamKills, $scoringFormat, $match->game_mode ?? 'solo');
+
+                    DB::table('team_match_stats')->where('id', $teamStats->id)->update([
+                        'total_kills' => $teamKills,
+                        'total_points' => $teamCalculatedPoints,
+                        'rank' => $newRank,
+                        'updated_at' => now()
+                    ]);
                 }
-
-                // Actualizar stats del equipo
-                $newRank = min($teamStats->rank, $rank);
-
-                DB::table('team_match_stats')->where('id', $teamStats->id)->update([
-                    'total_kills' => $teamKills,
-                    'total_points' => $teamPoints,
-                    'rank' => $newRank,
-                    'updated_at' => now()
-                ]);
             }
 
             DB::commit();

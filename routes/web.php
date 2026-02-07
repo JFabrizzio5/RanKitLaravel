@@ -54,6 +54,10 @@ Route::get('/dashboard', function () {
             'tournaments.slug',
             'tournaments.twitch_channel',
             'tournaments.created_at',
+            'tournaments.image_path',
+            'tournaments.game_type',
+            'tournaments.entry_fee',
+            'tournaments.has_prizes',
             'users.name as creator_name'
         )
         ->limit(20) // Limit initial load

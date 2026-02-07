@@ -82,27 +82,44 @@ onMounted(() => {
 
                     <div v-if="filteredPublicTournaments.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div v-for="tournament in filteredPublicTournaments" :key="tournament.id" 
-                             class="brutal-card group bg-[#0a0a0a] p-5 h-full flex flex-col justify-between hover:z-10 relative">
-                            <div>
-                                <div class="flex justify-between items-start mb-4">
-                                    <span class="bg-white/5 border border-white/10 text-[var(--rankit-neon)] text-[10px] font-black px-2 py-1 uppercase tracking-wider">
-                                        {{ tournament.game || 'GENERAL' }}
-                                    </span>
-                                    <span class="text-[10px] text-gray-600 font-mono font-bold">{{ new Date(tournament.created_at).toLocaleDateString() }}</span>
-                                </div>
-                                
-                                <h4 class="text-xl font-display font-black italic uppercase text-white mb-1 leading-none group-hover:text-[var(--rankit-neon)] transition-colors truncate">
-                                    {{ tournament.name }}
-                                </h4>
-                                <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-1">
-                                    CREATED BY {{ tournament.creator_name || 'ANONYMOUS' }}
-                                </p>
+                             class="brutal-card group bg-[#0a0a0a] p-0 h-full flex flex-col justify-between hover:z-10 relative overflow-hidden transition-all duration-500">
+                            
+                            <!-- Background Image -->
+                            <div v-if="tournament.image_path" class="absolute inset-0 z-0">
+                                <img :src="tournament.image_path" class="w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity duration-500 transform group-hover:scale-110" />
+                                <div class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/90 to-transparent"></div>
                             </div>
 
-                            <Link :href="`/t/${tournament.slug || tournament.id}`"
-                               class="block w-full text-center py-3 bg-[#111] border border-white/10 text-gray-400 text-[10px] font-black uppercase tracking-widest hover:bg-[var(--rankit-neon)] hover:text-white hover:border-[var(--rankit-neon)] transition-all duration-200">
-                                VER DETALLES
-                            </Link>
+                            <div class="relative z-10 p-5 flex flex-col h-full justify-between">
+                                <div>
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="flex gap-1 flex-wrap">
+                                            <span class="bg-white/5 border border-white/10 text-[var(--rankit-neon)] text-[9px] font-black px-2 py-1 uppercase tracking-wider backdrop-blur-sm">
+                                                {{ tournament.game_type || tournament.game || 'GENERAL' }}
+                                            </span>
+                                            <span v-if="tournament.entry_fee > 0" class="bg-green-500/10 border border-green-500/30 text-green-500 text-[9px] font-black px-2 py-1 uppercase tracking-wider backdrop-blur-sm">
+                                                ${{ tournament.entry_fee }}
+                                            </span>
+                                            <span v-if="tournament.has_prizes" class="bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[9px] font-black px-2 py-1 uppercase tracking-wider backdrop-blur-sm">
+                                                <i class="ph-bold ph-trophy"></i>
+                                            </span>
+                                        </div>
+                                        <span class="text-[10px] text-gray-500 font-mono font-bold">{{ new Date(tournament.created_at).toLocaleDateString() }}</span>
+                                    </div>
+                                    
+                                    <h4 class="text-xl font-display font-black italic uppercase text-white mb-2 leading-none group-hover:text-[var(--rankit-neon)] transition-colors truncate">
+                                        {{ tournament.name }}
+                                    </h4>
+                                    <p class="text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-1">
+                                        CREATED BY {{ tournament.creator_name || 'ANONYMOUS' }}
+                                    </p>
+                                </div>
+
+                                <Link :href="`/t/${tournament.slug || tournament.id}`"
+                                   class="block w-full text-center py-3 bg-[#111]/80 backdrop-blur-md border border-white/10 text-gray-400 text-[10px] font-black uppercase tracking-widest hover:bg-[var(--rankit-neon)] hover:text-white hover:border-[var(--rankit-neon)] transition-all duration-200 shadow-lg">
+                                    VER DETALLES
+                                </Link>
+                            </div>
                         </div>
                     </div>
                     <div v-else class="py-12 text-center border border-dashed border-white/10 bg-[#0a0a0a]">
@@ -121,35 +138,44 @@ onMounted(() => {
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div v-for="tournament in myTournaments" :key="tournament.id" 
-                             class="brutal-card bg-[#0a0a0a] p-6 hover:bg-[#0f0f0f]">
-                            <div class="flex justify-between items-start mb-4">
-                                <h4 class="text-xl font-display font-black italic uppercase text-white truncate pr-2" :title="tournament.name">
-                                    {{ tournament.name }}
-                                </h4>
-                                <span class="px-2 py-1 text-[9px] font-black uppercase tracking-wider border"
-                                      :class="tournament.is_private ? 'border-red-500/30 text-red-500 bg-red-500/5' : 'border-green-500/30 text-green-500 bg-green-500/5'">
-                                    {{ tournament.is_private ? 'PRIVADO' : 'PÚBLICO' }}
-                                </span>
-                            </div>
+                             class="brutal-card bg-[#0a0a0a] p-0 hover:bg-[#0f0f0f] overflow-hidden relative group">
                             
-                            <div class="space-y-2 mb-6">
-                                <p class="text-xs text-gray-400 font-bold uppercase">
-                                    <span class="text-gray-600">JUEGO:</span> {{ tournament.game }}
-                                </p>
-                                <p v-if="tournament.twitch_channel" class="text-xs text-[#a970ff] font-bold uppercase flex items-center gap-1">
-                                    <i class="ph-bold ph-twitch-logo"></i> {{ tournament.twitch_channel }}
-                                </p>
+                            <!-- Background Image -->
+                            <div v-if="tournament.image_path" class="absolute inset-0 z-0">
+                                <img :src="tournament.image_path" class="w-full h-full object-cover opacity-30 group-hover:opacity-50 transition-opacity duration-500" />
+                                <div class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/90 to-transparent"></div>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-3">
-                                <Link :href="route('public.live', tournament.id)" 
-                                      class="py-2 px-3 bg-[#1a1a1a] hover:bg-white hover:text-black text-white text-[10px] font-bold uppercase tracking-wider text-center transition-colors border border-white/5">
-                                    LIVE VIEW
-                                </Link>
-                                <Link v-if="isOrganizer" :href="route('jangel.indexdos')" 
-                                      class="py-2 px-3 border border-white/20 hover:border-[var(--rankit-neon)] hover:text-[var(--rankit-neon)] text-gray-400 text-[10px] font-bold uppercase tracking-wider text-center transition-colors">
-                                    GESTIONAR
-                                </Link>
+                            <div class="relative z-10 p-6">
+                                <div class="flex justify-between items-start mb-4">
+                                    <h4 class="text-xl font-display font-black italic uppercase text-white truncate pr-2" :title="tournament.name">
+                                        {{ tournament.name }}
+                                    </h4>
+                                    <span class="px-2 py-1 text-[9px] font-black uppercase tracking-wider border backdrop-blur-sm"
+                                          :class="tournament.is_private ? 'border-red-500/30 text-red-500 bg-red-500/10' : 'border-green-500/30 text-green-500 bg-green-500/10'">
+                                        {{ tournament.is_private ? 'PRIVADO' : 'PÚBLICO' }}
+                                    </span>
+                                </div>
+                                
+                                <div class="space-y-2 mb-6">
+                                    <p class="text-xs text-gray-400 font-bold uppercase">
+                                        <span class="text-gray-600">JUEGO:</span> {{ tournament.game || tournament.game_type || 'GENERAL' }}
+                                    </p>
+                                    <p v-if="tournament.twitch_channel" class="text-xs text-[#a970ff] font-bold uppercase flex items-center gap-1">
+                                        <i class="ph-bold ph-twitch-logo"></i> {{ tournament.twitch_channel }}
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-3">
+                                    <Link :href="route('public.live', tournament.id)" 
+                                          class="py-2 px-3 bg-[#1a1a1a]/80 backdrop-blur hover:bg-white hover:text-black text-white text-[10px] font-bold uppercase tracking-wider text-center transition-colors border border-white/5">
+                                        LIVE VIEW
+                                    </Link>
+                                    <Link v-if="isOrganizer" :href="route('jangel.indexdos')" 
+                                          class="py-2 px-3 border border-white/20 hover:border-[var(--rankit-neon)] hover:text-[var(--rankit-neon)] text-gray-400 text-[10px] font-bold uppercase tracking-wider text-center transition-colors backdrop-blur-sm">
+                                        GESTIONAR
+                                    </Link>
+                                </div>
                             </div>
                         </div>
                     </div>
