@@ -731,7 +731,7 @@ class TournamentParserController extends Controller
                 ->get()
                 ->map(function($team) {
                     $members = json_decode($team->members_json);
-                    $team->member_names = $members;
+                    $team->member_names = is_array($members) ? $members : [];
                     // Provide player_name implicitly so the frontend table displays it without changes
                     $team->player_name = is_array($members) ? implode(' + ', $members) : 'Equipo Desconocido';
                     return $team;

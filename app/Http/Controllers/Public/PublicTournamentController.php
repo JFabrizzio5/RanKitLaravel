@@ -181,7 +181,7 @@ class PublicTournamentController extends Controller
                 ->get()
                 ->map(function($team) {
                     $members = json_decode($team->members_json);
-                    $team->member_names = $members;
+                    $team->member_names = is_array($members) ? $members : [];
                     $team->player_name = is_array($members) ? implode(' + ', $members) : 'Equipo Desconocido';
                     return $team;
                 });
