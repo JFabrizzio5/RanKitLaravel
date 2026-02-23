@@ -565,6 +565,7 @@ class TournamentParserController extends Controller
             if ($teamStats) {
                 $members = json_decode($teamStats->member_names);
                 $teamManualPoints = 0;
+                $teamKills = 0;
                 
                 // Recalcular todo el equipo
                 foreach($members as $m) {
