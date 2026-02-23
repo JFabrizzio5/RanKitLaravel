@@ -564,8 +564,7 @@ class TournamentParserController extends Controller
 
             if ($teamStats) {
                 $members = json_decode($teamStats->member_names);
-                $teamKills = 0;
-                $teamPoints = 0;
+                $teamManualPoints = 0;
                 
                 // Recalcular todo el equipo
                 foreach($members as $m) {
@@ -576,12 +575,15 @@ class TournamentParserController extends Controller
                     if ($pStat) {
                         $pExtra = json_decode($pStat->extra_stats, true);
                         $teamKills += $pStat->kills;
-                        $teamPoints += ($pExtra['totalPoints'] ?? 0);
+                        $teamManualPoints += ($pExtra['manual_points'] ?? 0);
                     }
                 }
                 
                 // Actualizar stats del equipo
                 $newRank = min($teamStats->rank, $rank);
+                
+                // Sumar puntos de equipo mediante fórmula oficial + manuales
+                $teamPoints = $this->calculateScore($newRank, $teamKills, $scoringFormat, $match->game_mode) + $teamManualPoints;
                 
                 DB::table('team_match_stats')->where('id', $teamStats->id)->update([
                     'total_kills' => $teamKills,
@@ -662,15 +664,28 @@ class TournamentParserController extends Controller
             
             if ($teamStats) {
                 $members = json_decode($teamStats->member_names);
-                $teamTotalPoints = 0;
+                $teamTotalKills = 0;
+                $teamManualPoints = 0;
+                
                 foreach($members as $m) {
                     $ps = DB::table('player_match_stats')->where('tournament_match_id', $matchId)->where('player_name', $m)->first();
                     if ($ps) {
                         $ex = json_decode($ps->extra_stats, true);
-                        $teamTotalPoints += ($ex['totalPoints'] ?? 0);
+                        $teamTotalKills += $ps->kills;
+                        $teamManualPoints += ($ex['manual_points'] ?? 0);
                     }
                 }
-                DB::table('team_match_stats')->where('id', $teamStats->id)->update(['total_points' => $teamTotalPoints]);
+                
+                $matchData = DB::table('tournament_matches')->where('id', $matchId)->first();
+                $tournament = DB::table('tournaments')->where('id', $tournamentId)->first();
+                $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
+                
+                $teamTotalPoints = $this->calculateScore($teamStats->rank, $teamTotalKills, $scoringFormat, $matchData->game_mode) + $teamManualPoints;
+                
+                DB::table('team_match_stats')->where('id', $teamStats->id)->update([
+                    'total_points' => $teamTotalPoints,
+                    'total_kills' => $teamTotalKills
+                ]);
             }
 
             DB::commit();
