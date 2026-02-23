@@ -711,7 +711,7 @@ class TournamentParserController extends Controller
                 ->where('tournament_matches.tournament_id', $tournamentId)
                 ->select(
                     'team_signature',
-                    DB::raw('MIN(member_names) as members_json'), 
+                    DB::raw('ANY_VALUE(member_names) as members_json'), 
                     DB::raw('COUNT(*) as games_played'),
                     DB::raw('SUM(total_kills) as total_kills'),
                     DB::raw('AVG(total_kills) as avg_kills'),
