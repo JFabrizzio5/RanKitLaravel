@@ -180,7 +180,9 @@ class PublicTournamentController extends Controller
                 ->orderByDesc($secondaryOrder)
                 ->get()
                 ->map(function($team) {
-                    $team->member_names = json_decode($team->members_json);
+                    $members = json_decode($team->members_json);
+                    $team->member_names = $members;
+                    $team->player_name = is_array($members) ? implode(' + ', $members) : 'Equipo Desconocido';
                     return $team;
                 });
         }

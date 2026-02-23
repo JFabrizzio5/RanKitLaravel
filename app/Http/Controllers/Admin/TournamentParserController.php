@@ -253,13 +253,20 @@ class TournamentParserController extends Controller
     // --- LÓGICA DE CÁLCULO DE PUNTOS INTERNA ---
     private function calculateScore($rank, $kills, $format, $gameMode = 'solo')
     {
+        $multiplier = match(strtolower($gameMode)) {
+            'duo' => 2,
+            'trio' => 3,
+            'squad' => 4,
+            default => 1,
+        };
+
         $points = 0;
         
         // 1. Configuración Personalizada (JSON)
         if (!empty($format) && isset($format->placement) && is_array($format->placement)) {
             // Puntos por Kills
             $killPts = isset($format->kill_points) ? (float)$format->kill_points : 1;
-            $points += ($kills * $killPts);
+            $points += ($kills * $killPts * $multiplier);
 
             // Puntos por Posición (Ranges)
             foreach ($format->placement as $range) {
@@ -268,41 +275,27 @@ class TournamentParserController extends Controller
                 $to = (int)($range->to ?? 0);
                 $pts = (float)($range->points ?? 0);
 
-                // LÓGICA ACUMULATIVA POR "ESCALÓN" (Step)
-                // Se otorgan puntos por CADA posición superada o igualada dentro del rango.
-                // Ejemplo: Top 5 a 2 (3 pts).
-                // Rank 6: 0 pts.
-                // Rank 5: Suma 3. 
-                // Rank 4: Suma 6 (3 por el #5 + 3 por el #4).
-                // Rank 1: Suma 12 (3 por el #5, #4, #3, #2).
-                
                 // Normalizar: start = peor ranking (mayor numero), end = mejor ranking (menor numero)
                 $start = max($from, $to); 
                 $end = min($from, $to);
 
                 if ($rank <= $start) {
-                    // Si el jugador está dentro o por encima del rango (rank es numéricamente menor o igual a start)
-                    
-                    // El rango efectivo termina en max($rank, $end) porque si el jugador es Top 1
-                    // y el rango termina en 2, solo acumula hasta el 2 (no suma más allá del límite del rango).
-                    // Pero si el jugador es Top 4, acumula desde start(5) hasta 4.
-                    
                     $effectiveRank = max($rank, $end);
                     $steps = ($start - $effectiveRank) + 1;
                     if ($steps > 0) {
-                        $points += ($steps * $pts);
+                        $points += ($steps * $pts * $multiplier);
                     }
                 }
             }
         } 
         // 2. Modo Automático (Compensación Default si no hay config)
         else {
-            $points += $kills; // 1 punto por kill base
+            $points += ($kills * $multiplier); // Multiplicado por modo
 
-            if ($rank == 1) $points += 25;
-            elseif ($rank <= 5) $points += 15;
-            elseif ($rank <= 15) $points += 10;
-            elseif ($rank <= 25) $points += 5;
+            if ($rank == 1) $points += (25 * $multiplier);
+            elseif ($rank <= 5) $points += (15 * $multiplier);
+            elseif ($rank <= 15) $points += (10 * $multiplier);
+            elseif ($rank <= 25) $points += (5 * $multiplier);
         }
 
         return $points;
@@ -737,7 +730,10 @@ class TournamentParserController extends Controller
                 ->orderByDesc($secondaryOrder)
                 ->get()
                 ->map(function($team) {
-                    $team->member_names = json_decode($team->members_json);
+                    $members = json_decode($team->members_json);
+                    $team->member_names = $members;
+                    // Provide player_name implicitly so the frontend table displays it without changes
+                    $team->player_name = is_array($members) ? implode(' + ', $members) : 'Equipo Desconocido';
                     return $team;
                 });
         }
