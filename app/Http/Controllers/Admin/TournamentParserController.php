@@ -580,8 +580,9 @@ class TournamentParserController extends Controller
                     }
                 }
                 
-                // Actualizar stats del equipo
-                $newRank = min($teamStats->rank, $rank);
+                // Forzamos el rango de la apelación en lugar de usar min(), 
+                // para que si el parser original se equivocó y les dio Top 1, se reduzca a Top 4.
+                $newRank = $rank;
                 
                 // Sumar puntos de equipo mediante fórmula oficial + manuales
                 $teamPoints = $this->calculateScore($newRank, $teamKills, $scoringFormat, $match->game_mode) + $teamManualPoints;
