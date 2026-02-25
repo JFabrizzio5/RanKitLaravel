@@ -146,7 +146,7 @@ class TournamentParserController extends Controller
             'rules' => $request->rules,
             'prizes' => $request->prizes,
             'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
-            'table_name' => '',
+            'table_name' => Str::slug($request->name) . '_' . time(),
             'created_at' => now(), 
             'updated_at' => now()
         ];
@@ -174,7 +174,6 @@ class TournamentParserController extends Controller
             'rules' => $request->rules,
             'prizes' => $request->prizes,
             'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
-            'table_name' => '',
             'updated_at' => now(),
         ];
 
