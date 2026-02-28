@@ -8,6 +8,7 @@ use App\Http\Controllers\Public\PublicTournamentController; // Publico Nuevo
 use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
 use App\Http\Controllers\TournamentController; // Dashboard Viejo
 use App\Http\Controllers\ProfilePageController; // Rankit
+use App\Http\Controllers\LolTournamentController; // LoL / Valorant
 
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -30,7 +31,8 @@ Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name
 // --- DASHBOARD USUARIO ---
 Route::get('/dashboard', function () {
     if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
-        return redirect()->route('jangel.indexdos');
+        // Ahora va al selector de juego en lugar de directo al panel Fortnite
+        return redirect()->route('game.selector');
     }
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -68,6 +70,33 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/bellzcup/referidos/redeem', [BellzCupReferralController::class, 'redeem'])
         ->name('bellzcup.referidos.redeem');
 });
+
+// --- SELECTOR DE JUEGO ---
+Route::get('/game-selector', function () {
+    return Inertia::render('GameSelector');
+})->middleware('auth')->name('game.selector');
+
+// --- LoL / VALORANT TORNEOS ---
+Route::middleware('auth')->prefix('lol')->name('lol.')->group(function () {
+    Route::get('/',                               [LolTournamentController::class, 'index'])->name('index');
+    Route::post('/',                              [LolTournamentController::class, 'store'])->name('store');
+    Route::get('/{id}',                           [LolTournamentController::class, 'show'])->name('show');
+    Route::delete('/{id}',                        [LolTournamentController::class, 'destroy'])->name('destroy');
+    Route::post('/{id}/teams',                    [LolTournamentController::class, 'addTeam'])->name('team.add');
+    Route::put('/{id}/teams/{teamId}',            [LolTournamentController::class, 'updateTeam'])->name('team.update');
+    Route::delete('/{id}/teams/{teamId}',         [LolTournamentController::class, 'removeTeam'])->name('team.remove');
+    Route::post('/{id}/shuffle',                  [LolTournamentController::class, 'shuffleTeams'])->name('shuffle');
+    Route::post('/{id}/sort',                     [LolTournamentController::class, 'sortTeamsByName'])->name('sort');
+    Route::post('/{id}/generate',                 [LolTournamentController::class, 'generateBracket'])->name('generate');
+    Route::post('/{id}/result',                   [LolTournamentController::class, 'recordResult'])->name('result');
+    Route::post('/{id}/advance',                  [LolTournamentController::class, 'advancePhase'])->name('advance');
+});
+
+// Widget OBS LoL / Valorant — SIN autenticación para OBS
+Route::get('/lol/{id}/widget',      [LolTournamentController::class, 'widget'])->name('lol.widget');
+Route::get('/lol/{id}/widget-data', [LolTournamentController::class, 'widgetData'])->name('lol.widget.data');
+
+
 
 // --- RUTAS DE VISITAS (HEARTBEAT) ELIMINADAS ---
 // La lógica de puntos ahora se maneja exclusivamente vía WebSocket en el microservicio Python.
