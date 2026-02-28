@@ -621,7 +621,30 @@ class LolTournamentController extends Controller
     }
 
     /**
+     * Renderiza el widget de BRACKET estilizado (estilo Worlds)
+     * GET /lol/{id}/bracket?phase=swiss|elimination|all
+     */
+    public function bracket(int $id, Request $request)
+    {
+        $this->ensureLolTablesReady();
+        $tournament = $this->getTournament($id);
+        abort_if(!$tournament, 404);
+
+        $phase   = $request->query('phase', 'all');
+        $teams   = $this->getTeams($id);
+        $matches = $this->getMatches($id);
+
+        return response()->view('lol-bracket', [
+            'tournament' => $tournament,
+            'teams'      => $teams,
+            'matches'    => $matches,
+            'phase'      => $phase,
+        ]);
+    }
+
+    /**
      * JSON de datos del torneo (para auto-refresh del widget)
+
      * GET /lol/{id}/widget-data
      */
     public function widgetData(int $id, Request $request)

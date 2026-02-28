@@ -94,7 +94,9 @@ Route::middleware('auth')->prefix('lol')->name('lol.')->group(function () {
 
 // Widget OBS LoL / Valorant — SIN autenticación para OBS
 Route::get('/lol/{id}/widget',      [LolTournamentController::class, 'widget'])->name('lol.widget');
+Route::get('/lol/{id}/bracket',     [LolTournamentController::class, 'bracket'])->name('lol.bracket');
 Route::get('/lol/{id}/widget-data', [LolTournamentController::class, 'widgetData'])->name('lol.widget.data');
+
 
 
 
