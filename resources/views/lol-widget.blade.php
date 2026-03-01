@@ -57,6 +57,14 @@
     .champion-title  { font-size:13px; letter-spacing:.3em; text-transform:uppercase; color:rgba(255,255,255,.5); margin-bottom:8px; }
     .champion-name   { font-size:40px; font-weight:800; text-transform:uppercase; color:var(--neon); letter-spacing:.05em; animation:glow 2s ease-in-out infinite alternate; }
     @keyframes glow { from{text-shadow:0 0 20px var(--neon),0 0 40px var(--neon)} to{text-shadow:0 0 40px var(--neon),0 0 80px var(--neon),0 0 120px var(--neon)} }
+
+    /* Rankit Branding */
+    .rankit-footer { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06); }
+    .rankit-logo   { display:flex; align-items:center; gap:5px; }
+    .rankit-logo-svg { width:16px; height:16px; }
+    .rankit-wordmark { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.1em; color:rgba(255,255,255,.7); }
+    .rankit-wordmark span { color:var(--neon); }
+    .powered-text  { font-size:8px; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.25); }
   </style>
 </head>
 <body class="{{ $tournament->game }}">
@@ -76,10 +84,11 @@ function teamLogo(team) {
 function renderMatch(m) {
   if (!m.team2) return `<div class="match-card done"><div class="team-row">${teamLogo(m.team1)}<div class="team-name winner">${m.team1?m.team1.name:'TBD'}</div></div><div class="match-bye">BYE ✓</div></div>`;
   const w = m.winner_id;
-  return `<div class="match-card ${m.status==='done'?'done':''}">
-    <div class="team-row">${teamLogo(m.team1)}<div class="team-name${w===m.team1_id?' winner':''}">${m.team1?m.team1.name:'TBD'}</div><div class="team-score${w===m.team1_id?' winner':''}">${m.score1}</div></div>
+  const isDone = m.status === 'done';
+  return `<div class="match-card ${isDone?'done':''}">
+    <div class="team-row">${teamLogo(m.team1)}<div class="team-name${isDone && w==m.team1_id?' winner':''}">${m.team1?m.team1.name:'TBD'}</div><div class="team-score${isDone && w==m.team1_id?' winner':''}">${m.score1}</div></div>
     <div class="match-vs">VS</div>
-    <div class="team-row">${teamLogo(m.team2)}<div class="team-name${w===m.team2_id?' winner':''}">${m.team2?m.team2.name:'TBD'}</div><div class="team-score${w===m.team2_id?' winner':''}">${m.score2}</div></div>
+    <div class="team-row">${teamLogo(m.team2)}<div class="team-name${isDone && w==m.team2_id?' winner':''}">${m.team2?m.team2.name:'TBD'}</div><div class="team-score${isDone && w==m.team2_id?' winner':''}">${m.score2}</div></div>
   </div>`;
 }
 
@@ -129,7 +138,27 @@ function render(data) {
   if(p==='all'||p==='elimination') html+=renderElim(matches);
   if(p==='all'||p==='standings') html+=renderStandings(teams);
 
-  document.getElementById('widget-root').innerHTML=html;
+  document.getElementById('widget-root').innerHTML = html;
+
+  // Branding footer
+  let footer = document.getElementById('rankit-footer');
+  if (!footer) {
+    footer = document.createElement('div');
+    footer.id = 'rankit-footer';
+    footer.className = 'rankit-footer';
+    footer.innerHTML = `
+      <span class="powered-text">POWERED BY</span>
+      <div class="rankit-logo">
+        <svg class="rankit-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/>
+          <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
+          <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--neon)"/>
+        </svg>
+        <span class="rankit-wordmark">RANKIT<span>.PRO</span></span>
+      </div>
+    `;
+    document.getElementById('widget-root').after(footer);
+  }
 }
 
 async function fetchData() {

@@ -83,6 +83,19 @@
                 <div id="champion-name" class="text-4xl font-black uppercase font-display italic">NOMBREEQUIPO</div>
             </div>
         </div>
+
+        <!-- Rankit.pro Branding Footer -->
+        <div class="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-white/5">
+            <span class="text-[8px] font-bold tracking-[0.25em] uppercase text-white/20">POWERED BY</span>
+            <div class="flex items-center gap-1.5">
+                <svg width="16" height="16" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/>
+                    <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
+                    <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--neon)"/>
+                </svg>
+                <span class="text-[11px] font-black uppercase tracking-wider text-white/70">RANKIT<span style="color:var(--neon)">.PRO</span></span>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -155,14 +168,14 @@
                     } else {
                         mDiv.innerHTML = `
                             <div class="flex flex-col gap-2">
-                                <div class="flex justify-between items-center text-sm font-bold ${m.winner_id === m.team1_id ? 'text-fuchsia-400' : ''}">
+                                <div class="flex justify-between items-center text-sm font-bold ${m.status == 'done' && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
                                     <div class="flex items-center gap-2">
                                         ${t1.logo ? `<img src="${t1.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
                                         <span class="truncate w-32">${t1.name}</span>
                                     </div>
                                     <span>${m.status === 'done' ? m.score1 : '-'}</span>
                                 </div>
-                                <div class="flex justify-between items-center text-sm font-bold ${m.winner_id === m.team2_id ? 'text-fuchsia-400' : ''}">
+                                <div class="flex justify-between items-center text-sm font-bold ${m.status == 'done' && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
                                     <div class="flex items-center gap-2">
                                         ${t2.logo ? `<img src="${t2.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
                                         <span class="truncate w-32">${t2.name}</span>
@@ -206,7 +219,7 @@
                     
                     mDiv.innerHTML = `
                          <div class="flex flex-col gap-3">
-                            <div class="flex justify-between items-center ${m.winner_id === m.team1_id ? 'text-fuchsia-400' : ''}">
+                            <div class="flex justify-between items-center ${m.status == 'done' && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
                                 <div class="flex items-center gap-3">
                                     <div class="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex items-center justify-center text-[10px] font-bold border border-white/10">
                                         ${t1?.logo ? `<img src="${t1.logo}" class="w-full h-full object-cover"/>` : `<span>${t1?.name[0] || '?'}</span>`}
@@ -215,7 +228,7 @@
                                 </div>
                                 <span class="font-mono font-bold">${m.status === 'done' ? m.score1 : ''}</span>
                             </div>
-                            <div class="flex justify-between items-center ${m.winner_id === m.team2_id ? 'text-fuchsia-400' : ''}">
+                            <div class="flex justify-between items-center ${m.status == 'done' && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
                                 <div class="flex items-center gap-3">
                                     <div class="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex items-center justify-center text-[10px] font-bold border border-white/10">
                                         ${t2?.logo ? `<img src="${t2.logo}" class="w-full h-full object-cover"/>` : `<span>${t2?.name[0] || '?'}</span>`}

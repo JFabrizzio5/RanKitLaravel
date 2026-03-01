@@ -24,8 +24,11 @@ class LolTournamentController extends Controller
                 $table->string('game')->default('lol');
                 $table->string('format')->default('swiss_elimination');
                 $table->string('phase')->default('pending');
-                $table->integer('swiss_rounds_total')->default(3);
+                $table->integer('swiss_rounds_total')->default(0);         // 0 = ilimitado (por umbral)
                 $table->integer('elimination_teams')->default(4);
+                $table->integer('swiss_wins_to_advance')->default(3);      // victorias para clasificar
+                $table->integer('swiss_losses_to_eliminate')->default(3);  // derrotas para eliminar
+                $table->boolean('swiss_first_round_manual')->default(false);
                 $table->timestamps();
             });
         } else {
@@ -37,28 +40,37 @@ class LolTournamentController extends Controller
                 if (!Schema::hasColumn('lol_test_tournaments', 'phase'))
                     $table->string('phase')->default('pending')->after('format');
                 if (!Schema::hasColumn('lol_test_tournaments', 'swiss_rounds_total'))
-                    $table->integer('swiss_rounds_total')->default(3)->after('phase');
+                    $table->integer('swiss_rounds_total')->default(0)->after('phase');
                 if (!Schema::hasColumn('lol_test_tournaments', 'elimination_teams'))
                     $table->integer('elimination_teams')->default(4)->after('swiss_rounds_total');
+                if (!Schema::hasColumn('lol_test_tournaments', 'swiss_wins_to_advance'))
+                    $table->integer('swiss_wins_to_advance')->default(3)->after('elimination_teams');
+                if (!Schema::hasColumn('lol_test_tournaments', 'swiss_losses_to_eliminate'))
+                    $table->integer('swiss_losses_to_eliminate')->default(3)->after('swiss_wins_to_advance');
+                if (!Schema::hasColumn('lol_test_tournaments', 'swiss_first_round_manual'))
+                    $table->boolean('swiss_first_round_manual')->default(false)->after('swiss_losses_to_eliminate');
             });
         }
 
-        // 2. Equipos (con logo)
+        // 2. Equipos
         if (!Schema::hasTable('lol_test_teams')) {
             Schema::create('lol_test_teams', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('lol_tournament_id');
                 $table->string('name');
-                $table->string('logo')->nullable();   // URL o ruta de imagen
+                $table->string('logo')->nullable();
                 $table->integer('seed')->nullable();
                 $table->integer('wins')->default(0);
                 $table->integer('losses')->default(0);
+                $table->string('swiss_status')->default('active'); // active | advanced | eliminated
                 $table->timestamps();
             });
         } else {
             Schema::table('lol_test_teams', function (Blueprint $table) {
                 if (!Schema::hasColumn('lol_test_teams', 'logo'))
                     $table->string('logo')->nullable()->after('name');
+                if (!Schema::hasColumn('lol_test_teams', 'swiss_status'))
+                    $table->string('swiss_status')->default('active')->after('losses');
             });
         }
 
@@ -123,7 +135,7 @@ class LolTournamentController extends Controller
     }
 
     /**
-     * Construye una fila base con TODAS las columnas presentes (evita column-count mismatch en batch insert)
+     * Construye una fila base con TODAS las columnas presentes
      */
     private function matchRow(array $overrides): array
     {
@@ -133,13 +145,84 @@ class LolTournamentController extends Controller
             'round'             => 1,
             'team1_id'          => 0,
             'team2_id'          => null,
-            'winner_id'         => null,   // ← clave: siempre presente
+            'winner_id'         => null,
             'score1'            => 0,
             'score2'            => 0,
             'status'            => 'pending',
             'created_at'        => now(),
             'updated_at'        => now(),
         ], $overrides);
+    }
+
+    /**
+     * Construye historial de enfrentamientos: par ordenado (min, max) → cantidad de veces
+     */
+    private function buildMatchHistory(int $tournamentId): array
+    {
+        $history = [];
+        $played = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $tournamentId)
+            ->where('phase', 'swiss')
+            ->whereNotNull('team2_id')
+            ->get(['team1_id', 'team2_id']);
+
+        foreach ($played as $m) {
+            $key = min($m->team1_id, $m->team2_id) . '-' . max($m->team1_id, $m->team2_id);
+            $history[$key] = ($history[$key] ?? 0) + 1;
+        }
+        return $history;
+    }
+
+    /**
+     * Swiss Estricto: empareja equipos activos evitando rematches.
+     * Si no hay oponente fresco, usa el que se ha enfrentado menos veces (fallback).
+     * Retorna array de pares [[t1, t2], ...] y posibles BYEs.
+     */
+    private function strictSwissPairing(array $activeTeams, array $history): array
+    {
+        $teams     = array_values($activeTeams);
+        $pairs     = [];
+        $paired    = [];
+
+        for ($i = 0; $i < count($teams); $i++) {
+            if (in_array($teams[$i]->id, $paired)) continue;
+
+            $t1 = $teams[$i];
+            $bestOpponent  = null;
+            $bestFaceCount = PHP_INT_MAX;
+
+            for ($j = $i + 1; $j < count($teams); $j++) {
+                if (in_array($teams[$j]->id, $paired)) continue;
+                $t2  = $teams[$j];
+                $key = min($t1->id, $t2->id) . '-' . max($t1->id, $t2->id);
+                $faceCount = $history[$key] ?? 0;
+
+                // Preferir 0 veces; si no hay frescos, preferir el menor número de veces
+                if ($faceCount < $bestFaceCount) {
+                    $bestFaceCount = $faceCount;
+                    $bestOpponent  = $t2;
+                    if ($faceCount === 0) break; // ideal, ya encontramos rival fresco
+                }
+            }
+
+            if ($bestOpponent !== null) {
+                $pairs[]  = [$t1, $bestOpponent];
+                $paired[] = $t1->id;
+                $paired[] = $bestOpponent->id;
+            }
+            // Si no hay oponente (número impar), quedará como BYE al final
+        }
+
+        // BYE: el equipo no emparejado
+        $byeTeam = null;
+        foreach ($teams as $t) {
+            if (!in_array($t->id, $paired)) {
+                $byeTeam = $t;
+                break;
+            }
+        }
+
+        return ['pairs' => $pairs, 'bye' => $byeTeam];
     }
 
     // -----------------------------------------------------------------------
@@ -168,25 +251,31 @@ class LolTournamentController extends Controller
     {
         $this->ensureLolTablesReady();
         $request->validate([
-            'name'               => 'required|string|max:100',
-            'game'               => 'required|in:lol,valorant',
-            'format'             => 'required|in:elimination,swiss_elimination',
-            'swiss_rounds_total' => 'nullable|integer|min:1|max:10',
-            'elimination_teams'  => 'nullable|integer|min:2|max:64',
+            'name'                       => 'required|string|max:100',
+            'game'                       => 'required|in:lol,valorant',
+            'format'                     => 'required|in:elimination,swiss_elimination',
+            'swiss_rounds_total'         => 'nullable|integer|min:0|max:20',
+            'elimination_teams'          => 'nullable|integer|min:2|max:64',
+            'swiss_wins_to_advance'      => 'nullable|integer|min:1|max:20',
+            'swiss_losses_to_eliminate'  => 'nullable|integer|min:1|max:20',
+            'swiss_first_round_manual'   => 'nullable|boolean',
         ]);
 
         $format = $request->format;
 
         DB::table('lol_test_tournaments')->insert([
-            'user_id'            => auth()->id(),
-            'name'               => $request->name,
-            'game'               => $request->game,
-            'format'             => $format,
-            'phase'              => $format === 'swiss_elimination' ? 'pending' : 'elimination',
-            'swiss_rounds_total' => $format === 'swiss_elimination' ? ($request->swiss_rounds_total ?? 3) : 0,
-            'elimination_teams'  => $request->elimination_teams ?? 4,
-            'created_at'         => now(),
-            'updated_at'         => now(),
+            'user_id'                    => auth()->id(),
+            'name'                       => $request->name,
+            'game'                       => $request->game,
+            'format'                     => $format,
+            'phase'                      => $format === 'swiss_elimination' ? 'pending' : 'elimination',
+            'swiss_rounds_total'         => $format === 'swiss_elimination' ? ($request->swiss_rounds_total ?? 0) : 0,
+            'elimination_teams'          => $request->elimination_teams ?? 4,
+            'swiss_wins_to_advance'      => $format === 'swiss_elimination' ? ($request->swiss_wins_to_advance ?? 3) : 0,
+            'swiss_losses_to_eliminate'  => $format === 'swiss_elimination' ? ($request->swiss_losses_to_eliminate ?? 3) : 0,
+            'swiss_first_round_manual'   => $format === 'swiss_elimination' ? ($request->swiss_first_round_manual ?? false) : false,
+            'created_at'                 => now(),
+            'updated_at'                 => now(),
         ]);
 
         return back()->with('success', 'Torneo creado.');
@@ -241,6 +330,7 @@ class LolTournamentController extends Controller
             'seed'              => $maxSeed + 1,
             'wins'              => 0,
             'losses'            => 0,
+            'swiss_status'      => 'active',
             'created_at'        => now(),
             'updated_at'        => now(),
         ]);
@@ -262,9 +352,6 @@ class LolTournamentController extends Controller
         return back()->with('success', 'Equipo eliminado.');
     }
 
-    /**
-     * Editar nombre/logo de un equipo
-     */
     public function updateTeam(Request $request, int $id, int $teamId)
     {
         $this->ensureLolTablesReady();
@@ -359,10 +446,15 @@ class LolTournamentController extends Controller
         return back()->with('error', 'No hay una fase que generar en este momento.');
     }
 
-    private function generateSwissRound($tournament, array $teams): \Illuminate\Http\RedirectResponse
+    /**
+     * Swiss Estricto con umbral de victorias/derrotas.
+     * Solo empareja equipos con swiss_status = 'active'.
+     */
+    private function generateSwissRound($tournament, array $allTeams): \Illuminate\Http\RedirectResponse
     {
         $id = $tournament->id;
 
+        // Verificar rondas pendientes
         $currentRound = DB::table('lol_test_matches')
             ->where('lol_tournament_id', $id)->where('phase', 'swiss')->max('round') ?? 0;
 
@@ -376,29 +468,44 @@ class LolTournamentController extends Controller
             }
         }
 
+        // Verificar límite de rondas (si swiss_rounds_total > 0)
         $nextRound = $currentRound + 1;
-
-        if ($nextRound > $tournament->swiss_rounds_total) {
+        if ($tournament->swiss_rounds_total > 0 && $nextRound > $tournament->swiss_rounds_total) {
             return back()->with('error', 'Ya se completaron todas las rondas Swiss. Avanza a Eliminación.');
         }
 
-        $insertRows = [];
-        $teamsArr   = array_values($teams);
+        // Si round 1 es manual y aún no fue configurado, bloquear
+        if ($nextRound === 1 && $tournament->swiss_first_round_manual) {
+            return back()->with('error', 'El Round 1 está configurado como manual. Usa "Configurar Round 1" para definir los emparejamientos.');
+        }
 
-        for ($i = 0; $i < count($teamsArr) - 1; $i += 2) {
+        // Solo equipos activos
+        $activeTeams = array_values(array_filter($allTeams, fn($t) => ($t->swiss_status ?? 'active') === 'active'));
+
+        if (count($activeTeams) < 2) {
+            // Puede que todos hayan clasificado/eliminado — intentar auto-avanzar
+            return $this->tryAutoAdvance($tournament);
+        }
+
+        // Construir historial y hacer emparejamiento estricto
+        $history = $this->buildMatchHistory($id);
+        $result  = $this->strictSwissPairing($activeTeams, $history);
+
+        $insertRows = [];
+        foreach ($result['pairs'] as [$t1, $t2]) {
             $insertRows[] = $this->matchRow([
                 'lol_tournament_id' => $id,
                 'phase'             => 'swiss',
                 'round'             => $nextRound,
-                'team1_id'          => $teamsArr[$i]->id,
-                'team2_id'          => $teamsArr[$i + 1]->id,
+                'team1_id'          => $t1->id,
+                'team2_id'          => $t2->id,
                 'status'            => 'pending',
             ]);
         }
 
         // BYE si número impar
-        if (count($teamsArr) % 2 !== 0) {
-            $byeTeam      = $teamsArr[count($teamsArr) - 1];
+        if ($result['bye'] !== null) {
+            $byeTeam      = $result['bye'];
             $insertRows[] = $this->matchRow([
                 'lol_tournament_id' => $id,
                 'phase'             => 'swiss',
@@ -409,6 +516,9 @@ class LolTournamentController extends Controller
                 'status'            => 'done',
             ]);
             DB::table('lol_test_teams')->where('id', $byeTeam->id)->increment('wins');
+
+            // Verificar umbral tras BYE
+            $this->checkAndUpdateSwissStatus($id, $byeTeam->id, $tournament);
         }
 
         DB::table('lol_test_matches')->insert($insertRows);
@@ -416,16 +526,160 @@ class LolTournamentController extends Controller
             'phase' => 'swiss', 'updated_at' => now(),
         ]);
 
-        return back()->with('success', "Ronda $nextRound Swiss generada.");
+        return back()->with('success', "Ronda $nextRound Swiss generada (emparejamiento estricto).");
+    }
+
+    /**
+     * Guarda el Round 1 con emparejamientos manuales.
+     * POST body: { pairs: [[team1_id, team2_id], ...] }
+     */
+    public function setManualRound1(Request $request, int $id)
+    {
+        $this->ensureLolTablesReady();
+        $tournament = $this->getTournament($id, auth()->id());
+        abort_if(!$tournament, 404);
+
+        if (!$tournament->swiss_first_round_manual) {
+            return back()->with('error', 'Este torneo no tiene Round 1 manual habilitado.');
+        }
+
+        $existing = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)->where('phase', 'swiss')->where('round', 1)->count();
+        if ($existing > 0) {
+            return back()->with('error', 'El Round 1 ya fue generado.');
+        }
+
+        $request->validate([
+            'pairs'              => 'required|array|min:1',
+            'pairs.*.team1_id'   => 'required|integer',
+            'pairs.*.team2_id'   => 'nullable|integer',
+        ]);
+
+        // Validar que los equipos pertenecen al torneo y no se repiten
+        $teamIds = DB::table('lol_test_teams')
+            ->where('lol_tournament_id', $id)->pluck('id')->toArray();
+
+        $usedIds = [];
+        $insertRows = [];
+
+        foreach ($request->pairs as $pair) {
+            $t1id = (int) $pair['team1_id'];
+            $t2id = isset($pair['team2_id']) ? (int) $pair['team2_id'] : null;
+
+            if (!in_array($t1id, $teamIds)) {
+                return back()->with('error', "Equipo $t1id no pertenece a este torneo.");
+            }
+            if ($t2id && !in_array($t2id, $teamIds)) {
+                return back()->with('error', "Equipo $t2id no pertenece a este torneo.");
+            }
+            if (in_array($t1id, $usedIds) || ($t2id && in_array($t2id, $usedIds))) {
+                return back()->with('error', 'Un equipo aparece en más de un par.');
+            }
+
+            $usedIds[] = $t1id;
+            if ($t2id) $usedIds[] = $t2id;
+
+            if ($t2id === null) {
+                // BYE manual
+                $insertRows[] = $this->matchRow([
+                    'lol_tournament_id' => $id,
+                    'phase'             => 'swiss',
+                    'round'             => 1,
+                    'team1_id'          => $t1id,
+                    'team2_id'          => null,
+                    'winner_id'         => $t1id,
+                    'status'            => 'done',
+                ]);
+                DB::table('lol_test_teams')->where('id', $t1id)->increment('wins');
+                $this->checkAndUpdateSwissStatus($id, $t1id, $tournament);
+            } else {
+                $insertRows[] = $this->matchRow([
+                    'lol_tournament_id' => $id,
+                    'phase'             => 'swiss',
+                    'round'             => 1,
+                    'team1_id'          => $t1id,
+                    'team2_id'          => $t2id,
+                    'status'            => 'pending',
+                ]);
+            }
+        }
+
+        DB::table('lol_test_matches')->insert($insertRows);
+        DB::table('lol_test_tournaments')->where('id', $id)->update([
+            'phase' => 'swiss', 'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Round 1 configurado manualmente.');
+    }
+
+    /**
+     * Verifica si un equipo alcanzó el umbral y actualiza su swiss_status.
+     */
+    private function checkAndUpdateSwissStatus(int $tournamentId, int $teamId, $tournament): void
+    {
+        $team = DB::table('lol_test_teams')->where('id', $teamId)->first();
+        if (!$team || ($team->swiss_status ?? 'active') !== 'active') return;
+
+        $winsThreshold   = $tournament->swiss_wins_to_advance ?? 3;
+        $lossesThreshold = $tournament->swiss_losses_to_eliminate ?? 3;
+
+        if ($team->wins >= $winsThreshold) {
+            DB::table('lol_test_teams')->where('id', $teamId)->update([
+                'swiss_status' => 'advanced',
+                'updated_at'   => now(),
+            ]);
+        } elseif ($team->losses >= $lossesThreshold) {
+            DB::table('lol_test_teams')->where('id', $teamId)->update([
+                'swiss_status' => 'eliminated',
+                'updated_at'   => now(),
+            ]);
+        }
+    }
+
+    /**
+     * Intenta auto-avanzar a eliminación si todos los equipos tienen un swiss_status definitivo
+     * (no quedan equipos en 'active') o si no hay más rondas Swiss posibles.
+     */
+    private function tryAutoAdvance($tournament): \Illuminate\Http\RedirectResponse
+    {
+        $id = $tournament->id;
+
+        $activeCount = DB::table('lol_test_teams')
+            ->where('lol_tournament_id', $id)
+            ->where('swiss_status', 'active')
+            ->count();
+
+        if ($activeCount > 0) {
+            return back()->with('error', 'No hay suficientes equipos activos para generar una ronda.');
+        }
+
+        // Todos definidos — auto-avanzar con los que clasificaron
+        $advancedTeams = DB::table('lol_test_teams')
+            ->where('lol_tournament_id', $id)
+            ->where('swiss_status', 'advanced')
+            ->orderBy('wins', 'desc')
+            ->orderBy('seed')
+            ->get()->toArray();
+
+        if (count($advancedTeams) < 2) {
+            return back()->with('error', 'No hay suficientes equipos clasificados para el bracket de eliminación.');
+        }
+
+        return $this->generateEliminationBracket($tournament, $advancedTeams);
     }
 
     private function generateEliminationBracket($tournament, array $teams): \Illuminate\Http\RedirectResponse
     {
         $id = $tournament->id;
 
-        $topTeams = array_slice(array_values($teams), 0, $tournament->elimination_teams);
-        $count    = count($topTeams);
+        // Si viene de Swiss, usa solo los 'advanced'; si es eliminación directa, todos
+        if ($tournament->format === 'swiss_elimination') {
+            $topTeams = array_slice(array_values($teams), 0, $tournament->elimination_teams > 0 ? $tournament->elimination_teams : count($teams));
+        } else {
+            $topTeams = array_values($teams);
+        }
 
+        $count = count($topTeams);
         if ($count < 2) {
             return back()->with('error', 'No hay suficientes equipos para el bracket.');
         }
@@ -442,9 +696,8 @@ class LolTournamentController extends Controller
 
         $insertRows = [];
         for ($i = 0; $i < $bracketSize; $i += 2) {
-            $t1 = $bracket[$i];
-            $t2 = $bracket[$i + 1];
-
+            $t1    = $bracket[$i];
+            $t2    = $bracket[$i + 1];
             $isBye = (!$t2 && $t1);
 
             $insertRows[] = $this->matchRow([
@@ -490,7 +743,13 @@ class LolTournamentController extends Controller
 
         abort_if(!$match || $match->status === 'done', 400, 'Partida no válida o ya registrada.');
 
-        $winnerId = (int)$request->winner_id;
+        $winnerId = (int) $request->winner_id;
+
+        // VALIDACIÓN ESTRICTA: El ganador DEBE ser uno de los dos equipos de este match específico
+        if ($winnerId !== (int)$match->team1_id && $winnerId !== (int)$match->team2_id) {
+            return back()->with('error', 'El ganador seleccionado no pertenece a esta partida.');
+        }
+
         $loserId  = ($match->team1_id == $winnerId) ? $match->team2_id : $match->team1_id;
 
         DB::table('lol_test_matches')->where('id', $match->id)->update([
@@ -504,6 +763,42 @@ class LolTournamentController extends Controller
         DB::table('lol_test_teams')->where('id', $winnerId)->increment('wins');
         if ($loserId) DB::table('lol_test_teams')->where('id', $loserId)->increment('losses');
 
+        // Verificar umbrales en fase Swiss
+        if ($match->phase === 'swiss') {
+            $this->checkAndUpdateSwissStatus($id, $winnerId, $tournament);
+            if ($loserId) $this->checkAndUpdateSwissStatus($id, $loserId, $tournament);
+
+            // Verificar si todos los activos de la ronda actual tienen resultado
+            // y si ya no quedan equipos activos → auto-avanzar
+            $pendingCurrentRound = DB::table('lol_test_matches')
+                ->where('lol_tournament_id', $id)
+                ->where('phase', 'swiss')
+                ->where('round', $match->round)
+                ->where('status', 'pending')
+                ->count();
+
+            if ($pendingCurrentRound === 0) {
+                $activeCount = DB::table('lol_test_teams')
+                    ->where('lol_tournament_id', $id)
+                    ->where('swiss_status', 'active')
+                    ->count();
+
+                // Si no quedan activos, auto-avanzar a eliminación
+                if ($activeCount === 0) {
+                    $advancedTeams = DB::table('lol_test_teams')
+                        ->where('lol_tournament_id', $id)
+                        ->where('swiss_status', 'advanced')
+                        ->orderBy('wins', 'desc')
+                        ->orderBy('seed')
+                        ->get()->toArray();
+
+                    if (count($advancedTeams) >= 2) {
+                        $this->generateEliminationBracket($tournament, $advancedTeams);
+                    }
+                }
+            }
+        }
+
         if ($match->phase === 'elimination') {
             $this->maybeGenerateNextElimRound($tournament, $match->round);
         }
@@ -511,6 +806,9 @@ class LolTournamentController extends Controller
         return back()->with('success', 'Resultado registrado.');
     }
 
+    /**
+     * Avance manual a eliminación (fallback cuando el admin quiere forzarlo)
+     */
     public function advancePhase(int $id)
     {
         $this->ensureLolTablesReady();
@@ -529,11 +827,22 @@ class LolTournamentController extends Controller
             return back()->with('error', 'Hay partidas Swiss sin resultado. Regístralas antes de avanzar.');
         }
 
-        $teams = DB::table('lol_test_teams')
+        $advancedTeams = DB::table('lol_test_teams')
             ->where('lol_tournament_id', $id)
-            ->orderBy('wins', 'desc')->orderBy('seed')->get()->toArray();
+            ->where('swiss_status', 'advanced')
+            ->orderBy('wins', 'desc')->orderBy('seed')
+            ->get()->toArray();
 
-        return $this->generateEliminationBracket($tournament, $teams);
+        // Si no hay ninguno con 'advanced' aún (torneo sin umbral definido), tomar los mejores
+        if (count($advancedTeams) < 2) {
+            $advancedTeams = DB::table('lol_test_teams')
+                ->where('lol_tournament_id', $id)
+                ->orderBy('wins', 'desc')->orderBy('seed')
+                ->limit($tournament->elimination_teams)
+                ->get()->toArray();
+        }
+
+        return $this->generateEliminationBracket($tournament, $advancedTeams);
     }
 
     private function maybeGenerateNextElimRound($tournament, int $round): void
@@ -598,7 +907,6 @@ class LolTournamentController extends Controller
     // -----------------------------------------------------------------------
 
     /**
-     * Renderiza el widget HTML para OBS
      * GET /lol/{id}/widget?phase=swiss|elimination|standings|all
      */
     public function widget(int $id, Request $request)
@@ -611,7 +919,6 @@ class LolTournamentController extends Controller
         $teams   = $this->getTeams($id);
         $matches = $this->getMatches($id);
 
-        // Devolvemos una vista blade standalone (sin layout) para que OBS la cargue directo
         return response()->view('lol-widget', [
             'tournament' => $tournament,
             'teams'      => $teams,
@@ -621,7 +928,6 @@ class LolTournamentController extends Controller
     }
 
     /**
-     * Renderiza el widget de BRACKET estilizado (estilo Worlds)
      * GET /lol/{id}/bracket?phase=swiss|elimination|all
      */
     public function bracket(int $id, Request $request)
@@ -643,9 +949,7 @@ class LolTournamentController extends Controller
     }
 
     /**
-     * JSON de datos del torneo (para auto-refresh del widget)
-
-     * GET /lol/{id}/widget-data
+     * GET /lol/{id}/widget-data — JSON para auto-refresh
      */
     public function widgetData(int $id, Request $request)
     {
@@ -660,4 +964,3 @@ class LolTournamentController extends Controller
         ]);
     }
 }
-

@@ -10,6 +10,7 @@ interface Team {
   seed: number | null
   wins: number
   losses: number
+  swiss_status: 'active' | 'advanced' | 'eliminated'
 }
 interface LolMatch {
   id: number
@@ -33,6 +34,9 @@ interface Tournament {
   phase: 'pending' | 'swiss' | 'elimination' | 'done'
   swiss_rounds_total: number
   elimination_teams: number
+  swiss_wins_to_advance: number
+  swiss_losses_to_eliminate: number
+  swiss_first_round_manual: boolean
 }
 
 // --- Props ---
@@ -44,7 +48,6 @@ const props = defineProps<{
 
 // --- Computed ---
 const gameNeon = computed(() => '#bf00ff')
-
 const gameLabel = computed(() => props.tournament.game === 'valorant' ? 'Valorant' : 'LoL')
 const gameIcon = computed(() => props.tournament.game === 'valorant' ? '🎯' : '⚔️')
 
@@ -68,6 +71,11 @@ const pendingSwiss = computed(() => swissMatches.value.filter(m => m.status === 
 const allSwissDone = computed(() => swissMatches.value.length > 0 && pendingSwiss.value === 0)
 const currentSwissRound = computed(() => maxSwissRound.value)
 
+// Teams by status
+const activeTeams = computed(() => props.teams.filter(t => (t.swiss_status ?? 'active') === 'active'))
+const advancedTeams = computed(() => props.teams.filter(t => t.swiss_status === 'advanced'))
+const eliminatedTeams = computed(() => props.teams.filter(t => t.swiss_status === 'eliminated'))
+
 const champion = computed(() => {
   if (props.tournament.phase !== 'done') return null
   const lastRound = elimMatches.value.filter(m => m.round === maxElimRound.value)
@@ -77,10 +85,27 @@ const champion = computed(() => {
 const canGenerateSwiss = computed(() => {
   if (props.tournament.format !== 'swiss_elimination') return false
   if (['elimination', 'done'].includes(props.tournament.phase)) return false
-  if (currentSwissRound.value >= props.tournament.swiss_rounds_total) return false
+  // Si Round 1 es manual y no hay ningún match swiss aún, bloquear el botón automático
+  if (props.tournament.swiss_first_round_manual && swissMatches.value.length === 0) return false
+  if (props.tournament.swiss_rounds_total > 0 && currentSwissRound.value >= props.tournament.swiss_rounds_total) return false
   if (currentSwissRound.value > 0 && pendingSwiss.value > 0) return false
+  if (activeTeams.value.length < 2) return false
   return true
 })
+
+const canAdvanceManually = computed(() => {
+  if (props.tournament.format !== 'swiss_elimination') return false
+  if (props.tournament.phase !== 'swiss') return false
+  return allSwissDone.value
+})
+
+// Round 1 Manual — si el torneo pide R1 manual y aún no hay ningún match swiss
+const needsManualRound1 = computed(() =>
+  props.tournament.swiss_first_round_manual &&
+  props.tournament.format === 'swiss_elimination' &&
+  swissMatches.value.length === 0 &&
+  props.teams.length >= 2
+)
 
 // --- Widget URL ---
 const widgetUrl = computed(() => `${window.location.origin}/lol/${props.tournament.id}/widget`)
@@ -92,7 +117,6 @@ function copyWidget(phase: string = 'all') {
   setTimeout(() => { widgetCopied.value = null }, 2000)
 }
 
-
 // --- State ---
 const newTeamName = ref('')
 const newTeamLogo = ref('')
@@ -101,6 +125,31 @@ const editTeam = ref<Team | null>(null)
 
 const resultForm = useForm({ match_id: 0, winner_id: 0, score1: 0, score2: 0 })
 const editForm = useForm({ name: '', logo: '' })
+
+// --- Manual Round 1 state ---
+// pairs: array de { t1_id: number, t2_id: number | null }
+const manualPairs = ref<{ t1_id: number; t2_id: number | null }[]>([])
+const showManualSetup = ref(false)
+
+function initManualPairs() {
+  const shuffled = [...props.teams]
+  manualPairs.value = []
+  for (let i = 0; i < shuffled.length - 1; i += 2) {
+    manualPairs.value.push({ t1_id: shuffled[i].id, t2_id: shuffled[i + 1].id })
+  }
+  if (shuffled.length % 2 !== 0) {
+    manualPairs.value.push({ t1_id: shuffled[shuffled.length - 1].id, t2_id: null })
+  }
+  showManualSetup.value = true
+}
+
+function submitManualRound1() {
+  router.post(
+    route('lol.manual.round1', props.tournament.id),
+    { pairs: manualPairs.value.map(p => ({ team1_id: p.t1_id, team2_id: p.t2_id })) },
+    { preserveScroll: true, onSuccess: () => { showManualSetup.value = false } }
+  )
+}
 
 // --- Actions ---
 function addTeam() {
@@ -135,7 +184,7 @@ function sortByName() { router.post(route('lol.sort', props.tournament.id), {}, 
 function generate() { router.post(route('lol.generate', props.tournament.id), {}, { preserveScroll: true }) }
 
 function advancePhase() {
-  if (!confirm('¿Avanzar a la fase de Eliminación? Asegúrate de que todas las partidas Swiss estén registradas.')) return
+  if (!confirm('¿Avanzar manualmente a la fase de Eliminación? Los equipos con status "activo" no participarán.')) return
   router.post(route('lol.advance', props.tournament.id), {}, { preserveScroll: true })
 }
 
@@ -157,14 +206,30 @@ function submitResult() {
 
 function labelRound(phase: string, round: number) {
   const rounds = phase === 'elimination' ? Object.keys(elimRounds.value) : Object.keys(swissRounds.value)
-  if (phase === 'swiss') return `Ronda ${round}`
+  if (phase === 'swiss') return `Ronda Swiss ${round}`
   const total = rounds.length
   const pos = rounds.indexOf(String(round))
   if (total - pos === 1) return 'LA FINAL'
   if (total - pos === 2) return 'SEMIFINALES'
   if (total - pos === 3) return 'CUARTOS DE FINAL'
   return `RONDA ${round}`
+}
 
+function teamBadgeStyle(team: Team) {
+  const s = team.swiss_status ?? 'active'
+  if (s === 'advanced') return { background: '#15803d20', color: '#4ade80', border: '1px solid #15803d50' }
+  if (s === 'eliminated') return { background: '#dc262620', color: '#f87171', border: '1px solid #dc262650' }
+  return { background: '#ffffff08', color: '#9ca3af', border: '1px solid #ffffff15' }
+}
+
+function availableOpponents(pairIdx: number, currentT2: number | null) {
+  const usedIds = manualPairs.value
+    .flatMap((p, i) => i === pairIdx ? [] : [p.t1_id, ...(p.t2_id ? [p.t2_id] : [])])
+  return props.teams.filter(t => !usedIds.includes(t.id) || t.id === currentT2)
+}
+
+function getTeamById(id: number) {
+  return props.teams.find(t => t.id === id)
 }
 </script>
 
@@ -212,7 +277,7 @@ function labelRound(phase: string, round: number) {
         <span class="text-[10px] font-black uppercase px-2 py-1 rounded border border-white/10"
           :style="{ color: gameNeon }">
           {{ tournament.phase === 'pending' ? 'Sin Iniciar' :
-            tournament.phase === 'swiss' ? `Swiss R${currentSwissRound}/${tournament.swiss_rounds_total}` :
+            tournament.phase === 'swiss' ? `Swiss R${currentSwissRound}` :
               tournament.phase === 'elimination' ? 'Eliminación' : '🏆 Finalizado' }}
         </span>
       </div>
@@ -255,7 +320,7 @@ function labelRound(phase: string, round: number) {
               class="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-yellow-500 transition" />
           </div>
 
-          <!-- Team list -->
+          <!-- Team list with status badges -->
           <div class="divide-y divide-white/5 max-h-80 overflow-y-auto">
             <div v-if="teams.length === 0" class="px-4 py-6 text-center text-gray-600 text-xs">Agrega equipos para
               comenzar</div>
@@ -263,7 +328,6 @@ function labelRound(phase: string, round: number) {
               class="flex items-center justify-between px-4 py-2 hover:bg-white/5 transition group">
               <div class="flex items-center gap-2">
                 <span class="text-[10px] font-mono text-gray-600 w-4">{{ team.seed ?? '—' }}</span>
-                <!-- Logo -->
                 <div
                   class="w-6 h-6 rounded-full overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center text-[9px] font-bold flex-shrink-0"
                   :style="{ color: gameNeon }">
@@ -271,6 +335,13 @@ function labelRound(phase: string, round: number) {
                   <span v-else>{{ team.name[0] }}</span>
                 </div>
                 <span class="text-sm font-bold text-white">{{ team.name }}</span>
+                <!-- Status badge -->
+                <span v-if="team.swiss_status === 'advanced'"
+                  class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded"
+                  style="background:#15803d20;color:#4ade80;">✅ Clasificado</span>
+                <span v-else-if="team.swiss_status === 'eliminated'"
+                  class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded"
+                  style="background:#dc262620;color:#f87171;">❌ Eliminado</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-[10px] font-mono" :style="{ color: gameNeon }">{{ team.wins }}W / {{ team.losses
@@ -286,14 +357,22 @@ function labelRound(phase: string, round: number) {
 
         <!-- Actions -->
         <div class="space-y-2">
+          <!-- Round 1 Manual button -->
+          <button v-if="needsManualRound1" @click="initManualPairs"
+            class="w-full py-2.5 text-xs font-black uppercase rounded border transition-all border-yellow-500/60 text-yellow-400 hover:bg-yellow-500/10">
+            ✏️ Configurar Round 1 Manualmente
+          </button>
+
+          <!-- Generate next swiss round -->
           <button v-if="canGenerateSwiss" @click="generate"
             class="w-full py-2.5 text-xs font-black uppercase rounded border transition-all"
             :style="{ borderColor: gameNeon, color: gameNeon }"
             @mouseenter="(e: any) => e.currentTarget.style.background = `${gameNeon}15`"
             @mouseleave="(e: any) => e.currentTarget.style.background = 'transparent'">
-            ⚔️ Generar Ronda Swiss {{ currentSwissRound + 1 }} / {{ tournament.swiss_rounds_total }}
+            ⚔️ Generar Ronda Swiss {{ currentSwissRound + 1 }}
           </button>
 
+          <!-- Elimination solo format -->
           <button
             v-else-if="tournament.format === 'elimination' && tournament.phase === 'elimination' && elimMatches.length === 0"
             @click="generate" class="w-full py-2.5 text-xs font-black uppercase rounded border transition-all"
@@ -303,12 +382,34 @@ function labelRound(phase: string, round: number) {
             🔵 Generar Bracket Eliminación
           </button>
 
-          <button
-            v-if="tournament.format === 'swiss_elimination' && allSwissDone && currentSwissRound >= tournament.swiss_rounds_total && tournament.phase === 'swiss'"
-            @click="advancePhase"
+          <!-- Manual advance -->
+          <button v-if="canAdvanceManually" @click="advancePhase"
             class="w-full py-2.5 text-xs font-black uppercase rounded border border-blue-500/60 text-blue-400 transition-all hover:bg-blue-500/10">
             🔵 Avanzar a Eliminación →
           </button>
+        </div>
+
+        <!-- Swiss Config Summary -->
+        <div v-if="tournament.format === 'swiss_elimination'"
+          class="bg-[#0c0c0c] border border-white/5 rounded-xl p-4 space-y-2">
+          <h3 class="text-[10px] font-black uppercase tracking-widest text-gray-500">Configuración Swiss</h3>
+          <div class="grid grid-cols-2 gap-2 text-[10px]">
+            <div class="bg-green-900/20 border border-green-500/20 rounded p-2">
+              <div class="text-gray-500 uppercase">Clasifica con</div>
+              <div class="text-green-400 font-black text-base">{{ tournament.swiss_wins_to_advance }}W</div>
+            </div>
+            <div class="bg-red-900/20 border border-red-500/20 rounded p-2">
+              <div class="text-gray-500 uppercase">Eliminado con</div>
+              <div class="text-red-400 font-black text-base">{{ tournament.swiss_losses_to_eliminate }}L</div>
+            </div>
+          </div>
+          <div class="flex gap-2 text-[9px] font-mono text-gray-600">
+            <span>✅ {{ advancedTeams.length }} clasificados</span>
+            <span>·</span>
+            <span>⚔️ {{ activeTeams.length }} activos</span>
+            <span>·</span>
+            <span>❌ {{ eliminatedTeams.length }} eliminados</span>
+          </div>
         </div>
 
         <!-- Standings swiss -->
@@ -327,7 +428,9 @@ function labelRound(phase: string, round: number) {
                 <img v-if="team.logo" :src="team.logo" :alt="team.name[0]" class="w-full h-full object-cover" />
                 <span v-else>{{ team.name[0] }}</span>
               </div>
-              <span class="flex-1 text-sm font-bold">{{ team.name }}</span>
+              <span class="flex-1 text-sm font-bold"
+                :class="team.swiss_status === 'advanced' ? 'text-green-400' : team.swiss_status === 'eliminated' ? 'text-red-400 line-through opacity-50' : 'text-white'">{{
+                  team.name }}</span>
               <span class="text-[10px] font-mono" :style="{ color: gameNeon }">{{ team.wins }}W {{ team.losses
               }}L</span>
             </div>
@@ -337,6 +440,35 @@ function labelRound(phase: string, round: number) {
 
       <!-- ═══ CENTER: BRACKET ═══ -->
       <div class="lg:col-span-8 space-y-6">
+
+        <!-- Manual Round 1 Setup Panel -->
+        <div v-if="showManualSetup" class="bg-[#0c0c0c] border border-yellow-500/30 rounded-xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-yellow-500/20">
+            <h3 class="text-xs font-black uppercase tracking-widest text-yellow-400">✏️ Configurar Round 1</h3>
+            <button @click="showManualSetup = false" class="text-gray-500 hover:text-white text-sm">✕</button>
+          </div>
+          <div class="p-4 space-y-3">
+            <div v-for="(pair, idx) in manualPairs" :key="idx" class="flex items-center gap-3">
+              <span class="text-[10px] font-bold text-gray-500 w-12 text-right">Par {{ idx + 1 }}</span>
+              <!-- Team 1 -->
+              <select v-model="pair.t1_id"
+                class="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500">
+                <option v-for="t in props.teams" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+              <span class="text-gray-500 text-xs font-bold">VS</span>
+              <!-- Team 2 (nullable for BYE) -->
+              <select v-model="pair.t2_id"
+                class="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500">
+                <option :value="null">— BYE —</option>
+                <option v-for="t in availableOpponents(idx, pair.t2_id)" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
+            <button @click="submitManualRound1" class="w-full py-2.5 text-xs font-black uppercase rounded text-black"
+              :style="{ background: gameNeon }">
+              Confirmar Round 1
+            </button>
+          </div>
+        </div>
 
         <!-- Swiss rounds -->
         <template v-if="tournament.format === 'swiss_elimination' && swissMatches.length > 0">
@@ -369,12 +501,14 @@ function labelRound(phase: string, round: number) {
                           v-else>{{ match.team1?.name[0] }}</span>
                       </div>
                       <span class="font-bold text-sm truncate"
+                        :class="match.status === 'done' && match.winner_id !== match.team1_id ? 'text-gray-500' : ''"
                         :style="match.winner_id === match.team1_id ? { color: gameNeon } : {}">{{ match.team1?.name
                         }}</span>
                     </div>
                     <span class="text-xs text-gray-500 font-bold">VS</span>
                     <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
                       <span class="font-bold text-sm truncate"
+                        :class="match.status === 'done' && match.winner_id !== match.team2_id ? 'text-gray-500' : ''"
                         :style="match.winner_id === match.team2_id ? { color: gameNeon } : {}">{{ match.team2?.name
                         }}</span>
                       <div
@@ -406,13 +540,16 @@ function labelRound(phase: string, round: number) {
         <div v-if="matches.length === 0 && teams.length >= 2"
           class="bg-[#0c0c0c] border border-dashed border-white/10 rounded-xl p-12 text-center space-y-3">
           <p class="text-gray-500 text-sm">
-            {{ tournament.format === 'swiss_elimination'
-              ? 'Genera la primera ronda Swiss para comenzar.'
+                        {{ tournament.format === 'swiss_elimination'
+              ? (tournament.swiss_first_round_manual ? 'Configura los emparejamientos del Round 1.' : 'Genera la primera ronda Swiss para comenzar.')
               : 'Genera el bracket de eliminación para comenzar.' }}
           </p>
-
-          <button @click="generate" class="px-6 py-2 text-xs font-bold uppercase rounded border transition-all"
+          <button v-if="!tournament.swiss_first_round_manual || tournament.format === 'elimination'" @click="generate"
+            class="px-6 py-2 text-xs font-bold uppercase rounded border transition-all"
             :style="{ borderColor: gameNeon, color: gameNeon }">Generar bracket →</button>
+          <button v-if="tournament.swiss_first_round_manual && swissMatches.length === 0" @click="initManualPairs"
+            class="px-6 py-2 text-xs font-bold uppercase rounded border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10 transition-all">✏️
+            Configurar Round 1 →</button>
         </div>
         <div v-if="matches.length === 0 && teams.length < 2"
           class="bg-[#0c0c0c] border border-dashed border-white/10 rounded-xl p-12 text-center">
@@ -448,16 +585,18 @@ function labelRound(phase: string, round: number) {
                           v-else>{{ match.team1?.name?.[0] }}</span>
                       </div>
                       <span class="font-bold text-sm truncate"
-                        :style="match.winner_id === match.team1_id ? { color: gameNeon } : {}">{{ match.team1?.name ??
-                          'TBD'
-                        }}</span>
+                        :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500' : ''"
+                        :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: gameNeon } : {}">{{
+                          match.team1?.name ??
+                          'TBD' }}</span>
                     </div>
                     <span class="text-xs text-gray-500 font-bold">VS</span>
                     <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
                       <span class="font-bold text-sm truncate"
-                        :style="match.winner_id === match.team2_id ? { color: gameNeon } : {}">{{ match.team2?.name ??
-                          'TBD'
-                        }}</span>
+                        :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500' : ''"
+                        :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: gameNeon } : {}">{{
+                          match.team2?.name ??
+                          'TBD' }}</span>
                       <div
                         class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-blue-400">
                         <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" /><span
@@ -510,7 +649,6 @@ function labelRound(phase: string, round: number) {
                     :class="resultForm.winner_id === resultModal.team2_id ? 'border-purple-500 bg-purple-500/10 text-purple-400' : 'border-white/10 text-gray-400 hover:border-white/30'">
                     {{ resultModal.team2?.name }}
                   </button>
-
                 </div>
               </div>
               <div class="grid grid-cols-2 gap-3">
@@ -525,7 +663,6 @@ function labelRound(phase: string, round: number) {
                     resultModal.team2?.name }}</label>
                   <input v-model.number="resultForm.score2" type="number" min="0"
                     class="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500 transition" />
-
                 </div>
               </div>
               <div class="flex gap-2 pt-1">
@@ -553,12 +690,10 @@ function labelRound(phase: string, round: number) {
             class="relative z-10 w-full max-w-sm bg-[#0e0e0e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
             <div class="flex items-center justify-between px-5 py-4 border-b border-white/5">
               <h2 class="font-black uppercase text-base tracking-tight" style="font-family:'Chakra Petch',sans-serif">
-                Editar
-                Equipo</h2>
+                Editar Equipo</h2>
               <button @click="editTeam = null" class="text-gray-500 hover:text-white transition text-xl">×</button>
             </div>
             <form @submit.prevent="saveEdit" class="p-5 space-y-4">
-              <!-- Logo preview -->
               <div class="flex justify-center">
                 <div
                   class="w-16 h-16 rounded-full overflow-hidden bg-white/5 border-2 border-white/10 flex items-center justify-center text-2xl font-black"
@@ -572,14 +707,12 @@ function labelRound(phase: string, round: number) {
                 <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Nombre</label>
                 <input v-model="editForm.name" type="text" required
                   class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
-
               </div>
               <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">URL de logo
-                  (imagen)</label>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">URL de
+                  logo</label>
                 <input v-model="editForm.logo" type="text" placeholder="https://..."
                   class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition" />
-
               </div>
               <div class="flex gap-2 pt-1">
                 <button type="button" @click="editTeam = null"

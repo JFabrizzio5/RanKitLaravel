@@ -11,16 +11,17 @@ const gameLabel = computed(() => props.game === 'valorant' ? 'Valorant' : 'Leagu
 const gameIcon = computed(() => props.game === 'valorant' ? '🎯' : '⚔️')
 const gameNeon = computed(() => '#bf00ff')
 
-const gameBack = computed(() => props.game === 'valorant' ? '#game-selector' : '#')
-
 const showCreate = ref(false)
 
 const form = useForm({
   name: '',
   game: props.game,
   format: 'swiss_elimination' as 'elimination' | 'swiss_elimination',
-  swiss_rounds_total: 3,
+  swiss_rounds_total: 0,            // 0 = ilimitado (solo por umbral)
   elimination_teams: 4,
+  swiss_wins_to_advance: 3,
+  swiss_losses_to_eliminate: 3,
+  swiss_first_round_manual: false,
 })
 
 function createTournament() {
@@ -30,8 +31,11 @@ function createTournament() {
       form.reset()
       form.game = props.game
       form.format = 'swiss_elimination'
-      form.swiss_rounds_total = 3
+      form.swiss_rounds_total = 0
       form.elimination_teams = 4
+      form.swiss_wins_to_advance = 3
+      form.swiss_losses_to_eliminate = 3
+      form.swiss_first_round_manual = false
     }
   })
 }
@@ -54,6 +58,14 @@ function phaseLabel(t: any) {
 
 function formatLabel(f: string) {
   return f === 'swiss_elimination' ? 'Suiza + Eliminación' : 'Eliminación Directa'
+}
+
+function swissConfigLabel(t: any) {
+  if (t.format !== 'swiss_elimination') return 'Bracket desde inicio'
+  const wins = t.swiss_wins_to_advance ?? 3
+  const losses = t.swiss_losses_to_eliminate ?? 3
+  const rounds = t.swiss_rounds_total > 0 ? `Máx ${t.swiss_rounds_total} rondas · ` : ''
+  return `${rounds}${wins}W clasifica · ${losses}L elimina → Top ${t.elimination_teams}`
 }
 </script>
 
@@ -140,12 +152,13 @@ function formatLabel(f: string) {
               <span class="px-2 py-0.5 rounded" :style="{ background: `${gameNeon}20`, color: gameNeon }">
                 {{ phaseLabel(t) }}
               </span>
+              <span v-if="t.swiss_first_round_manual"
+                class="px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400">
+                R1 Manual
+              </span>
             </div>
 
-            <p class="text-[10px] text-gray-600 font-mono">
-              {{ t.format === 'swiss_elimination' ? `${t.swiss_rounds_total} rondas Swiss → Top ${t.elimination_teams}`
-                : `Bracket desde inicio` }}
-            </p>
+            <p class="text-[10px] text-gray-600 font-mono">{{ swissConfigLabel(t) }}</p>
 
             <Link :href="route('lol.show', t.id)"
               class="block w-full text-center py-2 text-[11px] font-bold uppercase rounded border transition-all duration-200 mt-2"
@@ -167,7 +180,7 @@ function formatLabel(f: string) {
           <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
 
           <div
-            class="relative z-10 w-full max-w-md bg-[#0e0e0e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+            class="relative z-10 w-full max-w-lg bg-[#0e0e0e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
             <!-- Header -->
             <div class="flex items-center justify-between px-6 py-4 border-b border-white/5">
               <h2 class="font-black uppercase text-lg tracking-tight" style="font-family: 'Chakra Petch', sans-serif">
@@ -212,20 +225,61 @@ function formatLabel(f: string) {
               </div>
 
               <!-- Config Swiss (solo si aplica) -->
-              <div v-if="form.format === 'swiss_elimination'" class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Rondas
-                    Swiss</label>
-                  <input v-model.number="form.swiss_rounds_total" type="number" min="1" max="10"
-                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
-                </div>
-                <div>
-                  <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Top equipos →
-                    Elim.</label>
-                  <input v-model.number="form.elimination_teams" type="number" min="2" max="64"
-                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
+              <div v-if="form.format === 'swiss_elimination'" class="space-y-4">
 
+                <!-- Umbral de victorias / derrotas -->
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      ✅ Victorias para clasificar
+                    </label>
+                    <input v-model.number="form.swiss_wins_to_advance" type="number" min="1" max="20"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
+                    <p class="text-[9px] text-gray-600 mt-1">Ej: 3 → equipo con 3 wins clasifica</p>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      ❌ Derrotas para eliminar
+                    </label>
+                    <input v-model.number="form.swiss_losses_to_eliminate" type="number" min="1" max="20"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
+                    <p class="text-[9px] text-gray-600 mt-1">Ej: 3 → equipo con 3 losses se elimina</p>
+                  </div>
                 </div>
+
+                <!-- Top equipos → Eliminación -->
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Máx rondas Swiss
+                    </label>
+                    <input v-model.number="form.swiss_rounds_total" type="number" min="0" max="20"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
+                    <p class="text-[9px] text-gray-600 mt-1">0 = ilimitado (solo por umbral)</p>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Top equipos → Elim.
+                    </label>
+                    <input v-model.number="form.elimination_teams" type="number" min="2" max="64"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
+                  </div>
+                </div>
+
+                <!-- Round 1 Manual toggle -->
+                <div class="flex items-center justify-between p-3 rounded-lg border border-white/10 bg-white/[0.02]">
+                  <div>
+                    <p class="text-xs font-bold text-white">Configurar Round 1 manualmente</p>
+                    <p class="text-[9px] text-gray-500 mt-0.5">Tú decides quién juega contra quién en la primera ronda</p>
+                  </div>
+                  <button type="button" @click="form.swiss_first_round_manual = !form.swiss_first_round_manual"
+                    class="relative w-10 h-5 rounded-full transition-colors flex-shrink-0"
+                    :style="{ background: form.swiss_first_round_manual ? gameNeon : '#333' }">
+                    <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                      :style="{ left: form.swiss_first_round_manual ? '22px' : '2px' }"></span>
+                  </button>
+                </div>
+
               </div>
 
               <!-- Actions -->
