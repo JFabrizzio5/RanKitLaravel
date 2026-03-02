@@ -156,10 +156,12 @@
             const swissMatches = matches.filter(m => m.phase === 'swiss');
             
             // Determinar total de rondas suizas
-            let totalSwissRounds = tournament.swiss_rounds_total || 3;
-            // Si es 0 (dinámico), intentamos calcular el máximo actual
+            let totalSwissRounds = tournament.swiss_rounds_total || 0;
+            // Si es 0 (dinámico), estimamos según umbral (W + L - 1)
             if (totalSwissRounds === 0) {
-                totalSwissRounds = Math.max(...swissMatches.map(m => m.round), 1);
+                const w = tournament.swiss_wins_to_advance || 3;
+                const l = tournament.swiss_losses_to_eliminate || 3;
+                totalSwissRounds = w + l - 1;
             }
 
             const roundsData = {}; 
@@ -178,7 +180,7 @@
             });
 
             const sortedRounds = Object.keys(roundsData).sort((a, b) => a - b);
-            let html = `<div class="w-full h-full flex flex-row items-center justify-center gap-6 overflow-x-auto">`;
+            let html = `<div class="w-full h-full flex flex-row items-center justify-center gap-6 overflow-x-auto px-10">`;
 
             sortedRounds.forEach((roundKey, index) => {
                 html += `<div class="flex flex-col justify-center gap-6 min-w-[150px] z-10">`;
@@ -188,7 +190,7 @@
                 if (Object.keys(recordsMap).length === 0) {
                      html += `
                     <div class="flex flex-col w-full opacity-30">
-                        <div class="bg-gray-800 text-white/50 font-black uppercase text-center py-1 text-sm tracking-widest">RONDA ${roundKey}</div>
+                        <div class="bg-gray-800 text-white/50 font-black uppercase text-center py-1 text-[10px] tracking-widest">RONDA ${roundKey}</div>
                         <div class="border border-white/10 py-2 px-3 flex flex-col gap-2 bg-black/85">
                             <div class="flex items-center justify-center py-4 text-[10px] uppercase font-bold text-gray-600">Por definir</div>
                         </div>
@@ -213,7 +215,7 @@
                         html += `
                         <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
                             ${badgeHTML}
-                            <div class="bg-neon text-black font-black uppercase text-center py-1 text-sm tracking-widest">${recordStr}</div>
+                            <div class="bg-neon text-black font-black uppercase text-center py-1 text-sm tracking-widest">${matchGroup.length > 0 ? recordStr : 'BYE'}</div>
                             <div class="border border-neon py-2 px-3 flex flex-col gap-2 bg-black/85">`;
 
                         matchGroup.forEach(m => {
@@ -226,21 +228,21 @@
                                     ${teamHex(t1)} <span class="text-neon font-bold text-xs mx-2">BYE</span> <div class="hex-logo opacity-0"></div>
                                 </div>`;
                             } else {
-                                const score1 = isDone ? m.score1 : '-';
-                                const score2 = isDone ? m.score2 : '-';
+                                const score1 = isDone ? m.score1 : '0';
+                                const score2 = isDone ? m.score2 : '0';
                                 
                                 html += `<div class="flex items-center justify-between gap-3 w-44 ${isDone ? 'opacity-50' : ''}">
                                     <div class="flex items-center gap-2 flex-1 overflow-hidden">
                                         ${teamHex(t1)}
-                                        <span class="truncate text-[10px] font-bold ${isDone && m.winner_id == m.team1_id ? 'text-neon' : 'text-white'}">${t1 ? t1.name : '???'}</span>
+                                        <span class="truncate text-[9px] font-bold ${isDone && m.winner_id == m.team1_id ? 'text-neon' : 'text-white'}">${t1 ? t1.name : '???'}</span>
                                     </div>
-                                    <div class="flex items-center gap-1 font-mono text-[10px] font-black">
-                                        <span class="${isDone && m.winner_id == m.team1_id ? 'text-neon' : ''}">${score1}</span>
+                                    <div class="flex items-center gap-1 font-mono text-[9px] font-black">
+                                        <span class="${isDone && m.winner_id == m.team1_id ? 'text-neon text-[11px]' : ''}">${score1}</span>
                                         <span class="text-neon/50">:</span>
-                                        <span class="${isDone && m.winner_id == m.team2_id ? 'text-neon' : ''}">${score2}</span>
+                                        <span class="${isDone && m.winner_id == m.team2_id ? 'text-neon text-[11px]' : ''}">${score2}</span>
                                     </div>
                                     <div class="flex items-center gap-2 flex-1 justify-end overflow-hidden">
-                                        <span class="truncate text-[10px] font-bold text-right ${isDone && m.winner_id == m.team2_id ? 'text-neon' : 'text-white'}">${t2 ? t2.name : '???'}</span>
+                                        <span class="truncate text-[9px] font-bold text-right ${isDone && m.winner_id == m.team2_id ? 'text-neon' : 'text-white'}">${t2 ? t2.name : '???'}</span>
                                         ${teamHex(t2)}
                                     </div>
                                 </div>`;
@@ -256,9 +258,44 @@
 
                 html += `</div>`;
                 if (index < sortedRounds.length - 1) {
-                    html += `<div class="w-4 lg:w-8 flex items-center justify-center"></div>`;
+                    html += `<div class="w-4 flex items-center justify-center"></div>`;
                 }
             });
+
+            // Columna de Clasificados / Eliminados al final
+            const advanced = teams.filter(t => t.swiss_status === 'advanced');
+            const eliminated = teams.filter(t => t.swiss_status === 'eliminated');
+
+            if (advanced.length > 0 || eliminated.length > 0) {
+                html += `<div class="flex flex-col justify-center gap-6 min-w-[180px] z-10 ml-4">`;
+                
+                if (advanced.length > 0) {
+                    html += `
+                    <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
+                        <div class="bg-green-600 text-black font-black uppercase text-center py-1 text-sm tracking-widest">CLASIFICADOS</div>
+                        <div class="border border-green-600 py-2 px-3 flex flex-col gap-2 bg-black/85">`;
+                    advanced.forEach(t => {
+                        html += `<div class="flex items-center gap-2 w-44 hover:bg-green-600/10 transition-colors p-1 rounded">
+                            ${teamHex(t)} <span class="truncate text-xs font-bold text-white uppercase">${t.name}</span>
+                        </div>`;
+                    });
+                    html += `</div></div>`;
+                }
+
+                if (eliminated.length > 0) {
+                     html += `
+                    <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
+                        <div class="bg-red-600 text-black font-black uppercase text-center py-1 text-sm tracking-widest">ELIMINADOS</div>
+                        <div class="border border-red-600 py-2 px-3 flex flex-col gap-2 bg-black/85">`;
+                    eliminated.forEach(t => {
+                        html += `<div class="flex items-center gap-2 w-44 opacity-50 p-1">
+                            ${teamHex(t)} <span class="truncate text-[10px] font-bold text-gray-500 uppercase">${t.name}</span>
+                        </div>`;
+                    });
+                    html += `</div></div>`;
+                }
+                html += `</div>`;
+            }
 
             html += `</div>`;
             return html;

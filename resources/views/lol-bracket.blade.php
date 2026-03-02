@@ -141,9 +141,11 @@
         function renderSwiss(matches, teams, tournament) {
             const swissMatches = matches.filter(m => m.phase === 'swiss');
             
-            let totalSwissRounds = tournament.swiss_rounds_total || 3;
+            let totalSwissRounds = tournament.swiss_rounds_total || 0;
             if (totalSwissRounds === 0) {
-                totalSwissRounds = Math.max(...swissMatches.map(m => m.round), 1);
+                const w = tournament.swiss_wins_to_advance || 3;
+                const l = tournament.swiss_losses_to_eliminate || 3;
+                totalSwissRounds = w + l - 1;
             }
 
             const rounds = {};
@@ -175,7 +177,7 @@
                         
                         if (!t2) {
                              mDiv.innerHTML = `<div class="flex justify-between items-center text-xs font-bold">
-                                <span>${t1?.name || '???'}</span> <span class="text-fuchsia-500">BYE ✅</span>
+                                <span>${t1?.name || '???'}</span> <span class="text-fuchsia-500 font-black">BYE ✅</span>
                              </div>`;
                         } else {
                             mDiv.innerHTML = `
@@ -183,16 +185,16 @@
                                     <div class="flex justify-between items-center text-sm font-bold ${isDone && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
                                         <div class="flex items-center gap-2">
                                             ${t1?.logo ? `<img src="${t1.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
-                                            <span class="truncate w-32">${t1?.name || '???'}</span>
+                                            <span class="truncate w-32 uppercase">${t1?.name || '???'}</span>
                                         </div>
-                                        <span>${isDone ? m.score1 : '-'}</span>
+                                        <span>${isDone ? m.score1 : '0'}</span>
                                     </div>
                                     <div class="flex justify-between items-center text-sm font-bold ${isDone && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
                                         <div class="flex items-center gap-2">
                                             ${t2?.logo ? `<img src="${t2.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
-                                            <span class="truncate w-32">${t2?.name || '???'}</span>
+                                            <span class="truncate w-32 uppercase">${t2?.name || '???'}</span>
                                         </div>
-                                        <span>${isDone ? m.score2 : '-'}</span>
+                                        <span>${isDone ? m.score2 : '0'}</span>
                                     </div>
                                 </div>
                             `;
@@ -202,6 +204,42 @@
                 }
                 container.appendChild(roundDiv);
             });
+
+            // Columna de Clasificados / Eliminados al final
+            const advanced = teams.filter(t => t.swiss_status === 'advanced');
+            const eliminated = teams.filter(t => t.swiss_status === 'eliminated');
+
+            if (advanced.length > 0 || eliminated.length > 0) {
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'w-72 space-y-6 ml-8';
+                
+                if (advanced.length > 0) {
+                    let advHTML = `<div class="bg-green-600/20 py-2 text-center font-black uppercase text-xs tracking-widest border-b-2 border-green-500">CLASIFICADOS</div>
+                                   <div class="space-y-2 mt-4">`;
+                    advanced.forEach(t => {
+                        advHTML += `<div class="bracket-node p-2 flex items-center gap-3 border-l-4 border-green-500">
+                            ${t.logo ? `<img src="${t.logo}" class="w-6 h-6 rounded-full"/>` : `<div class="w-6 h-6 bg-white/10 rounded-full"></div>`}
+                            <span class="text-xs font-black uppercase text-white">${t.name}</span>
+                        </div>`;
+                    });
+                    advHTML += `</div>`;
+                    statusDiv.innerHTML += advHTML;
+                }
+
+                if (eliminated.length > 0) {
+                    let elimHTML = `<div class="bg-red-600/20 py-2 text-center font-black uppercase text-xs tracking-widest border-b-2 border-red-500 mt-8">ELIMINADOS</div>
+                                    <div class="space-y-2 mt-4">`;
+                    eliminated.forEach(t => {
+                        elimHTML += `<div class="bracket-node p-2 flex items-center gap-3 border-l-4 border-red-900 opacity-50">
+                            ${t.logo ? `<img src="${t.logo}" class="w-6 h-6 rounded-full"/>` : `<div class="w-6 h-6 bg-white/10 rounded-full"></div>`}
+                            <span class="text-xs font-bold uppercase text-gray-500">${t.name}</span>
+                        </div>`;
+                    });
+                    elimHTML += `</div>`;
+                    statusDiv.innerHTML += elimHTML;
+                }
+                container.appendChild(statusDiv);
+            }
         }
 
         function renderElimination(matches, teams, tournament) {
