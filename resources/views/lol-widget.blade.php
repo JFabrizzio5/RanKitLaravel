@@ -152,11 +152,23 @@
 
         // ====== BUILDERS DE COMPONENTES ======
 
-        function buildSwiss(matches, teams) {
+        function buildSwiss(matches, teams, tournament) {
             const swissMatches = matches.filter(m => m.phase === 'swiss');
-            if(swissMatches.length === 0) return '';
+            
+            // Determinar total de rondas suizas
+            let totalSwissRounds = tournament.swiss_rounds_total || 3;
+            // Si es 0 (dinámico), intentamos calcular el máximo actual
+            if (totalSwissRounds === 0) {
+                totalSwissRounds = Math.max(...swissMatches.map(m => m.round), 1);
+            }
 
             const roundsData = {}; 
+            // Inicializar todas las rondas posibles
+            for (let r = 1; r <= totalSwissRounds; r++) {
+                roundsData[r] = {};
+            }
+
+            // Llenar con partidas existentes
             swissMatches.forEach(m => {
                 if (!roundsData[m.round]) roundsData[m.round] = {};
                 let record = "0-0";
@@ -172,52 +184,75 @@
                 html += `<div class="flex flex-col justify-center gap-6 min-w-[150px] z-10">`;
                 const recordsMap = roundsData[roundKey];
                 
-                const sortedRecords = Object.keys(recordsMap).sort((a, b) => {
-                    const [wA, lA] = a.split('-').map(Number);
-                    const [wB, lB] = b.split('-').map(Number);
-                    if (wA !== wB) return wB - wA; 
-                    return lA - lB; 
-                });
-
-                sortedRecords.forEach(recordStr => {
-                    const matchGroup = recordsMap[recordStr];
-                    
-                    let badgeHTML = '';
-                    if (recordStr === '2-0' && roundKey == 3) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">1ST, 2ND</div>';
-                    if (recordStr === '2-1' && roundKey == 4) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">3RD, 4TH, 5TH</div>';
-                    if (recordStr === '2-2' && roundKey == 5) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">6TH, 7TH, 8TH</div>';
-
-                    const isBo3 = recordStr.includes('2');
-
-                    html += `
-                    <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
-                        ${badgeHTML}
-                        <div class="bg-neon text-black font-black uppercase text-center py-1 text-sm tracking-widest">${recordStr}</div>
-                        <div class="border border-neon py-2 px-3 flex flex-col gap-2 bg-black/85">`;
-
-                    matchGroup.forEach(m => {
-                        const t1 = teams.find(te => te.id === m.team1_id);
-                        const t2 = teams.find(te => te.id === m.team2_id);
-                        const isDone = m.status === 'done';
-
-                        if (!t2) {
-                            html += `<div class="flex items-center justify-between gap-3 w-40 opacity-70">
-                                ${teamHex(t1)} <span class="text-neon font-bold text-xs mx-2">BYE</span> <div class="hex-logo opacity-0"></div>
-                            </div>`;
-                        } else {
-                            html += `<div class="flex items-center justify-between gap-3 w-40 ${isDone ? 'opacity-50' : ''}">
-                                ${teamHex(t1)}
-                                <span class="text-neon font-black text-[10px] italic">VS</span>
-                                ${teamHex(t2)}
-                            </div>`;
-                        }
+                // Si la ronda está vacía (futura)
+                if (Object.keys(recordsMap).length === 0) {
+                     html += `
+                    <div class="flex flex-col w-full opacity-30">
+                        <div class="bg-gray-800 text-white/50 font-black uppercase text-center py-1 text-sm tracking-widest">RONDA ${roundKey}</div>
+                        <div class="border border-white/10 py-2 px-3 flex flex-col gap-2 bg-black/85">
+                            <div class="flex items-center justify-center py-4 text-[10px] uppercase font-bold text-gray-600">Por definir</div>
+                        </div>
+                    </div>`;
+                } else {
+                    const sortedRecords = Object.keys(recordsMap).sort((a, b) => {
+                        const [wA, lA] = a.split('-').map(Number);
+                        const [wB, lB] = b.split('-').map(Number);
+                        if (wA !== wB) return wB - wA; 
+                        return lA - lB; 
                     });
 
-                    html += `
-                        </div>
-                        <div class="text-neon font-black uppercase text-center text-[10px] tracking-widest mt-1">${isBo3 ? 'BEST OF 3' : 'BEST OF 1'}</div>
-                    </div>`;
-                });
+                    sortedRecords.forEach(recordStr => {
+                        const matchGroup = recordsMap[recordStr];
+                        let badgeHTML = '';
+                        if (recordStr === '2-0' && roundKey == 3) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">1ST, 2ND</div>';
+                        if (recordStr === '2-1' && roundKey == 4) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">3RD, 4TH, 5TH</div>';
+                        if (recordStr === '2-2' && roundKey == 5) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">6TH, 7TH, 8TH</div>';
+
+                        const isBo3 = recordStr.includes('2');
+
+                        html += `
+                        <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
+                            ${badgeHTML}
+                            <div class="bg-neon text-black font-black uppercase text-center py-1 text-sm tracking-widest">${recordStr}</div>
+                            <div class="border border-neon py-2 px-3 flex flex-col gap-2 bg-black/85">`;
+
+                        matchGroup.forEach(m => {
+                            const t1 = teams.find(te => te.id === m.team1_id);
+                            const t2 = teams.find(te => te.id === m.team2_id);
+                            const isDone = m.status === 'done';
+
+                            if (!t2) {
+                                html += `<div class="flex items-center justify-between gap-3 w-40 opacity-70">
+                                    ${teamHex(t1)} <span class="text-neon font-bold text-xs mx-2">BYE</span> <div class="hex-logo opacity-0"></div>
+                                </div>`;
+                            } else {
+                                const score1 = isDone ? m.score1 : '-';
+                                const score2 = isDone ? m.score2 : '-';
+                                
+                                html += `<div class="flex items-center justify-between gap-3 w-44 ${isDone ? 'opacity-50' : ''}">
+                                    <div class="flex items-center gap-2 flex-1 overflow-hidden">
+                                        ${teamHex(t1)}
+                                        <span class="truncate text-[10px] font-bold ${isDone && m.winner_id == m.team1_id ? 'text-neon' : 'text-white'}">${t1 ? t1.name : '???'}</span>
+                                    </div>
+                                    <div class="flex items-center gap-1 font-mono text-[10px] font-black">
+                                        <span class="${isDone && m.winner_id == m.team1_id ? 'text-neon' : ''}">${score1}</span>
+                                        <span class="text-neon/50">:</span>
+                                        <span class="${isDone && m.winner_id == m.team2_id ? 'text-neon' : ''}">${score2}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-1 justify-end overflow-hidden">
+                                        <span class="truncate text-[10px] font-bold text-right ${isDone && m.winner_id == m.team2_id ? 'text-neon' : 'text-white'}">${t2 ? t2.name : '???'}</span>
+                                        ${teamHex(t2)}
+                                    </div>
+                                </div>`;
+                            }
+                        });
+
+                        html += `
+                            </div>
+                            <div class="text-neon font-black uppercase text-center text-[10px] tracking-widest mt-1">${isBo3 ? 'BEST OF 3' : 'BEST OF 1'}</div>
+                        </div>`;
+                    });
+                }
 
                 html += `</div>`;
                 if (index < sortedRounds.length - 1) {
@@ -406,7 +441,7 @@
 
             // 3. Renderizar Fase Correspondiente
             if ((p === 'all' || p === 'swiss') && tournament.format === 'swiss_elimination' && tournament.phase !== 'done') {
-                contentHTML += buildSwiss(matches, teams);
+                contentHTML += buildSwiss(matches, teams, tournament);
             } 
             else if (p === 'elimination' || (p === 'all' && (tournament.phase === 'elimination' || tournament.phase === 'done'))) {
                 contentHTML += buildElimination(matches, teams, tournament);
