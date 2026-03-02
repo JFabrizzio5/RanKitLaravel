@@ -155,146 +155,149 @@
         function buildSwiss(matches, teams, tournament) {
             const swissMatches = matches.filter(m => m.phase === 'swiss');
             
-            // Determinar total de rondas suizas
-            let totalSwissRounds = tournament.swiss_rounds_total || 0;
-            // Si es 0 (dinámico), estimamos según umbral (W + L - 1)
-            if (totalSwissRounds === 0) {
-                const w = tournament.swiss_wins_to_advance || 3;
-                const l = tournament.swiss_losses_to_eliminate || 3;
-                totalSwissRounds = w + l - 1;
+            // Configuración
+            const tCount = tournament.teams_count || teams.length || 16;
+            const w = tournament.swiss_wins_to_advance || 3;
+            const l = tournament.swiss_losses_to_eliminate || 3;
+            let totalSwissRounds = tournament.swiss_rounds_total || (w + l - 1);
+
+            // 1. Generar Estructura Teórica
+            // teamsPerRecord[round][recordStr] = numero de equipos que entran a ese pool
+            const teamsPerRecord = {};
+            for (let r = 1; r <= totalSwissRounds; r++) teamsPerRecord[r] = {};
+            
+            teamsPerRecord[1]["0-0"] = tCount;
+
+            for (let r = 1; r < totalSwissRounds; r++) {
+                for (const record in teamsPerRecord[r]) {
+                    const count = teamsPerRecord[r][record];
+                    const [win, loss] = record.split('-').map(Number);
+                    
+                    // Ganadores -> win + 1
+                    if (win + 1 < w) {
+                        const nextRecord = `${win + 1}-${loss}`;
+                        teamsPerRecord[r+1][nextRecord] = (teamsPerRecord[r+1][nextRecord] || 0) + (count / 2);
+                    }
+                    // Perdedores -> loss + 1
+                    if (loss + 1 < l) {
+                        const nextRecord = `${win}-${loss + 1}`;
+                        teamsPerRecord[r+1][nextRecord] = (teamsPerRecord[r+1][nextRecord] || 0) + (count / 2);
+                    }
+                }
             }
 
-            const roundsData = {}; 
-            // Inicializar todas las rondas posibles
-            for (let r = 1; r <= totalSwissRounds; r++) {
-                roundsData[r] = {};
-            }
-
-            // Llenar con partidas existentes
+            // 2. Mapear Partidas Reales
+            const realData = {}; // realData[round][recordStr] = [matches]
             swissMatches.forEach(m => {
-                if (!roundsData[m.round]) roundsData[m.round] = {};
-                let record = "0-0";
-                if(m.team1_id) record = getTeamRecordBeforeRound(m.team1_id, m.round, swissMatches);
-                if (!roundsData[m.round][record]) roundsData[m.round][record] = [];
-                roundsData[m.round][record].push(m);
+                if (!realData[m.round]) realData[m.round] = {};
+                let rec = "0-0";
+                if (m.team1_id) rec = getTeamRecordBeforeRound(m.team1_id, m.round, swissMatches);
+                if (!realData[m.round][rec]) realData[m.round][rec] = [];
+                realData[m.round][rec].push(m);
             });
 
-            const sortedRounds = Object.keys(roundsData).sort((a, b) => a - b);
-            let html = `<div class="w-full h-full flex flex-row items-center justify-center gap-6 overflow-x-auto px-10">`;
+            // 3. Renderizar
+            let html = `<div class="w-full h-full flex flex-row items-center justify-center gap-10 overflow-x-auto px-10">`;
 
-            sortedRounds.forEach((roundKey, index) => {
-                html += `<div class="flex flex-col justify-center gap-6 min-w-[150px] z-10">`;
-                const recordsMap = roundsData[roundKey];
+            for (let r = 1; r <= totalSwissRounds; r++) {
+                html += `<div class="flex flex-col justify-center gap-10 min-w-[200px] z-10 py-10">`;
                 
-                // Si la ronda está vacía (futura)
-                if (Object.keys(recordsMap).length === 0) {
-                     html += `
-                    <div class="flex flex-col w-full opacity-30">
-                        <div class="bg-gray-800 text-white/50 font-black uppercase text-center py-1 text-[10px] tracking-widest">RONDA ${roundKey}</div>
-                        <div class="border border-white/10 py-2 px-3 flex flex-col gap-2 bg-black/85">
-                            <div class="flex items-center justify-center py-4 text-[10px] uppercase font-bold text-gray-600">Por definir</div>
+                // Obtener records posibles para esta ronda, ordenados (2-0 > 1-1 > 0-2)
+                const records = Object.keys(teamsPerRecord[r]).sort((a,b) => {
+                    const [wA] = a.split('-').map(Number);
+                    const [wB] = b.split('-').map(Number);
+                    return wB - wA;
+                });
+
+                records.forEach(recordStr => {
+                    const expectedMatches = Math.ceil(teamsPerRecord[r][recordStr] / 2);
+                    const actualMatches = (realData[r] && realData[r][recordStr]) || [];
+                    
+                    const isBo3 = recordStr.includes(`${w-1}`); // Bo3 si están a 1 de ganar o perder
+                    const isElimDecider = recordStr.includes(`${l-1}`);
+                    const isDecider = isBo3 || isElimDecider;
+
+                    html += `
+                    <div class="flex flex-col w-full relative shadow-2xl shadow-black/80">
+                        <div class="${isDecider ? 'bg-white text-black' : 'bg-neon text-black'} font-black uppercase text-center py-1 text-xs tracking-widest">${recordStr}</div>
+                        <div class="border ${isDecider ? 'border-white' : 'border-neon'} py-3 px-4 flex flex-col gap-3 bg-black/95">`;
+
+                    for (let i = 0; i < expectedMatches; i++) {
+                        const m = actualMatches[i] || null;
+                        const t1 = m ? teams.find(te => te.id === m.team1_id) : null;
+                        const t2 = m ? teams.find(te => te.id === m.team2_id) : null;
+                        const isDone = m ? m.status === 'done' : false;
+
+                        if (m && !m.team2_id) {
+                            html += `<div class="flex items-center justify-between gap-3 w-48 opacity-70">
+                                ${teamHex(t1)} <span class="text-neon font-black text-[10px] mx-2 tracking-tighter">BYE</span> <div class="hex-logo opacity-0"></div>
+                            </div>`;
+                        } else {
+                            const s1 = isDone ? m.score1 : (m ? '0' : '-');
+                            const s2 = isDone ? m.score2 : (m ? '0' : '-');
+
+                            html += `<div class="flex items-center justify-between gap-3 w-48 ${!m ? 'opacity-20' : ''} ${isDone ? 'opacity-60' : ''}">
+                                <div class="flex items-center gap-2 flex-1 overflow-hidden">
+                                    ${teamHex(t1)}
+                                    <span class="truncate text-[10px] font-black uppercase ${isDone && m.winner_id == m.team1_id ? 'text-neon' : 'text-white'}">${t1 ? t1.name : (r === 1 ? 'POR DEFINIR' : 'TBD')}</span>
+                                </div>
+                                <div class="flex items-center gap-1 font-mono text-[10px] font-black min-w-[30px] justify-center">
+                                    <span class="${isDone && m.winner_id == m.team1_id ? 'text-neon text-[12px]' : ''}">${s1}</span>
+                                    <span class="text-neon/30">:</span>
+                                    <span class="${isDone && m.winner_id == m.team2_id ? 'text-neon text-[12px]' : ''}">${s2}</span>
+                                </div>
+                                <div class="flex items-center gap-2 flex-1 justify-end overflow-hidden">
+                                    <span class="truncate text-[10px] font-black uppercase text-right ${isDone && m.winner_id == m.team2_id ? 'text-neon' : 'text-white'}">${t2 ? t2.name : (r === 1 ? 'POR DEFINIR' : 'TBD')}</span>
+                                    ${teamHex(t2)}
+                                </div>
+                            </div>`;
+                        }
+                    }
+
+                    html += `
                         </div>
+                        <div class="${isDecider ? 'text-white' : 'text-neon'} font-black uppercase text-center text-[9px] tracking-widest mt-1 opacity-60">${isDecider ? 'BEST OF 3' : 'BEST OF 1'}</div>
                     </div>`;
-                } else {
-                    const sortedRecords = Object.keys(recordsMap).sort((a, b) => {
-                        const [wA, lA] = a.split('-').map(Number);
-                        const [wB, lB] = b.split('-').map(Number);
-                        if (wA !== wB) return wB - wA; 
-                        return lA - lB; 
-                    });
-
-                    sortedRecords.forEach(recordStr => {
-                        const matchGroup = recordsMap[recordStr];
-                        let badgeHTML = '';
-                        if (recordStr === '2-0' && roundKey == 3) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">1ST, 2ND</div>';
-                        if (recordStr === '2-1' && roundKey == 4) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">3RD, 4TH, 5TH</div>';
-                        if (recordStr === '2-2' && roundKey == 5) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">6TH, 7TH, 8TH</div>';
-
-                        const isBo3 = recordStr.includes('2');
-
-                        html += `
-                        <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
-                            ${badgeHTML}
-                            <div class="bg-neon text-black font-black uppercase text-center py-1 text-sm tracking-widest">${matchGroup.length > 0 ? recordStr : 'BYE'}</div>
-                            <div class="border border-neon py-2 px-3 flex flex-col gap-2 bg-black/85">`;
-
-                        matchGroup.forEach(m => {
-                            const t1 = teams.find(te => te.id === m.team1_id);
-                            const t2 = teams.find(te => te.id === m.team2_id);
-                            const isDone = m.status === 'done';
-
-                            if (!t2) {
-                                html += `<div class="flex items-center justify-between gap-3 w-40 opacity-70">
-                                    ${teamHex(t1)} <span class="text-neon font-bold text-xs mx-2">BYE</span> <div class="hex-logo opacity-0"></div>
-                                </div>`;
-                            } else {
-                                const score1 = isDone ? m.score1 : '0';
-                                const score2 = isDone ? m.score2 : '0';
-                                
-                                html += `<div class="flex items-center justify-between gap-3 w-44 ${isDone ? 'opacity-50' : ''}">
-                                    <div class="flex items-center gap-2 flex-1 overflow-hidden">
-                                        ${teamHex(t1)}
-                                        <span class="truncate text-[9px] font-bold ${isDone && m.winner_id == m.team1_id ? 'text-neon' : 'text-white'}">${t1 ? t1.name : '???'}</span>
-                                    </div>
-                                    <div class="flex items-center gap-1 font-mono text-[9px] font-black">
-                                        <span class="${isDone && m.winner_id == m.team1_id ? 'text-neon text-[11px]' : ''}">${score1}</span>
-                                        <span class="text-neon/50">:</span>
-                                        <span class="${isDone && m.winner_id == m.team2_id ? 'text-neon text-[11px]' : ''}">${score2}</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 flex-1 justify-end overflow-hidden">
-                                        <span class="truncate text-[9px] font-bold text-right ${isDone && m.winner_id == m.team2_id ? 'text-neon' : 'text-white'}">${t2 ? t2.name : '???'}</span>
-                                        ${teamHex(t2)}
-                                    </div>
-                                </div>`;
-                            }
-                        });
-
-                        html += `
-                            </div>
-                            <div class="text-neon font-black uppercase text-center text-[10px] tracking-widest mt-1">${isBo3 ? 'BEST OF 3' : 'BEST OF 1'}</div>
-                        </div>`;
-                    });
-                }
+                });
 
                 html += `</div>`;
-                if (index < sortedRounds.length - 1) {
-                    html += `<div class="w-4 flex items-center justify-center"></div>`;
-                }
-            });
+            }
 
-            // Columna de Clasificados / Eliminados al final
-            const advanced = teams.filter(t => t.swiss_status === 'advanced');
+            // Ganadores / Eliminados Finales
+            const advanced = teams.filter(t => t.swiss_status === 'advanced').sort((a,b) => (a.swiss_wins || 0) - (b.swiss_wins || 0));
             const eliminated = teams.filter(t => t.swiss_status === 'eliminated');
 
             if (advanced.length > 0 || eliminated.length > 0) {
-                html += `<div class="flex flex-col justify-center gap-6 min-w-[180px] z-10 ml-4">`;
-                
-                if (advanced.length > 0) {
-                    html += `
-                    <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
-                        <div class="bg-green-600 text-black font-black uppercase text-center py-1 text-sm tracking-widest">CLASIFICADOS</div>
-                        <div class="border border-green-600 py-2 px-3 flex flex-col gap-2 bg-black/85">`;
+                 html += `<div class="flex flex-col justify-center gap-6 min-w-[200px] z-10 py-10">`;
+
+                 if (advanced.length > 0) {
+                     html += `
+                    <div class="flex flex-col w-full relative shadow-2xl shadow-black/80">
+                        <div class="bg-green-500 text-black font-black uppercase text-center py-1 text-xs tracking-widest">CLASIFICADOS</div>
+                        <div class="border border-green-500 py-3 px-4 flex flex-col gap-2 bg-black/95">`;
                     advanced.forEach(t => {
-                        html += `<div class="flex items-center gap-2 w-44 hover:bg-green-600/10 transition-colors p-1 rounded">
-                            ${teamHex(t)} <span class="truncate text-xs font-bold text-white uppercase">${t.name}</span>
+                        html += `<div class="flex items-center gap-3 w-48 py-1">
+                            ${teamHex(t)} <span class="truncate text-[11px] font-black text-white uppercase tracking-tight">${t.name}</span>
+                            <span class="text-[9px] font-black text-green-500 ml-auto">${t.swiss_wins || w}-${t.swiss_losses || 0}</span>
                         </div>`;
                     });
                     html += `</div></div>`;
-                }
+                 }
 
-                if (eliminated.length > 0) {
-                     html += `
-                    <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
-                        <div class="bg-red-600 text-black font-black uppercase text-center py-1 text-sm tracking-widest">ELIMINADOS</div>
-                        <div class="border border-red-600 py-2 px-3 flex flex-col gap-2 bg-black/85">`;
+                 if (eliminated.length > 0) {
+                      html += `
+                    <div class="flex flex-col w-full relative shadow-2xl shadow-black/80 opacity-40">
+                        <div class="bg-red-600 text-black font-black uppercase text-center py-1 text-xs tracking-widest">ELIMINADOS</div>
+                        <div class="border border-red-600 py-3 px-4 flex flex-col gap-2 bg-black/95">`;
                     eliminated.forEach(t => {
-                        html += `<div class="flex items-center gap-2 w-44 opacity-50 p-1">
+                         html += `<div class="flex items-center gap-3 w-48 py-1">
                             ${teamHex(t)} <span class="truncate text-[10px] font-bold text-gray-500 uppercase">${t.name}</span>
                         </div>`;
                     });
                     html += `</div></div>`;
-                }
-                html += `</div>`;
+                 }
+
+                 html += `</div>`;
             }
 
             html += `</div>`;

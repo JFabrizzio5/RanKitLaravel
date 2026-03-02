@@ -141,85 +141,121 @@
         function renderSwiss(matches, teams, tournament) {
             const swissMatches = matches.filter(m => m.phase === 'swiss');
             
-            let totalSwissRounds = tournament.swiss_rounds_total || 0;
-            if (totalSwissRounds === 0) {
-                const w = tournament.swiss_wins_to_advance || 3;
-                const l = tournament.swiss_losses_to_eliminate || 3;
-                totalSwissRounds = w + l - 1;
+            // Configuración
+            const tCount = tournament.teams_count || teams.length || 16;
+            const w = tournament.swiss_wins_to_advance || 3;
+            const l = tournament.swiss_losses_to_eliminate || 3;
+            let totalSwissRounds = tournament.swiss_rounds_total || (w + l - 1);
+
+            // 1. Generar Estructura Teórica
+            const teamsPerRecord = {};
+            for (let r = 1; r <= totalSwissRounds; r++) teamsPerRecord[r] = {};
+            teamsPerRecord[1]["0-0"] = tCount;
+
+            for (let r = 1; r < totalSwissRounds; r++) {
+                for (const record in teamsPerRecord[r]) {
+                    const count = teamsPerRecord[r][record];
+                    const [win, loss] = record.split('-').map(Number);
+                    if (win + 1 < w) {
+                        const nextRec = `${win + 1}-${loss}`;
+                        teamsPerRecord[r+1][nextRec] = (teamsPerRecord[r+1][nextRec] || 0) + (count / 2);
+                    }
+                    if (loss + 1 < l) {
+                        const nextRec = `${win}-${loss + 1}`;
+                        teamsPerRecord[r+1][nextRec] = (teamsPerRecord[r+1][nextRec] || 0) + (count / 2);
+                    }
+                }
             }
 
-            const rounds = {};
-            for (let r = 1; r <= totalSwissRounds; r++) {
-                rounds[r] = [];
-            }
+            // 2. Mapear Partidas Reales
+            const realData = {};
             swissMatches.forEach(m => {
-                if (rounds[m.round]) rounds[m.round].push(m);
+                if (!realData[m.round]) realData[m.round] = {};
+                let rec = "0-0";
+                if (m.team1_id) rec = getTeamRecordBeforeRound(m.team1_id, m.round, swissMatches);
+                if (!realData[m.round][rec]) realData[m.round][rec] = [];
+                realData[m.round][rec].push(m);
             });
 
             const container = document.getElementById('swiss-rounds');
             container.innerHTML = '';
 
-            Object.keys(rounds).sort((a,b) => a-b).forEach(r => {
+            // 3. Renderizar
+            for (let r = 1; r <= totalSwissRounds; r++) {
                 const roundDiv = document.createElement('div');
-                roundDiv.className = 'w-72 space-y-4';
-                roundDiv.innerHTML = `<div class="bg-white/10 py-2 text-center font-black uppercase text-xs tracking-widest border-b-2 border-fuchsia-600">RONDA ${r}</div>`;
+                roundDiv.className = 'w-72 flex flex-col justify-center gap-10';
                 
-                if (rounds[r].length === 0) {
-                    roundDiv.innerHTML += `<div class="bracket-node p-4 rounded-lg opacity-40 text-center text-[10px] font-bold uppercase text-gray-500">Por definir</div>`;
-                } else {
-                    rounds[r].forEach(m => {
-                        const mDiv = document.createElement('div');
-                        const isDone = m.status === 'done';
-                        mDiv.className = `bracket-node p-3 rounded-lg ${isDone ? 'opacity-80' : ''}`;
-                        
-                        const t1 = teams.find(te => te.id === m.team1_id);
-                        const t2 = teams.find(te => te.id === m.team2_id);
-                        
-                        if (!t2) {
-                             mDiv.innerHTML = `<div class="flex justify-between items-center text-xs font-bold">
-                                <span>${t1?.name || '???'}</span> <span class="text-fuchsia-500 font-black">BYE ✅</span>
-                             </div>`;
-                        } else {
-                            mDiv.innerHTML = `
-                                <div class="flex flex-col gap-2">
-                                    <div class="flex justify-between items-center text-sm font-bold ${isDone && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
-                                        <div class="flex items-center gap-2">
-                                            ${t1?.logo ? `<img src="${t1.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
-                                            <span class="truncate w-32 uppercase">${t1?.name || '???'}</span>
-                                        </div>
-                                        <span>${isDone ? m.score1 : '0'}</span>
-                                    </div>
-                                    <div class="flex justify-between items-center text-sm font-bold ${isDone && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
-                                        <div class="flex items-center gap-2">
-                                            ${t2?.logo ? `<img src="${t2.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
-                                            <span class="truncate w-32 uppercase">${t2?.name || '???'}</span>
-                                        </div>
-                                        <span>${isDone ? m.score2 : '0'}</span>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                        roundDiv.appendChild(mDiv);
-                    });
-                }
-                container.appendChild(roundDiv);
-            });
+                // Ordenar records (Top a Bottom: mejores a peores)
+                const records = Object.keys(teamsPerRecord[r]).sort((a,b) => {
+                    const [wA] = a.split('-').map(Number);
+                    const [wB] = b.split('-').map(Number);
+                    return wB - wA;
+                });
 
-            // Columna de Clasificados / Eliminados al final
+                records.forEach(recordStr => {
+                    const expectedMatches = Math.ceil(teamsPerRecord[r][recordStr] / 2);
+                    const actualMatches = (realData[r] && realData[r][recordStr]) || [];
+                    
+                    const isDecider = recordStr.includes(`${w-1}`) || recordStr.includes(`${l-1}`);
+
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'flex flex-col w-full';
+                    groupDiv.innerHTML = `<div class="py-1 text-center font-black uppercase text-[10px] tracking-widest ${isDecider ? 'bg-white text-black' : 'bg-fuchsia-600/30 text-white'}">${recordStr}</div>`;
+                    
+                    const matchesDiv = document.createElement('div');
+                    matchesDiv.className = `bracket-node p-3 space-y-3 ${isDecider ? 'border-2 border-white' : ''}`;
+                    
+                    for (let i = 0; i < expectedMatches; i++) {
+                        const m = actualMatches[i] || null;
+                        const t1 = m ? teams.find(te => te.id === m.team1_id) : null;
+                        const t2 = m ? teams.find(te => te.id === m.team2_id) : null;
+                        const isDone = m ? m.status === 'done' : false;
+
+                        const s1 = isDone ? m.score1 : (m ? '0' : '-');
+                        const s2 = isDone ? m.score2 : (m ? '0' : '-');
+
+                        const mHTML = `
+                            <div class="flex flex-col gap-1 ${!m ? 'opacity-20' : ''}">
+                                <div class="flex justify-between items-center text-[11px] font-black ${isDone && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
+                                    <div class="flex items-center gap-2">
+                                        ${t1?.logo ? `<img src="${t1.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
+                                        <span class="truncate w-32 uppercase">${t1 ? t1.name : (r === 1 ? 'POR DEFINIR' : 'TBD')}</span>
+                                    </div>
+                                    <span>${s1}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-[11px] font-black ${isDone && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
+                                    <div class="flex items-center gap-2">
+                                        ${t2?.logo ? `<img src="${t2.logo}" class="w-4 h-4 rounded-full"/>` : `<div class="w-4 h-4 bg-white/10 rounded-full"></div>`}
+                                        <span class="truncate w-32 uppercase">${t2 ? t2.name : (r === 1 ? 'POR DEFINIR' : 'TBD')}</span>
+                                    </div>
+                                    <span>${s2}</span>
+                                </div>
+                            </div>
+                        `;
+                        matchesDiv.innerHTML += mHTML;
+                    }
+                    groupDiv.appendChild(matchesDiv);
+                    roundDiv.appendChild(groupDiv);
+                });
+                container.appendChild(roundDiv);
+            }
+
+            // Columna Final
             const advanced = teams.filter(t => t.swiss_status === 'advanced');
             const eliminated = teams.filter(t => t.swiss_status === 'eliminated');
 
             if (advanced.length > 0 || eliminated.length > 0) {
                 const statusDiv = document.createElement('div');
-                statusDiv.className = 'w-72 space-y-6 ml-8';
+                statusDiv.className = 'w-72 flex flex-col justify-center gap-10 ml-8';
                 
                 if (advanced.length > 0) {
-                    let advHTML = `<div class="bg-green-600/20 py-2 text-center font-black uppercase text-xs tracking-widest border-b-2 border-green-500">CLASIFICADOS</div>
-                                   <div class="space-y-2 mt-4">`;
+                    let advHTML = `<div class="bg-green-600 py-1 text-center font-black uppercase text-[10px] tracking-widest text-black">CLASIFICADOS</div>
+                                   <div class="bracket-node p-3 space-y-2">`;
                     advanced.forEach(t => {
-                        advHTML += `<div class="bracket-node p-2 flex items-center gap-3 border-l-4 border-green-500">
-                            ${t.logo ? `<img src="${t.logo}" class="w-6 h-6 rounded-full"/>` : `<div class="w-6 h-6 bg-white/10 rounded-full"></div>`}
-                            <span class="text-xs font-black uppercase text-white">${t.name}</span>
+                        advHTML += `<div class="flex items-center gap-3">
+                            ${t.logo ? `<img src="${t.logo}" class="w-5 h-5 rounded-full"/>` : `<div class="w-5 h-5 bg-white/10 rounded-full"></div>`}
+                            <span class="text-[10px] font-black uppercase text-white">${t.name}</span>
+                            <span class="text-[9px] font-black text-green-500 ml-auto">${t.swiss_wins || w}-${t.swiss_losses || 0}</span>
                         </div>`;
                     });
                     advHTML += `</div>`;
@@ -227,12 +263,12 @@
                 }
 
                 if (eliminated.length > 0) {
-                    let elimHTML = `<div class="bg-red-600/20 py-2 text-center font-black uppercase text-xs tracking-widest border-b-2 border-red-500 mt-8">ELIMINADOS</div>
-                                    <div class="space-y-2 mt-4">`;
+                    let elimHTML = `<div class="bg-red-600 py-1 text-center font-black uppercase text-[10px] tracking-widest text-black">ELIMINADOS</div>
+                                    <div class="bracket-node p-3 space-y-2 opacity-50">`;
                     eliminated.forEach(t => {
-                        elimHTML += `<div class="bracket-node p-2 flex items-center gap-3 border-l-4 border-red-900 opacity-50">
-                            ${t.logo ? `<img src="${t.logo}" class="w-6 h-6 rounded-full"/>` : `<div class="w-6 h-6 bg-white/10 rounded-full"></div>`}
-                            <span class="text-xs font-bold uppercase text-gray-500">${t.name}</span>
+                        elimHTML += `<div class="flex items-center gap-3">
+                            ${t.logo ? `<img src="${t.logo}" class="w-5 h-5 rounded-full"/>` : `<div class="w-5 h-5 bg-white/10 rounded-full"></div>`}
+                            <span class="text-[10px] font-bold uppercase text-gray-400">${t.name}</span>
                         </div>`;
                     });
                     elimHTML += `</div>`;
