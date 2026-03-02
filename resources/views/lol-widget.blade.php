@@ -1,176 +1,397 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ $tournament->name }} — Widget OBS</title>
-  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:transparent; font-family:'Chakra Petch',sans-serif; color:#fff; overflow:hidden; }
-    :root { --neon: #00e5ff; --bg: #07090f; --card: rgba(0,229,255,0.07); }
-    body.lol     { --neon: #f0b429; }
-    body.valorant{ --neon: #ff4655; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ $tournament->name }} — Widget OBS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { 
+            --neon: #00e5ff; /* Default fallback */
+            --bg-dark: #050505; 
+            --box-bg: rgba(0, 0, 0, 0.85); 
+        }
+        body.lol      { --neon: #f0b429; }
+        body.valorant { --neon: #ff4655; }
 
-    .widget { width:960px; min-height:400px; background:var(--bg); padding:18px; position:relative; }
+        body { 
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(255, 255, 255, 0.03), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(255, 255, 255, 0.02), transparent 25%);
+            color: white; 
+            font-family: 'Chakra Petch', sans-serif;
+            overflow: hidden; 
+        }
 
-    .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; padding-bottom:10px; border-bottom:2px solid var(--neon); }
-    .header-title { font-size:22px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--neon); text-shadow:0 0 12px var(--neon); }
-    .header-phase { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.18em; color:rgba(255,255,255,.5); background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); padding:4px 10px; border-radius:4px; }
+        /* Utilidades dinámicas de color para Tailwind */
+        .text-neon { color: var(--neon); }
+        .bg-neon { background-color: var(--neon); }
+        .border-neon { border-color: var(--neon); }
+        .shadow-neon { box-shadow: 0 0 15px var(--neon); }
 
-    /* Swiss */
-    .swiss-grid { display:flex; gap:10px; flex-wrap:nowrap; overflow-x:auto; margin-bottom:14px; }
-    .round-col  { flex:1; min-width:160px; }
-    .round-label{ font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; color:var(--neon); text-align:center; padding:4px 0 8px; border-bottom:1px solid rgba(255,255,255,.06); margin-bottom:8px; }
-    .match-card { background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:8px 10px; margin-bottom:7px; position:relative; overflow:hidden; }
-    .match-card::before { content:''; position:absolute; top:0; left:0; width:3px; height:100%; background:var(--neon); opacity:.4; }
-    .match-card.done::before { opacity:1; }
-    .team-row   { display:flex; align-items:center; gap:7px; padding:3px 0; }
-    .team-logo  { width:22px; height:22px; border-radius:50%; background:rgba(255,255,255,.1); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; color:var(--neon); border:1px solid rgba(255,255,255,.1); overflow:hidden; }
-    .team-logo img { width:100%; height:100%; object-fit:cover; }
-    .team-name  { flex:1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:rgba(255,255,255,.85); }
-    .team-name.winner  { color:var(--neon); text-shadow:0 0 8px var(--neon); }
-    .team-score { font-size:14px; font-weight:800; color:rgba(255,255,255,.6); min-width:16px; text-align:right; }
-    .team-score.winner { color:var(--neon); }
-    .match-vs   { text-align:center; font-size:8px; font-weight:700; color:rgba(255,255,255,.3); letter-spacing:.15em; margin:1px 0; }
-    .match-bye  { font-size:10px; text-align:center; color:rgba(255,255,255,.3); padding:4px 0; }
+        /* Marquesina superior */
+        .marquee-container {
+            background-color: var(--neon);
+            color: black;
+            font-weight: 800;
+            font-size: 1.2rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            display: flex;
+            align-items: center;
+        }
 
-    /* Elimination */
-    .elim-sec { margin-bottom:14px; }
-    .elim-sec-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; color:rgba(255,255,255,.3); margin-bottom:10px; }
-    .elim-container { display:flex; gap:10px; align-items:flex-start; }
-    .elim-round { flex:1; display:flex; flex-direction:column; gap:8px; }
-    .elim-round-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; text-align:center; color:var(--neon); margin-bottom:6px; }
+        /* Nodos (Partidos) */
+        .match-node {
+            background: var(--box-bg);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            z-index: 10;
+        }
+        .match-node.winner-node {
+            border-color: var(--neon);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+        }
 
-    /* Standings */
-    .standings { margin-top:6px; }
-    .standings-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; color:rgba(255,255,255,.4); margin-bottom:8px; }
-    .standings-row { display:flex; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.04); }
-    .standings-pos  { font-size:10px; font-weight:700; color:rgba(255,255,255,.3); min-width:18px; text-align:center; }
-    .standings-pos.top { color:var(--neon); }
-    .standings-name  { flex:1; font-size:11px; font-weight:700; text-transform:uppercase; }
-    .standings-record{ font-size:10px; color:rgba(255,255,255,.5); }
-    .standings-record span { color:var(--neon); }
+        .node-header {
+            background-color: var(--neon);
+            color: black;
+            font-weight: 800;
+            text-transform: uppercase;
+            text-align: center;
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+            padding: 2px 0;
+        }
 
-    /* Champion */
-    .champion-banner { text-align:center; padding:24px 0; }
-    .champion-title  { font-size:13px; letter-spacing:.3em; text-transform:uppercase; color:rgba(255,255,255,.5); margin-bottom:8px; }
-    .champion-name   { font-size:40px; font-weight:800; text-transform:uppercase; color:var(--neon); letter-spacing:.05em; animation:glow 2s ease-in-out infinite alternate; }
-    @keyframes glow { from{text-shadow:0 0 20px var(--neon),0 0 40px var(--neon)} to{text-shadow:0 0 40px var(--neon),0 0 80px var(--neon),0 0 120px var(--neon)} }
+        /* Hexágonos para logos */
+        .hex-logo {
+            width: 32px;
+            height: 32px;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255,255,255,0.2);
+            flex-shrink: 0;
+        }
+        .hex-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scale(1.1);
+        }
 
-    /* Rankit Branding */
-    .rankit-footer { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06); }
-    .rankit-logo   { display:flex; align-items:center; gap:5px; }
-    .rankit-logo-svg { width:16px; height:16px; }
-    .rankit-wordmark { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.1em; color:rgba(255,255,255,.7); }
-    .rankit-wordmark span { color:var(--neon); }
-    .powered-text  { font-size:8px; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.25); }
-  </style>
+        /* Branding RanKit */
+        .rankit-footer { position: fixed; bottom: 15px; right: 20px; display:flex; align-items:center; gap:6px; z-index: 50; }
+        .rankit-logo   { display:flex; align-items:center; gap:5px; }
+        .rankit-logo-svg { width:16px; height:16px; }
+        .rankit-wordmark { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.1em; color:rgba(255,255,255,.7); }
+        .rankit-wordmark span { color:var(--neon); }
+        .powered-text  { font-size:8px; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.25); }
+
+        /* Scrollbar oculta */
+        ::-webkit-scrollbar { display: none; }
+    </style>
 </head>
-<body class="{{ $tournament->game }}">
+<body class="{{ $tournament->game }} w-screen h-screen flex flex-col">
 
-<div class="widget" id="widget-root"></div>
+    <div class="marquee-container py-1 shadow-lg" id="top-marquee"></div>
 
-<script>
-const TOURNAMENT_ID = {{ $tournament->id }};
-const PHASE_FILTER  = '{{ $phase }}';
+    <div class="flex-1 flex flex-col items-center justify-center p-8 relative w-full h-full overflow-hidden" id="widget-root">
+        </div>
 
-function teamLogo(team) {
-  if (!team) return '';
-  if (team.logo) return `<div class="team-logo"><img src="${team.logo}" alt="${team.name[0]}"/></div>`;
-  return `<div class="team-logo">${team.name[0]}</div>`;
-}
+    <div class="rankit-footer" id="rankit-footer">
+        <span class="powered-text">POWERED BY</span>
+        <div class="rankit-logo">
+            <svg class="rankit-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/>
+                <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
+                <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--neon)"/>
+            </svg>
+            <span class="rankit-wordmark">RANKIT<span>.PRO</span></span>
+        </div>
+    </div>
 
-function renderMatch(m) {
-  if (!m.team2) return `<div class="match-card done"><div class="team-row">${teamLogo(m.team1)}<div class="team-name winner">${m.team1?m.team1.name:'TBD'}</div></div><div class="match-bye">BYE ✓</div></div>`;
-  const w = m.winner_id;
-  const isDone = m.status === 'done';
-  return `<div class="match-card ${isDone?'done':''}">
-    <div class="team-row">${teamLogo(m.team1)}<div class="team-name${isDone && w==m.team1_id?' winner':''}">${m.team1?m.team1.name:'TBD'}</div><div class="team-score${isDone && w==m.team1_id?' winner':''}">${m.score1}</div></div>
-    <div class="match-vs">VS</div>
-    <div class="team-row">${teamLogo(m.team2)}<div class="team-name${isDone && w==m.team2_id?' winner':''}">${m.team2?m.team2.name:'TBD'}</div><div class="team-score${isDone && w==m.team2_id?' winner':''}">${m.score2}</div></div>
-  </div>`;
-}
+    <script>
+        const TOURNAMENT_ID = {{ $tournament->id }};
+        const PHASE_FILTER  = '{{ $phase }}'; 
 
-function renderSwiss(matches) {
-  const rounds = {};
-  matches.filter(m=>m.phase==='swiss').forEach(m=>{if(!rounds[m.round])rounds[m.round]=[];rounds[m.round].push(m);});
-  const keys = Object.keys(rounds).sort((a,b)=>+a-+b);
-  if(!keys.length) return '';
-  return `<div class="swiss-grid">${keys.map(r=>`<div class="round-col"><div class="round-label">Swiss R${r}</div>${rounds[r].map(renderMatch).join('')}</div>`).join('')}</div>`;
-}
+        async function fetchData() {
+            try {
+                const res = await fetch(`/lol/${TOURNAMENT_ID}/widget-data`);
+                const data = await res.json();
+                render(data);
+            } catch(e) { console.error("Error cargando datos:", e); }
+        }
 
-function roundName(r, keys) {
-  const diff = keys.length - keys.indexOf(String(r));
-  if(diff===1) return 'Gran Final';
-  if(diff===2) return 'Semifinal';
-  if(diff===3) return 'Cuartos';
-  return `Ronda ${r}`;
-}
+        function teamHex(team) {
+            if (!team) return `<div class="hex-logo text-xs font-bold text-gray-500">?</div>`;
+            if (team.logo) return `<div class="hex-logo"><img src="${team.logo}" alt="logo"></div>`;
+            return `<div class="hex-logo text-xs font-bold text-white">${team.name.substring(0, 2).toUpperCase()}</div>`;
+        }
 
-function renderElim(matches) {
-  const rounds = {};
-  matches.filter(m=>m.phase==='elimination').forEach(m=>{if(!rounds[m.round])rounds[m.round]=[];rounds[m.round].push(m);});
-  const keys = Object.keys(rounds).sort((a,b)=>+a-+b);
-  if(!keys.length) return '';
-  return `<div class="elim-sec"><div class="elim-sec-title">▶ Eliminación Directa</div><div class="elim-container">${keys.map(r=>`<div class="elim-round"><div class="elim-round-label">${roundName(+r,keys)}</div>${rounds[r].map(renderMatch).join('')}</div>`).join('')}</div></div>`;
-}
+        // Lógica para historial (W-L) de Suizo
+        function getTeamRecordBeforeRound(teamId, targetRound, allMatches) {
+            let wins = 0; let losses = 0;
+            allMatches.forEach(m => {
+                if (m.round < targetRound && m.status === 'done' && m.phase === 'swiss') {
+                    if (m.team1_id === teamId || m.team2_id === teamId) {
+                        if (m.winner_id === teamId) wins++;
+                        else if (m.winner_id !== null) losses++;
+                    }
+                }
+            });
+            return `${wins}-${losses}`;
+        }
 
-function renderStandings(teams) {
-  const sorted=[...teams].sort((a,b)=>b.wins-a.wins||a.losses-b.losses);
-  return `<div class="standings"><div class="standings-title">Clasificación</div>${sorted.map((t,i)=>`<div class="standings-row"><div class="standings-pos${i<3?' top':''}">${i+1}</div>${teamLogo(t)}<div class="standings-name">${t.name}</div><div class="standings-record"><span>${t.wins}W</span> ${t.losses}L</div></div>`).join('')}</div>`;
-}
+        // ====== BUILDERS DE COMPONENTES ======
 
-function render(data) {
-  const {tournament,teams,matches} = data;
-  const phaseLabels = {pending:'Sin Iniciar',swiss:'Fase Suiza',elimination:'Eliminación',done:'🏆 Finalizado'};
-  let html = `<div class="header"><div class="header-title">${tournament.name}</div><div class="header-phase">${phaseLabels[tournament.phase]||tournament.phase}</div></div>`;
+        function buildSwiss(matches, teams) {
+            const swissMatches = matches.filter(m => m.phase === 'swiss');
+            if(swissMatches.length === 0) return '';
 
-  if (tournament.phase==='done') {
-    const elimM=matches.filter(m=>m.phase==='elimination');
-    const maxR=Math.max(...elimM.map(m=>m.round));
-    const fin=elimM.find(m=>m.round===maxR);
-    if(fin&&fin.winner) html+=`<div class="champion-banner"><div class="champion-title">🏆 Campeón</div><div class="champion-name">${fin.winner.name}</div></div>`;
-  }
+            const roundsData = {}; 
+            swissMatches.forEach(m => {
+                if (!roundsData[m.round]) roundsData[m.round] = {};
+                let record = "0-0";
+                if(m.team1_id) record = getTeamRecordBeforeRound(m.team1_id, m.round, swissMatches);
+                if (!roundsData[m.round][record]) roundsData[m.round][record] = [];
+                roundsData[m.round][record].push(m);
+            });
 
-  const p = PHASE_FILTER||'all';
-  if((p==='all'||p==='swiss') && tournament.format==='swiss_elimination') html+=renderSwiss(matches);
-  if(p==='all'||p==='elimination') html+=renderElim(matches);
-  if(p==='all'||p==='standings') html+=renderStandings(teams);
+            const sortedRounds = Object.keys(roundsData).sort((a, b) => a - b);
+            let html = `<div class="w-full h-full flex flex-row items-center justify-center gap-6 overflow-x-auto">`;
 
-  document.getElementById('widget-root').innerHTML = html;
+            sortedRounds.forEach((roundKey, index) => {
+                html += `<div class="flex flex-col justify-center gap-6 min-w-[150px] z-10">`;
+                const recordsMap = roundsData[roundKey];
+                
+                const sortedRecords = Object.keys(recordsMap).sort((a, b) => {
+                    const [wA, lA] = a.split('-').map(Number);
+                    const [wB, lB] = b.split('-').map(Number);
+                    if (wA !== wB) return wB - wA; 
+                    return lA - lB; 
+                });
 
-  // Branding footer
-  let footer = document.getElementById('rankit-footer');
-  if (!footer) {
-    footer = document.createElement('div');
-    footer.id = 'rankit-footer';
-    footer.className = 'rankit-footer';
-    footer.innerHTML = `
-      <span class="powered-text">POWERED BY</span>
-      <div class="rankit-logo">
-        <svg class="rankit-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="white"/>
-          <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="white"/>
-          <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--neon)"/>
-        </svg>
-        <span class="rankit-wordmark">RANKIT<span>.PRO</span></span>
-      </div>
-    `;
-    document.getElementById('widget-root').after(footer);
-  }
-}
+                sortedRecords.forEach(recordStr => {
+                    const matchGroup = recordsMap[recordStr];
+                    
+                    let badgeHTML = '';
+                    if (recordStr === '2-0' && roundKey == 3) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">1ST, 2ND</div>';
+                    if (recordStr === '2-1' && roundKey == 4) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">3RD, 4TH, 5TH</div>';
+                    if (recordStr === '2-2' && roundKey == 5) badgeHTML = '<div class="absolute -right-1 top-0 translate-x-full bg-white text-black text-[9px] font-black px-2 py-[2px] z-20 whitespace-nowrap tracking-wider">6TH, 7TH, 8TH</div>';
 
-async function fetchData() {
-  try {
-    const res = await fetch(`/lol/${TOURNAMENT_ID}/widget-data`);
-    const data = await res.json();
-    render(data);
-  } catch(e){ console.error(e); }
-}
+                    const isBo3 = recordStr.includes('2');
 
-fetchData();
-setInterval(fetchData, 15000); // auto-refresh 15s
-</script>
+                    html += `
+                    <div class="flex flex-col w-full relative shadow-lg shadow-black/50">
+                        ${badgeHTML}
+                        <div class="bg-neon text-black font-black uppercase text-center py-1 text-sm tracking-widest">${recordStr}</div>
+                        <div class="border border-neon py-2 px-3 flex flex-col gap-2 bg-black/85">`;
+
+                    matchGroup.forEach(m => {
+                        const t1 = teams.find(te => te.id === m.team1_id);
+                        const t2 = teams.find(te => te.id === m.team2_id);
+                        const isDone = m.status === 'done';
+
+                        if (!t2) {
+                            html += `<div class="flex items-center justify-between gap-3 w-40 opacity-70">
+                                ${teamHex(t1)} <span class="text-neon font-bold text-xs mx-2">BYE</span> <div class="hex-logo opacity-0"></div>
+                            </div>`;
+                        } else {
+                            html += `<div class="flex items-center justify-between gap-3 w-40 ${isDone ? 'opacity-50' : ''}">
+                                ${teamHex(t1)}
+                                <span class="text-neon font-black text-[10px] italic">VS</span>
+                                ${teamHex(t2)}
+                            </div>`;
+                        }
+                    });
+
+                    html += `
+                        </div>
+                        <div class="text-neon font-black uppercase text-center text-[10px] tracking-widest mt-1">${isBo3 ? 'BEST OF 3' : 'BEST OF 1'}</div>
+                    </div>`;
+                });
+
+                html += `</div>`;
+                if (index < sortedRounds.length - 1) {
+                    html += `<div class="w-4 lg:w-8 flex items-center justify-center"></div>`;
+                }
+            });
+
+            html += `</div>`;
+            return html;
+        }
+
+        function buildElimination(matches, teams) {
+            const elimMatches = matches.filter(m => m.phase === 'elimination');
+            if(elimMatches.length === 0) return '';
+
+            const rounds = {};
+            elimMatches.forEach(m => {
+                if (!rounds[m.round]) rounds[m.round] = [];
+                rounds[m.round].push(m);
+            });
+
+            const sortedRounds = Object.keys(rounds).sort((a,b) => b - a);
+            const totalRounds = sortedRounds.length;
+            
+            let html = `<div class="w-full h-full flex flex-col items-center justify-end gap-0 pb-10">`;
+
+            sortedRounds.forEach((r, index) => {
+                const isFinal = index === 0;
+                const matchCount = rounds[r].length;
+                
+                let roundName = 'CUARTOS DE FINAL';
+                if (isFinal) roundName = 'LA FINAL';
+                else if (index === 1 && totalRounds >= 3) roundName = 'SEMIFINALES';
+
+                let rowGap = 'gap-12';
+                if(matchCount === 2) rowGap = 'gap-64';
+                if(matchCount === 4) rowGap = 'gap-8';
+
+                html += `<div class="flex w-full justify-center ${rowGap} z-10 mb-0">`;
+
+                rounds[r].forEach(m => {
+                    const t1 = teams.find(te => te.id === m.team1_id);
+                    const t2 = teams.find(te => te.id === m.team2_id);
+                    const isDone = m.status === 'done';
+                    const score1HTML = isDone ? `<div class="${m.winner_id == m.team1_id ? 'text-neon text-lg' : 'text-gray-500'} font-bold w-4 text-center">${m.score1}</div>` : '';
+                    const score2HTML = isDone ? `<div class="${m.winner_id == m.team2_id ? 'text-neon text-lg' : 'text-gray-500'} font-bold w-4 text-center">${m.score2}</div>` : '';
+
+                    html += `
+                    <div class="flex flex-col items-center">
+                        <div class="match-node ${isDone ? 'winner-node' : ''} w-52 flex flex-col items-center">
+                            <div class="node-header w-full">AL MEJOR DE 5</div>
+                            <div class="flex items-center justify-between gap-2 px-3 py-3 w-full backdrop-blur-md">
+                                <div class="flex items-center gap-2">${teamHex(t1)} ${score1HTML}</div>
+                                <div class="text-neon font-black text-lg italic drop-shadow-md">VS</div>
+                                <div class="flex items-center gap-2">${score2HTML} ${teamHex(t2)}</div>
+                            </div>
+                        </div>
+                        <div class="text-neon font-black uppercase text-center text-[10px] tracking-widest mt-1">${roundName}</div>
+                    </div>`;
+                });
+
+                html += `</div>`;
+
+                // Conectores (Líneas)
+                if (index < totalRounds - 1) {
+                    html += `<div class="flex w-full justify-center h-12 relative">`;
+                    if (matchCount === 1) { 
+                        html += `
+                            <div class="w-2/3 max-w-[350px] flex flex-col items-center">
+                                <div class="w-[2px] h-6 bg-neon"></div>
+                                <div class="w-full h-[2px] bg-neon"></div>
+                                <div class="w-full flex justify-between">
+                                    <div class="w-[2px] h-6 bg-neon"></div>
+                                    <div class="w-[2px] h-6 bg-neon"></div>
+                                </div>
+                            </div>`;
+                    } else if (matchCount === 2) { 
+                        html += `
+                            <div class="flex w-full justify-center gap-[12rem] h-12 relative">
+                                <div class="w-56 flex flex-col items-center">
+                                    <div class="w-[2px] h-6 bg-neon"></div>
+                                    <div class="w-full h-[2px] bg-neon"></div>
+                                    <div class="w-full flex justify-between">
+                                        <div class="w-[2px] h-6 bg-neon"></div>
+                                        <div class="w-[2px] h-6 bg-neon"></div>
+                                    </div>
+                                </div>
+                                <div class="w-56 flex flex-col items-center">
+                                    <div class="w-[2px] h-6 bg-neon"></div>
+                                    <div class="w-full h-[2px] bg-neon"></div>
+                                    <div class="w-full flex justify-between">
+                                        <div class="w-[2px] h-6 bg-neon"></div>
+                                        <div class="w-[2px] h-6 bg-neon"></div>
+                                    </div>
+                                </div>
+                            </div>`;
+                    }
+                    html += `</div>`;
+                }
+            });
+
+            html += `</div>`;
+            return html;
+        }
+
+        function buildStandings(teams) {
+            const sorted = [...teams].sort((a,b) => b.wins - a.wins || a.losses - b.losses);
+            let html = `
+            <div class="w-full max-w-xl mx-auto flex flex-col h-full justify-center">
+                <div class="bg-black/80 border border-neon p-6 shadow-neon">
+                    <h2 class="text-neon text-xl font-black uppercase tracking-widest text-center mb-6">Clasificación Global</h2>
+                    <div class="flex flex-col gap-3">`;
+            
+            sorted.forEach((t, i) => {
+                const isTop = i < 3;
+                html += `
+                <div class="flex items-center gap-4 py-2 border-b border-white/10 last:border-0">
+                    <div class="${isTop ? 'text-neon text-xl' : 'text-white/50 text-md'} font-black w-6 text-center">${i+1}</div>
+                    ${teamHex(t)}
+                    <div class="flex-1 font-bold text-sm uppercase tracking-wider ${isTop ? 'text-white' : 'text-white/80'}">${t.name}</div>
+                    <div class="font-bold text-xs bg-white/5 px-3 py-1 rounded">
+                        <span class="text-neon">${t.wins}W</span> - <span class="text-white/50">${t.losses}L</span>
+                    </div>
+                </div>`;
+            });
+
+            html += `</div></div></div>`;
+            return html;
+        }
+
+        // ====== FUNCIÓN DE RENDER PRINCIPAL ======
+        function render(data) {
+            const { tournament, teams, matches } = data;
+            const root = document.getElementById('widget-root');
+            const p = PHASE_FILTER || 'all';
+
+            // 1. Configurar Marquesina Superior
+            const phaseLabels = { pending:'Sin Iniciar', swiss:'Fase Suiza', elimination:'Eliminatoria', done:'Torneo Finalizado' };
+            const label = phaseLabels[tournament.phase] || tournament.phase;
+            document.getElementById('top-marquee').innerHTML = (`${tournament.name} • ${label} • `).repeat(10);
+
+            let contentHTML = '';
+
+            // 2. Banner de Campeón (Si ya terminó)
+            if (tournament.phase === 'done') {
+                const elimM = matches.filter(m => m.phase === 'elimination');
+                const maxR = Math.max(...elimM.map(m => m.round));
+                const fin = elimM.find(m => m.round === maxR);
+                if (fin && fin.winner_id) {
+                    const champ = teams.find(t => t.id === fin.winner_id);
+                    contentHTML += `
+                    <div class="absolute top-10 left-1/2 -translate-x-1/2 z-50 text-center bg-black/90 border-2 border-neon px-12 py-4 shadow-neon">
+                        <div class="text-xs tracking-[0.3em] uppercase text-white/70 mb-2">🏆 Campeón del Torneo</div>
+                        <div class="text-4xl font-black uppercase text-neon tracking-widest drop-shadow-md">${champ ? champ.name : 'TBD'}</div>
+                    </div>`;
+                }
+            }
+
+            // 3. Renderizar Fase Correspondiente
+            if ((p === 'all' || p === 'swiss') && tournament.format === 'swiss_elimination' && tournament.phase !== 'done') {
+                contentHTML += buildSwiss(matches, teams);
+            } 
+            else if (p === 'elimination' || (p === 'all' && (tournament.phase === 'elimination' || tournament.phase === 'done'))) {
+                contentHTML += buildElimination(matches, teams);
+            }
+            else if (p === 'standings') {
+                contentHTML += buildStandings(teams);
+            }
+
+            root.innerHTML = contentHTML;
+        }
+
+        fetchData();
+        setInterval(fetchData, 15000); // auto-refresh 15s
+    </script>
 </body>
 </html>
