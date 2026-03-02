@@ -229,64 +229,92 @@
             return html;
         }
 
-        function buildElimination(matches, teams) {
+        function buildElimination(matches, teams, tournament) {
             const elimMatches = matches.filter(m => m.phase === 'elimination');
-            if(elimMatches.length === 0) return '';
-
+            
+            // Determinar tamaño del bracket (2, 4, 8, 16...)
+            let teamsCount = tournament.elimination_teams || 8;
+            let totalRounds = Math.ceil(Math.log2(teamsCount));
+            
             const rounds = {};
+            // Inicializar todas las rondas posibles según el tamaño del torneo
+            for (let r = 1; r <= totalRounds; r++) {
+                rounds[r] = [];
+            }
+            
+            // Llenar con partidas existentes
             elimMatches.forEach(m => {
-                if (!rounds[m.round]) rounds[m.round] = [];
-                rounds[m.round].push(m);
+                if (rounds[m.round]) rounds[m.round].push(m);
             });
 
+            // Ordenar rondas de mayor a menor (Final arriba)
             const sortedRounds = Object.keys(rounds).sort((a,b) => b - a);
-            const totalRounds = sortedRounds.length;
             
             let html = `<div class="w-full h-full flex flex-col items-center justify-end gap-0 pb-10">`;
 
             sortedRounds.forEach((r, index) => {
                 const isFinal = index === 0;
-                const matchCount = rounds[r].length;
+                const matchCount = Math.pow(2, index); // Partidas teóricas por ronda (1, 2, 4, 8...)
                 
                 let roundName = 'CUARTOS DE FINAL';
                 if (isFinal) roundName = 'LA FINAL';
-                else if (index === 1 && totalRounds >= 3) roundName = 'SEMIFINALES';
+                else if (index === 1 && sortedRounds.length >= 2) roundName = 'SEMIFINALES';
+                else if (index === 2 && sortedRounds.length >= 3) roundName = 'CUARTOS DE FINAL';
+                else roundName = `RONDA ${r}`;
 
                 let rowGap = 'gap-12';
-                if(matchCount === 2) rowGap = 'gap-64';
+                if(matchCount === 2) rowGap = 'gap-48';
                 if(matchCount === 4) rowGap = 'gap-8';
 
                 html += `<div class="flex w-full justify-center ${rowGap} z-10 mb-0">`;
 
-                rounds[r].forEach(m => {
-                    const t1 = teams.find(te => te.id === m.team1_id);
-                    const t2 = teams.find(te => te.id === m.team2_id);
-                    const isDone = m.status === 'done';
-                    const score1HTML = isDone ? `<div class="${m.winner_id == m.team1_id ? 'text-neon text-lg' : 'text-gray-500'} font-bold w-4 text-center">${m.score1}</div>` : '';
-                    const score2HTML = isDone ? `<div class="${m.winner_id == m.team2_id ? 'text-neon text-lg' : 'text-gray-500'} font-bold w-4 text-center">${m.score2}</div>` : '';
+                // Renderizar partidas de esta ronda
+                for (let i = 0; i < matchCount; i++) {
+                    const m = rounds[r][i] || null;
+                    const t1 = m ? teams.find(te => te.id === m.team1_id) : null;
+                    const t2 = m ? teams.find(te => te.id === m.team2_id) : null;
+                    const isDone = m ? m.status === 'done' : false;
+                    
+                    // Mostrar scores si existen (o 0 si la partida está en curso/pendiente)
+                    const score1 = m ? m.score1 : 0;
+                    const score2 = m ? m.score2 : 0;
+                    
+                    const score1HTML = `<div class="${m && isDone && m.winner_id == m.team1_id ? 'text-neon text-lg' : 'text-gray-500'} font-bold w-4 text-center">${m ? score1 : '-'}</div>`;
+                    const score2HTML = `<div class="${m && isDone && m.winner_id == m.team2_id ? 'text-neon text-lg' : 'text-gray-500'} font-bold w-4 text-center">${m ? score2 : '-'}</div>`;
+
+                    const t1Name = t1 ? t1.name : (r == 1 ? 'Por definir' : 'TBD');
+                    const t2Name = t2 ? t2.name : (r == 1 ? 'Por definir' : 'TBD');
 
                     html += `
                     <div class="flex flex-col items-center">
                         <div class="match-node ${isDone ? 'winner-node' : ''} w-52 flex flex-col items-center">
                             <div class="node-header w-full">AL MEJOR DE 5</div>
                             <div class="flex items-center justify-between gap-2 px-3 py-3 w-full backdrop-blur-md">
-                                <div class="flex items-center gap-2">${teamHex(t1)} ${score1HTML}</div>
-                                <div class="text-neon font-black text-lg italic drop-shadow-md">VS</div>
-                                <div class="flex items-center gap-2">${score2HTML} ${teamHex(t2)}</div>
+                                <div class="flex items-center gap-2 flex-1 overflow-hidden">
+                                    ${teamHex(t1)} 
+                                    <span class="truncate text-xs font-bold ${m && isDone && m.winner_id == m.team1_id ? 'text-neon' : 'text-white'}">${t1Name}</span>
+                                    ${score1HTML}
+                                </div>
+                                <div class="text-neon font-black text-sm italic drop-shadow-md px-1">VS</div>
+                                <div class="flex items-center gap-2 flex-1 justify-end overflow-hidden">
+                                    ${score2HTML} 
+                                    <span class="truncate text-xs font-bold ${m && isDone && m.winner_id == m.team2_id ? 'text-neon' : 'text-white'}">${t2Name}</span>
+                                    ${teamHex(t2)}
+                                </div>
                             </div>
                         </div>
                         <div class="text-neon font-black uppercase text-center text-[10px] tracking-widest mt-1">${roundName}</div>
                     </div>`;
-                });
+                }
 
                 html += `</div>`;
 
-                // Conectores (Líneas)
-                if (index < totalRounds - 1) {
+                // Conectores (Líneas) - Ajustados para ser dinámicos
+                if (index < sortedRounds.length - 1) {
                     html += `<div class="flex w-full justify-center h-12 relative">`;
                     if (matchCount === 1) { 
                         html += `
-                            <div class="w-2/3 max-w-[350px] flex flex-col items-center">
+                            <div class="w-1/2 max-w-[300px] flex flex-col items-center">
                                 <div class="w-[2px] h-6 bg-neon"></div>
                                 <div class="w-full h-[2px] bg-neon"></div>
                                 <div class="w-full flex justify-between">
@@ -297,7 +325,7 @@
                     } else if (matchCount === 2) { 
                         html += `
                             <div class="flex w-full justify-center gap-[12rem] h-12 relative">
-                                <div class="w-56 flex flex-col items-center">
+                                <div class="w-48 flex flex-col items-center">
                                     <div class="w-[2px] h-6 bg-neon"></div>
                                     <div class="w-full h-[2px] bg-neon"></div>
                                     <div class="w-full flex justify-between">
@@ -305,7 +333,7 @@
                                         <div class="w-[2px] h-6 bg-neon"></div>
                                     </div>
                                 </div>
-                                <div class="w-56 flex flex-col items-center">
+                                <div class="w-48 flex flex-col items-center">
                                     <div class="w-[2px] h-6 bg-neon"></div>
                                     <div class="w-full h-[2px] bg-neon"></div>
                                     <div class="w-full flex justify-between">
@@ -381,7 +409,7 @@
                 contentHTML += buildSwiss(matches, teams);
             } 
             else if (p === 'elimination' || (p === 'all' && (tournament.phase === 'elimination' || tournament.phase === 'done'))) {
-                contentHTML += buildElimination(matches, teams);
+                contentHTML += buildElimination(matches, teams, tournament);
             }
             else if (p === 'standings') {
                 contentHTML += buildStandings(teams);

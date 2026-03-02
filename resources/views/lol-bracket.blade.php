@@ -135,7 +135,7 @@
             }
 
             if (showSwiss) renderSwiss(matches, teams);
-            if (showElim) renderElimination(matches, teams);
+            if (showElim) renderElimination(matches, teams, t);
         }
 
         function renderSwiss(matches, teams) {
@@ -191,12 +191,19 @@
             });
         }
 
-        function renderElimination(matches, teams) {
+        function renderElimination(matches, teams, tournament) {
             const elimMatches = matches.filter(m => m.phase === 'elimination');
+            
+            // Determinar tamaño del bracket (2, 4, 8, 16...)
+            let teamsCount = tournament.elimination_teams || 8;
+            let totalRounds = Math.ceil(Math.log2(teamsCount));
+            
             const rounds = {};
+            for (let r = 1; r <= totalRounds; r++) {
+                rounds[r] = [];
+            }
             elimMatches.forEach(m => {
-                if (!rounds[m.round]) rounds[m.round] = [];
-                rounds[m.round].push(m);
+                if (rounds[m.round]) rounds[m.round].push(m);
             });
 
             const container = document.getElementById('elim-bracket');
@@ -207,40 +214,54 @@
                 const roundDiv = document.createElement('div');
                 roundDiv.className = 'flex flex-col justify-around gap-8';
                 
-                const label = sortedRounds.length - idx === 1 ? 'GRAN FINAL' : (sortedRounds.length - idx === 2 ? 'SEMIFINALES' : 'CUARTOS');
+                // Determinar etiqueta de ronda
+                const roundsFromFinal = sortedRounds.length - idx;
+                let label = roundsFromFinal === 1 ? 'GRAN FINAL' : (roundsFromFinal === 2 ? 'SEMIFINALES' : 'CUARTOS');
+                if (roundsFromFinal > 3) label = `RONDA ${r}`;
+                
                 roundDiv.innerHTML = `<div class="text-[9px] font-black tracking-widest text-center text-gray-500 mb-2">${label}</div>`;
 
-                rounds[r].forEach(m => {
-                    const mDiv = document.createElement('div');
-                    mDiv.className = `bracket-node p-4 rounded-lg w-64 ${m.status === 'done' ? 'winner' : ''}`;
+                const matchCount = Math.pow(2, sortedRounds.length - idx - 1);
+
+                for (let i = 0; i < matchCount; i++) {
+                    const m = rounds[r][i] || null;
+                    const t1 = m ? teams.find(te => te.id === m.team1_id) : null;
+                    const t2 = m ? teams.find(te => te.id === m.team2_id) : null;
+                    const isDone = m ? m.status === 'done' : false;
+
+                    const score1 = m ? m.score1 : 0;
+                    const score2 = m ? m.score2 : 0;
+
+                    const name1 = t1 ? t1.name : (r == 1 ? 'Por definir' : 'TBD');
+                    const name2 = t2 ? t2.name : (r == 1 ? 'Por definir' : 'TBD');
                     
-                    const t1 = teams.find(te => te.id === m.team1_id);
-                    const t2 = teams.find(te => te.id === m.team2_id);
+                    const mDiv = document.createElement('div');
+                    mDiv.className = `bracket-node p-4 rounded-lg w-64 ${isDone ? 'winner' : ''}`;
                     
                     mDiv.innerHTML = `
                          <div class="flex flex-col gap-3">
-                            <div class="flex justify-between items-center ${m.status == 'done' && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
+                            <div class="flex justify-between items-center ${m && isDone && m.winner_id == m.team1_id ? 'text-fuchsia-400' : ''}">
                                 <div class="flex items-center gap-3">
                                     <div class="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex items-center justify-center text-[10px] font-bold border border-white/10">
-                                        ${t1?.logo ? `<img src="${t1.logo}" class="w-full h-full object-cover"/>` : `<span>${t1?.name[0] || '?'}</span>`}
+                                        ${t1?.logo ? `<img src="${t1.logo}" class="w-full h-full object-cover"/>` : `<span>${name1[0] || '?'}</span>`}
                                     </div>
-                                    <span class="text-sm font-black uppercase tracking-tight">${t1?.name || '---'}</span>
+                                    <span class="text-sm font-black uppercase tracking-tight truncate w-32">${name1}</span>
                                 </div>
-                                <span class="font-mono font-bold">${m.status === 'done' ? m.score1 : ''}</span>
+                                <span class="font-mono font-bold">${m ? score1 : '-'}</span>
                             </div>
-                            <div class="flex justify-between items-center ${m.status == 'done' && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
+                            <div class="flex justify-between items-center ${m && isDone && m.winner_id == m.team2_id ? 'text-fuchsia-400' : ''}">
                                 <div class="flex items-center gap-3">
                                     <div class="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex items-center justify-center text-[10px] font-bold border border-white/10">
-                                        ${t2?.logo ? `<img src="${t2.logo}" class="w-full h-full object-cover"/>` : `<span>${t2?.name[0] || '?'}</span>`}
+                                        ${t2?.logo ? `<img src="${t2.logo}" class="w-full h-full object-cover"/>` : `<span>${name2[0] || '?'}</span>`}
                                     </div>
-                                    <span class="text-sm font-black uppercase tracking-tight">${t2?.name || '---'}</span>
+                                    <span class="text-sm font-black uppercase tracking-tight truncate w-32">${name2}</span>
                                 </div>
-                                <span class="font-mono font-bold">${m.status === 'done' ? m.score2 : ''}</span>
+                                <span class="font-mono font-bold">${m ? score2 : '-'}</span>
                             </div>
                          </div>
                     `;
                     roundDiv.appendChild(mDiv);
-                });
+                }
                 container.appendChild(roundDiv);
             });
         }
