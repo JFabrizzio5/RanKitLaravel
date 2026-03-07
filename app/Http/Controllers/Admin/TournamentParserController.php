@@ -15,14 +15,24 @@ use Inertia\Inertia;
 class TournamentParserController extends Controller
 {
     /**
-     * Asegura que la infraestructura de DB esté lista.
+     * Asegura que la infraestructura de DB esté lista y actualizada.
      */
     protected function ensureDatabaseIsReady()
     {
+        // 0. Tabla de Usuarios (Asegurar que existe el rol)
+        if (Schema::hasTable('users')) {
+            Schema::table('users', function (Blueprint $table) {
+                if (!Schema::hasColumn('users', 'role')) {
+                    $table->string('role')->default('organizer'); // 'admin' o 'organizer'
+                }
+            });
+        }
+
         // 1. Tabla de Torneos
         if (!Schema::hasTable('tournaments')) {
             Schema::create('tournaments', function (Blueprint $table) {
                 $table->id();
+                $table->foreignId('user_id')->constrained()->onDelete('cascade'); // El dueño
                 $table->string('name');
                 $table->string('slug')->nullable();
                 $table->string('twitch_channel')->nullable();
@@ -36,6 +46,10 @@ class TournamentParserController extends Controller
             });
         } else {
              Schema::table('tournaments', function (Blueprint $table) {
+                if (!Schema::hasColumn('tournaments', 'user_id')) {
+                    // Si ya existía, añadimos el campo permitiendo nulos temporalmente
+                    $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
+                }
                 if (!Schema::hasColumn('tournaments', 'twitch_channel')) $table->string('twitch_channel')->nullable();
                 if (!Schema::hasColumn('tournaments', 'is_private')) $table->boolean('is_private')->default(false);
                 if (!Schema::hasColumn('tournaments', 'access_code')) $table->string('access_code')->nullable();
@@ -112,13 +126,46 @@ class TournamentParserController extends Controller
         }
     }
 
+    /**
+     * Helpers de Seguridad
+     */
+    private function isSuperAdmin($user)
+    {
+        $superAdmins = ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com']; 
+        return in_array($user->email, $superAdmins) || ($user->role === 'admin');
+    }
+
+    private function getTournamentIfOwner($id) 
+    {
+        $user = auth()->user();
+        $query = DB::table('tournaments')->where('id', $id);
+
+        if (!$this->isSuperAdmin($user)) {
+            $query->where('user_id', $user->id);
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * Vista principal (Filtra por usuario)
+     */
     public function index()
     {
         $this->ensureDatabaseIsReady();
-        $tournaments = DB::table('tournaments')->orderBy('created_at', 'desc')->get();
+        $user = auth()->user();
+
+        $query = DB::table('tournaments')
+            ->leftJoin('users', 'tournaments.user_id', '=', 'users.id')
+            ->select('tournaments.*', 'users.name as creator_name');
+
+        if (!$this->isSuperAdmin($user)) {
+            $query->where('tournaments.user_id', $user->id);
+        }
+
+        $tournaments = $query->orderBy('tournaments.created_at', 'desc')->get();
 
         foreach($tournaments as $tn) {
-            // Decodificar JSON para que el frontend lo lea como objeto
             $tn->scoring_format = json_decode($tn->scoring_format ?? '{}');
             
             $tn->matches = DB::table('tournament_matches')
@@ -133,14 +180,17 @@ class TournamentParserController extends Controller
         }
 
         return Inertia::render('Admin/JangelDashboard', [
-            'tournaments' => $tournaments
+            'tournaments' => $tournaments,
+            'isSuperAdmin' => $this->isSuperAdmin($user)
         ]);
     }
     
     public function store(Request $request) {
         $this->ensureDatabaseIsReady();
+        $user = auth()->user();
         
         $data = [
+            'user_id' => $user->id,
             'name' => $request->name,
             'twitch_channel' => $request->twitch_channel,
             'rules' => $request->rules,
@@ -151,7 +201,8 @@ class TournamentParserController extends Controller
             'updated_at' => now()
         ];
 
-        if ($this->isJangel(auth()->user()) && $request->boolean('is_private')) {
+        // Solo Admin puede crear torneos privados
+        if ($this->isSuperAdmin($user) && $request->boolean('is_private')) {
             $data['is_private'] = true;
             $data['access_code'] = $request->access_code;
         } else {
@@ -168,6 +219,9 @@ class TournamentParserController extends Controller
     }
     
     public function update(Request $request, $id) {
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'No tienes permiso para editar este torneo.');
+
         $data = [
             'name' => $request->name,
             'twitch_channel' => $request->twitch_channel,
@@ -177,9 +231,8 @@ class TournamentParserController extends Controller
             'updated_at' => now(),
         ];
 
-        // Actualizar Privacidad
         if (Schema::hasColumn('tournaments', 'is_private')) {
-            if ($this->isJangel(auth()->user())) {
+            if ($this->isSuperAdmin(auth()->user())) {
                 $isPrivate = $request->boolean('is_private');
                 $data['is_private'] = $isPrivate;
                 $data['access_code'] = $isPrivate ? $request->access_code : null;
@@ -191,14 +244,23 @@ class TournamentParserController extends Controller
     }
 
     public function destroy($id) {
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'No tienes permiso para eliminar este torneo.');
+
         $matchCount = DB::table('tournament_matches')->where('tournament_id', $id)->count();
         if ($matchCount > 0) return back()->with('error', 'Elimina las partidas primero.');
+        
         DB::table('tournaments')->where('id', $id)->delete();
         return back()->with('success', 'Torneo eliminado.');
     }
 
     public function storeScheduledMatch(Request $request, $tournamentId) {
         $this->ensureDatabaseIsReady();
+        
+        if (!$this->getTournamentIfOwner($tournamentId)) {
+            return back()->with('error', 'Permiso denegado.');
+        }
+
         DB::table('tournament_matches')->insert([
             'tournament_id' => $tournamentId,
             'match_id' => 'pending_' . uniqid(),
@@ -211,6 +273,11 @@ class TournamentParserController extends Controller
 
     public function updateMatch(Request $request, $id)
     {
+        $match = DB::table('tournament_matches')->where('id', $id)->first();
+        if (!$match || !$this->getTournamentIfOwner($match->tournament_id)) {
+            return back()->with('error', 'Permiso denegado.');
+        }
+
         $request->validate([
             'custom_code' => 'required|string|max:50',
             'reset_stats' => 'nullable|boolean' 
@@ -227,7 +294,6 @@ class TournamentParserController extends Controller
             DB::transaction(function () use ($id, &$updateData) {
                 DB::table('player_match_stats')->where('tournament_match_id', $id)->delete();
                 DB::table('team_match_stats')->where('tournament_match_id', $id)->delete();
-                // Limpiar logs asociados a esta partida
                 DB::table('tournament_score_logs')->where('match_id', $id)->delete();
 
                 $updateData['match_id'] = 'pending_' . uniqid(); 
@@ -242,6 +308,11 @@ class TournamentParserController extends Controller
     }
 
     public function deleteMatch($matchId) {
+        $match = DB::table('tournament_matches')->where('id', $matchId)->first();
+        if (!$match || !$this->getTournamentIfOwner($match->tournament_id)) {
+            return back()->with('error', 'Permiso denegado.');
+        }
+
         DB::table('player_match_stats')->where('tournament_match_id', $matchId)->delete();
         DB::table('team_match_stats')->where('tournament_match_id', $matchId)->delete();
         DB::table('tournament_score_logs')->where('match_id', $matchId)->delete();
@@ -261,20 +332,15 @@ class TournamentParserController extends Controller
 
         $points = 0;
         
-        // 1. Configuración Personalizada (JSON)
         if (!empty($format) && isset($format->placement) && is_array($format->placement)) {
-            // Puntos por Kills
             $killPts = isset($format->kill_points) ? (float)$format->kill_points : 1;
             $points += ($kills * $killPts * $multiplier);
 
-            // Puntos por Posición (Ranges)
             foreach ($format->placement as $range) {
-                // Estructura esperada: { "from": 1, "to": 1, "points": 10 }
                 $from = (int)($range->from ?? 0);
                 $to = (int)($range->to ?? 0);
                 $pts = (float)($range->points ?? 0);
 
-                // Normalizar: start = peor ranking (mayor numero), end = mejor ranking (menor numero)
                 $start = max($from, $to); 
                 $end = min($from, $to);
 
@@ -287,9 +353,8 @@ class TournamentParserController extends Controller
                 }
             }
         } 
-        // 2. Modo Automático (Compensación Default si no hay config)
         else {
-            $points += ($kills * $multiplier); // Multiplicado por modo
+            $points += ($kills * $multiplier); 
 
             if ($rank == 1) $points += (25 * $multiplier);
             elseif ($rank <= 5) $points += (15 * $multiplier);
@@ -305,6 +370,9 @@ class TournamentParserController extends Controller
     {
         $this->ensureDatabaseIsReady();
         
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+        
         $request->validate([
             'replay' => 'required|file',
             'mode' => 'required|integer', 
@@ -312,8 +380,6 @@ class TournamentParserController extends Controller
         ]);
 
         try {
-            // Obtener reglas del torneo
-            $tournament = DB::table('tournaments')->where('id', $id)->first();
             $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
 
             $file = $request->file('replay');
@@ -340,7 +406,7 @@ class TournamentParserController extends Controller
                 ->attach('file', $fileContent, $fileName)
                 ->post('http://62.72.3.139:5138/api/FortniteParser/analyze', [
                     'mode' => $mode,
-                    'rulesJson' => '' // Enviamos vacío, calculamos en PHP
+                    'rulesJson' => '' 
                 ]);
 
             if (!$analyzeResponse->successful()) throw new \Exception("Error en Analyze: " . $analyzeResponse->body());
@@ -361,7 +427,6 @@ class TournamentParserController extends Controller
             $currentMatchId = null;
 
             if ($targetMatchId) {
-                // Overwrite
                 if ($existingCollision && $existingCollision->id != $targetMatchId) {
                     DB::table('player_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
                     DB::table('team_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
@@ -375,7 +440,6 @@ class TournamentParserController extends Controller
                     'updated_at' => now(),
                 ]);
             } else {
-                // Nuevo
                 if ($existingCollision) {
                     $currentMatchId = $existingCollision->id;
                     DB::table('tournament_matches')->where('id', $currentMatchId)->update([
@@ -397,11 +461,9 @@ class TournamentParserController extends Controller
                 }
             }
 
-            // Limpieza previa
             DB::table('player_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
             DB::table('team_match_stats')->where('tournament_match_id', $currentMatchId)->delete();
 
-            // Insertar Jugadores (CALCULANDO PUNTOS INTERNAMENTE)
             $players = $data['playerLeaderboard'] ?? [];
             foreach ($players as $p) {
                 if (($p['isBot'] ?? false) || ($p['playerName'] ?? '') === 'Unknown') continue;
@@ -409,7 +471,6 @@ class TournamentParserController extends Controller
                 $rank = $p['leaderboardRank'] ?? 0;
                 $kills = $p['kills'] ?? 0;
                 
-                // CÁLCULO INTERNO PHP
                 $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $this->getModeName($mode));
 
                 DB::table('player_match_stats')->insert([
@@ -419,14 +480,13 @@ class TournamentParserController extends Controller
                     'kills' => $kills,
                     'extra_stats' => json_encode([
                         'teamId' => $p['teamId'] ?? -1,
-                        'totalPoints' => $calculatedPoints, // Guardamos el calculado
-                        'manual_points' => 0 // Init manual points
+                        'totalPoints' => $calculatedPoints, 
+                        'manual_points' => 0 
                     ]),
                     'updated_at' => now(), 'created_at' => now(),
                 ]);
             }
 
-            // Insertar Equipos
             $teams = $data['teamLeaderboard'] ?? [];
             foreach ($teams as $t) {
                 $members = $t['memberNames'] ?? [];
@@ -439,10 +499,6 @@ class TournamentParserController extends Controller
                 $teamRank = $t['rank'] ?? ($t['leaderboardRank'] ?? 999);
                 $teamTotalKills = $t['totalKills'] ?? 0;
                 
-                // Recalcular puntos del equipo basado en la suma de sus jugadores (para mantener consistencia)
-                // O usar la lógica de puntos de equipo. Usaremos la suma de jugadores calculados arriba
-                // Pero como no tenemos el ID de jugador aquí fácilmente, usamos calculateScore sobre stats de equipo
-                // NOTA: Esto asume que el formato de puntos de equipo es igual (Rank + Kills)
                 $teamCalculatedPoints = $this->calculateScore($teamRank, $teamTotalKills, $scoringFormat, $this->getModeName($mode));
 
                 DB::table('team_match_stats')->insert([
@@ -470,13 +526,13 @@ class TournamentParserController extends Controller
     public function appealReplay(Request $request, $tournamentId)
     {
         $this->ensureDatabaseIsReady();
+        
+        $tournament = $this->getTournamentIfOwner($tournamentId);
+        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+
         $request->validate(['replay' => 'required|file']);
 
         try {
-            $tournament = DB::table('tournaments')->where('id', $tournamentId)->first();
-            if (!$tournament) throw new \Exception("Torneo no encontrado");
-            
-            // Obtener reglas del torneo para calcular
             $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
 
             $file = $request->file('replay');
@@ -484,7 +540,6 @@ class TournamentParserController extends Controller
             
             Log::info("--- INICIO APELACIÓN AUTOMÁTICA --- Tournament: $tournamentId");
 
-            // 1. Analyze Summary
             $response = Http::timeout(60)
                 ->attach('file', file_get_contents($file->getRealPath()), $fileName)
                 ->post('http://62.72.3.139:5138/api/FortniteParser/analyze-summary'); 
@@ -498,7 +553,6 @@ class TournamentParserController extends Controller
 
             if (!$externalMatchId || !$playerName) throw new \Exception("Replay inválido o corrupto.");
 
-            // 2. Buscar Partida
             $match = DB::table('tournament_matches')
                 ->where('tournament_id', $tournamentId)
                 ->where(function($q) use ($externalMatchId, $cleanSessionId) {
@@ -509,31 +563,26 @@ class TournamentParserController extends Controller
 
             if (!$match) return back()->with('error', "APELACIÓN RECHAZADA: La partida base no ha sido subida por el administrador.");
 
-            // 3. DATOS CRUDOS DEL REPLAY DE USUARIO
             $kills = $appealData['kills'] ?? 0;
             $rank = $appealData['rank'] ?? 99;
 
-            // 4. CÁLCULO AUTOMÁTICO (Usando reglas del torneo + Fix min/max)
             $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $match->game_mode);
 
             Log::info("Apelación $playerName: Rank $rank, Kills $kills -> Puntos Calc: $calculatedPoints");
 
             DB::beginTransaction();
 
-            // A. Update/Insert Player
             $existingPlayer = DB::table('player_match_stats')
                 ->where('tournament_match_id', $match->id)
                 ->where('player_name', $playerName)
                 ->first();
             
-            // Mantener ajuste manual si existe
             $extraStats = $existingPlayer ? json_decode($existingPlayer->extra_stats, true) : [];
             $manualPts = $extraStats['manual_points'] ?? 0;
             $finalPoints = $calculatedPoints + $manualPts;
 
             $extraStats['totalPoints'] = $finalPoints;
             $extraStats['appealed'] = true;
-            // Guardamos tambien los puntos base sin manual para referencia
             $extraStats['base_points'] = $calculatedPoints; 
 
             if ($existingPlayer) {
@@ -554,8 +603,6 @@ class TournamentParserController extends Controller
                 ]);
             }
 
-            // B. Update Team (Recalculate Totals)
-            // Buscar equipo donde esté este jugador
             $teamStats = DB::table('team_match_stats')
                 ->where('tournament_match_id', $match->id)
                 ->where('member_names', 'LIKE', '%"'.$playerName.'"%')
@@ -566,7 +613,6 @@ class TournamentParserController extends Controller
                 $teamManualPoints = 0;
                 $teamKills = 0;
                 
-                // Recalcular todo el equipo
                 foreach($members as $m) {
                     $pStat = DB::table('player_match_stats')
                         ->where('tournament_match_id', $match->id)
@@ -579,11 +625,7 @@ class TournamentParserController extends Controller
                     }
                 }
                 
-                // Forzamos el rango de la apelación en lugar de usar min(), 
-                // para que si el parser original se equivocó y les dio Top 1, se reduzca a Top 4.
                 $newRank = $rank;
-                
-                // Sumar puntos de equipo mediante fórmula oficial + manuales
                 $teamPoints = $this->calculateScore($newRank, $teamKills, $scoringFormat, $match->game_mode) + $teamManualPoints;
                 
                 DB::table('team_match_stats')->where('id', $teamStats->id)->update([
@@ -608,10 +650,14 @@ class TournamentParserController extends Controller
     public function adjustPlayerScore(Request $request, $tournamentId)
     {
         $this->ensureDatabaseIsReady();
+        
+        $tournament = $this->getTournamentIfOwner($tournamentId);
+        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+
         $request->validate([
             'match_id' => 'required|exists:tournament_matches,id',
             'player_name' => 'required|string',
-            'points_change' => 'required|integer', // Puede ser negativo
+            'points_change' => 'required|integer', 
             'reason' => 'required|string|max:255'
         ]);
 
@@ -623,7 +669,6 @@ class TournamentParserController extends Controller
             $change = (int)$request->points_change;
             $reason = $request->reason;
 
-            // 1. Buscar Stats del Jugador
             $pStat = DB::table('player_match_stats')
                 ->where('tournament_match_id', $matchId)
                 ->where('player_name', $player)
@@ -631,7 +676,6 @@ class TournamentParserController extends Controller
 
             if (!$pStat) throw new \Exception("Jugador no encontrado en esta partida.");
 
-            // 2. Actualizar Extra Stats
             $extra = json_decode($pStat->extra_stats, true) ?? [];
             $currentManual = $extra['manual_points'] ?? 0;
             $currentTotal = $extra['totalPoints'] ?? 0;
@@ -646,7 +690,6 @@ class TournamentParserController extends Controller
                 ->where('id', $pStat->id)
                 ->update(['extra_stats' => json_encode($extra)]);
 
-            // 3. Crear Log de Auditoría
             DB::table('tournament_score_logs')->insert([
                 'tournament_id' => $tournamentId,
                 'match_id' => $matchId,
@@ -657,7 +700,6 @@ class TournamentParserController extends Controller
                 'created_at' => now(), 'updated_at' => now()
             ]);
 
-            // 4. Actualizar Equipo (Reflejar cambios)
              $teamStats = DB::table('team_match_stats')
                 ->where('tournament_match_id', $matchId)
                 ->where('member_names', 'LIKE', '%"'.$player.'"%')
@@ -678,7 +720,6 @@ class TournamentParserController extends Controller
                 }
                 
                 $matchData = DB::table('tournament_matches')->where('id', $matchId)->first();
-                $tournament = DB::table('tournaments')->where('id', $tournamentId)->first();
                 $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
                 
                 $teamTotalPoints = $this->calculateScore($teamStats->rank, $teamTotalKills, $scoringFormat, $matchData->game_mode) + $teamManualPoints;
@@ -714,13 +755,11 @@ class TournamentParserController extends Controller
         return $this->getGlobalRanking($tournamentId, $mode, $type, $matchId, $sortBy);
     }
 
-    // --- CORRECCIÓN AQUÍ: Usamos exactamente la misma lógica que en PublicTournamentController ---
     protected function getGlobalRanking($tournamentId, $mode = 'all', $viewType = 'players', $matchId = null, $sortBy = 'points')
     {
         $orderByCol = ($sortBy === 'kills') ? 'total_kills' : 'total_points';
         $secondaryOrder = ($sortBy === 'kills') ? 'total_points' : 'total_kills';
 
-        // --- VISTA EQUIPOS ---
         if ($viewType === 'teams') {
             $query = DB::table('team_match_stats')
                 ->join('tournament_matches', 'team_match_stats.tournament_match_id', '=', 'tournament_matches.id')
@@ -748,14 +787,11 @@ class TournamentParserController extends Controller
                 ->map(function($team) {
                     $members = json_decode($team->members_json);
                     $team->member_names = is_array($members) ? $members : [];
-                    // Provide player_name implicitly so the frontend table displays it without changes
                     $team->player_name = is_array($members) ? implode(' + ', $members) : 'Equipo Desconocido';
                     return $team;
                 });
         }
 
-        // --- VISTA JUGADORES ---
-        // Usamos la misma lógica precisa del público para asegurar consistencia
         $query = DB::table('player_match_stats')
             ->join('tournament_matches', 'player_match_stats.tournament_match_id', '=', 'tournament_matches.id')
             ->where('tournament_matches.tournament_id', $tournamentId)
@@ -763,18 +799,15 @@ class TournamentParserController extends Controller
             ->select(
                 'player_name',
                 DB::raw('COUNT(*) as games_played'),
-                // Totales
                 DB::raw('SUM(kills) as total_kills'),
                 DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as total_points'),
                 DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.killPoints") AS DECIMAL(10,2))) as total_kill_points'),
                 DB::raw('SUM(CAST(JSON_EXTRACT(extra_stats, "$.placementPoints") AS DECIMAL(10,2))) as total_placement_points'),
-                // Promedios (AVG)
                 DB::raw('AVG(kills) as avg_kills'),
                 DB::raw('AVG(placement) as avg_placement'),
                 DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.totalPoints") AS DECIMAL(10,2))) as avg_points'),
                 DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.killPoints") AS DECIMAL(10,2))) as avg_kill_points'),
                 DB::raw('AVG(CAST(JSON_EXTRACT(extra_stats, "$.placementPoints") AS DECIMAL(10,2))) as avg_placement_points'),
-                
                 DB::raw('MIN(placement) as best_placement')
             );
 
@@ -788,16 +821,7 @@ class TournamentParserController extends Controller
             ->get();
     }
     
-    private function isJangel($user)
-    {
-        $adminEmails = ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com', $user->email]; 
-        return in_array($user->email, $adminEmails);
-    }
-    
-    // Método getPublicData duplicado para soporte, pero generalmente se usa el PublicController
     public function getPublicData(Request $request, $id) {
-         // ... (implementación similar si se usa desde aquí)
-         // Por ahora devolvemos vacío ya que se usa PublicTournamentController
          return response()->json([]);
     }
 }
