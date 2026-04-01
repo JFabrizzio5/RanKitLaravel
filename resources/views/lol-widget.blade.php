@@ -444,9 +444,9 @@
                         ${roundKeys.map((r, idx) => {
                             const total = roundKeys.length;
                             const pos = idx;
-                            let label = \`Ronda ${r}\`;
-                            if (total - pos === 1) label = \`${abbrev} Final\`;
-                            else if (total - pos === 2) label = \`${abbrev} Semifinales\`;
+                            let label = `Ronda ${r}`;
+                            if (total - pos === 1) label = `${abbrev} Final`;
+                            else if (total - pos === 2) label = `${abbrev} Semifinales`;
 
                             return `<div class="flex flex-col gap-2 min-w-[180px]">
                                 <div class="text-[9px] font-black uppercase text-center" style="color:${color};opacity:0.7">${label}</div>
@@ -458,13 +458,13 @@
                                     return `<div class="match-node ${isDone ? 'winner-node' : ''} rounded px-3 py-2 space-y-1 border-white/10">
                                         <div class="flex items-center gap-2">
                                             ${teamHex(t1)}
-                                            <span class="flex-1 text-[11px] font-bold truncate ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? \`color:${color}\` : ''}">${t1?.name ?? 'TBD'}</span>
+                                            <span class="flex-1 text-[11px] font-bold truncate ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? `color:${color}` : ''}">${t1?.name ?? 'TBD'}</span>
                                             ${isDone ? `<span class="text-[11px] font-black" style="color:${color}">${m.score1}</span>` : '<span class="text-[10px] text-white/30">–</span>'}
                                         </div>
                                         ${hasT2 ? `
                                             <div class="flex items-center gap-2">
                                                 ${teamHex(t2)}
-                                                <span class="flex-1 text-[11px] font-bold truncate ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? \`color:${color}\` : ''}">${t2?.name ?? 'TBD'}</span>
+                                                <span class="flex-1 text-[11px] font-bold truncate ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? `color:${color}` : ''}">${t2?.name ?? 'TBD'}</span>
                                                 ${isDone ? `<span class="text-[11px] font-black" style="color:${color}">${m.score2}</span>` : '<span class="text-[10px] text-white/30">–</span>'}
                                             </div>
                                         ` : `<div class="text-[9px] text-white/40 flex items-center gap-2">${teamHex(null)}<span class="font-bold">BYE</span></div>`}
