@@ -490,12 +490,12 @@
                         <div class="flex items-center gap-4">
                             <div class="text-center">
                                 <div class="text-[10px] text-purple-400 font-bold">WB</div>
-                                <div class="text-base font-black ${gf.winner_id == gf.team1_id ? 'text-yellow-400' : isDone ? 'opacity-40 line-through text-white' : 'text-white'}">${t1?.name ?? 'TBD'}</div>
+                                <div class="text-base font-black ${gf.winner_id === gf.team1_id ? 'text-yellow-400' : isDone ? 'opacity-40 line-through text-white' : 'text-white'}">${t1?.name ?? 'TBD'}</div>
                             </div>
                             <div class="text-xl font-black text-white/50">${isDone ? `${gf.score1}-${gf.score2}` : 'VS'}</div>
                             <div class="text-center">
                                 <div class="text-[10px] text-blue-400 font-bold">LB</div>
-                                <div class="text-base font-black ${gf.winner_id == gf.team2_id ? 'text-yellow-400' : isDone ? 'opacity-40 line-through text-white' : 'text-white'}">${t2?.name ?? 'TBD'}</div>
+                                <div class="text-base font-black ${gf.winner_id === gf.team2_id ? 'text-yellow-400' : isDone ? 'opacity-40 line-through text-white' : 'text-white'}">${t2?.name ?? 'TBD'}</div>
                             </div>
                         </div>
                     </div>
