@@ -39,6 +39,8 @@ interface Tournament {
   swiss_wins_to_advance: number
   swiss_losses_to_eliminate: number
   swiss_first_round_manual: boolean
+  league_points_win: number
+  league_points_loss: number
 }
 
 // --- Props ---
@@ -153,13 +155,26 @@ const needsManualRound1 = computed(() =>
   props.teams.length >= 2
 )
 
-// --- Widget URL ---
+// --- Widget URLs ---
 const widgetUrl = computed(() => `${window.location.origin}/lol/${props.tournament.id}/widget`)
+const bracketUrl = computed(() => `${window.location.origin}/lol/${props.tournament.id}/bracket`)
+const publicUrl = computed(() => `${window.location.origin}/lol/${props.tournament.id}/ver`)
+
 const widgetCopied = ref<string | null>(null)
 function copyWidget(phase: string = 'all') {
   const url = phase === 'all' ? widgetUrl.value : `${widgetUrl.value}?phase=${phase}`
   navigator.clipboard.writeText(url)
   widgetCopied.value = phase
+  setTimeout(() => { widgetCopied.value = null }, 2000)
+}
+function copyBracket() {
+  navigator.clipboard.writeText(bracketUrl.value)
+  widgetCopied.value = 'bracket'
+  setTimeout(() => { widgetCopied.value = null }, 2000)
+}
+function copyPublicLink() {
+  navigator.clipboard.writeText(publicUrl.value)
+  widgetCopied.value = 'public'
   setTimeout(() => { widgetCopied.value = null }, 2000)
 }
 
@@ -320,21 +335,67 @@ function getTeamById(id: number) {
           tournament.name }}</span>
       </div>
       <div class="flex items-center gap-2">
-        <!-- Widget OBS buttons -->
+        <!-- Share public link -->
+        <button @click="copyPublicLink"
+          class="px-2 py-1 text-[9px] font-bold uppercase rounded border transition"
+          :class="widgetCopied === 'public' ? 'border-green-500 bg-green-500/10 text-green-400' : 'border-white/10 text-gray-400 hover:border-white/30 hover:text-white'">
+          {{ widgetCopied === 'public' ? '✓ Link Copiado' : '🔗 Página Pública' }}
+        </button>
+
+        <!-- Widget OBS buttons — format-aware -->
         <div class="flex bg-white/5 p-0.5 rounded border border-white/10">
-          <button @click="copyWidget('swiss')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
-            :class="widgetCopied === 'swiss' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'">
-            {{ widgetCopied === 'swiss' ? '¡Listo!' : 'Fase 1 (Swiss)' }}
-          </button>
-          <button @click="copyWidget('elimination')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
-            :class="widgetCopied === 'elimination' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'">
-            {{ widgetCopied === 'elimination' ? '¡Listo!' : 'Fase 2 (Elim)' }}
-          </button>
+          <!-- Swiss + Elimination -->
+          <template v-if="tournament.format === 'swiss_elimination'">
+            <button @click="copyWidget('swiss')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'swiss' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'swiss' ? '¡Listo!' : 'OBS Swiss' }}
+            </button>
+            <button @click="copyWidget('elimination')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'elimination' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'elimination' ? '¡Listo!' : 'OBS Elim' }}
+            </button>
+          </template>
+          <!-- Single Elimination -->
+          <template v-else-if="tournament.format === 'elimination'">
+            <button @click="copyWidget('elimination')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'elimination' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'elimination' ? '¡Listo!' : 'OBS Bracket' }}
+            </button>
+            <button @click="copyBracket" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'bracket' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'bracket' ? '¡Listo!' : 'OBS Bracket v2' }}
+            </button>
+          </template>
+          <!-- Double Elimination -->
+          <template v-else-if="tournament.format === 'double_elimination'">
+            <button @click="copyWidget('winner')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'winner' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'winner' ? '¡Listo!' : 'OBS WB' }}
+            </button>
+            <button @click="copyWidget('loser')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'loser' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'loser' ? '¡Listo!' : 'OBS LB' }}
+            </button>
+            <button @click="copyWidget('all')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'all' ? 'bg-yellow-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'all' ? '¡Listo!' : 'OBS Todo' }}
+            </button>
+          </template>
+          <!-- League -->
+          <template v-else-if="tournament.format === 'league'">
+            <button @click="copyWidget('league')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'league' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'league' ? '¡Listo!' : 'OBS Tabla Liga' }}
+            </button>
+            <button @click="copyWidget('all')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'all' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'all' ? '¡Listo!' : 'OBS Partidos' }}
+            </button>
+          </template>
         </div>
+
         <a :href="widgetUrl" target="_blank" class="p-1.5 text-gray-500 hover:text-white transition"
-          title="Vista previa total">
-          <i class="ph ph-eye"></i>
-        </a>
+          title="Vista previa widget OBS">👁</a>
 
         <!-- Phase badge -->
         <span class="text-[10px] font-black uppercase px-2 py-1 rounded border border-white/10"
@@ -495,6 +556,22 @@ function getTeamById(id: number) {
             <span>⚔️ {{ activeTeams.length }} activos</span>
             <span>·</span>
             <span>❌ {{ eliminatedTeams.length }} eliminados</span>
+          </div>
+        </div>
+
+        <!-- League Config Summary -->
+        <div v-if="tournament.format === 'league'"
+          class="bg-[#0c0c0c] border border-white/5 rounded-xl p-4 space-y-2">
+          <h3 class="text-[10px] font-black uppercase tracking-widest text-gray-500">Puntos de Liga</h3>
+          <div class="grid grid-cols-2 gap-2 text-[10px]">
+            <div class="bg-green-900/20 border border-green-500/20 rounded p-2">
+              <div class="text-gray-500 uppercase">Victoria</div>
+              <div class="text-green-400 font-black text-base">+{{ tournament.league_points_win ?? 3 }} pts</div>
+            </div>
+            <div class="bg-red-900/20 border border-red-500/20 rounded p-2">
+              <div class="text-gray-500 uppercase">Derrota</div>
+              <div class="text-red-400 font-black text-base">+{{ tournament.league_points_loss ?? 0 }} pts</div>
+            </div>
           </div>
         </div>
 

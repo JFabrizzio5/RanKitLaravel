@@ -29,6 +29,8 @@ class LolTournamentController extends Controller
                 $table->integer('swiss_wins_to_advance')->default(3);      // victorias para clasificar
                 $table->integer('swiss_losses_to_eliminate')->default(3);  // derrotas para eliminar
                 $table->boolean('swiss_first_round_manual')->default(false);
+                $table->integer('league_points_win')->default(3);          // puntos por victoria (liga)
+                $table->integer('league_points_loss')->default(0);         // puntos por derrota (liga)
                 $table->timestamps();
             });
         } else {
@@ -49,6 +51,10 @@ class LolTournamentController extends Controller
                     $table->integer('swiss_losses_to_eliminate')->default(3)->after('swiss_wins_to_advance');
                 if (!Schema::hasColumn('lol_test_tournaments', 'swiss_first_round_manual'))
                     $table->boolean('swiss_first_round_manual')->default(false)->after('swiss_losses_to_eliminate');
+                if (!Schema::hasColumn('lol_test_tournaments', 'league_points_win'))
+                    $table->integer('league_points_win')->default(3)->after('swiss_first_round_manual');
+                if (!Schema::hasColumn('lol_test_tournaments', 'league_points_loss'))
+                    $table->integer('league_points_loss')->default(0)->after('league_points_win');
             });
         }
 
@@ -265,10 +271,13 @@ class LolTournamentController extends Controller
             'swiss_wins_to_advance'      => 'nullable|integer|min:1|max:20',
             'swiss_losses_to_eliminate'  => 'nullable|integer|min:1|max:20',
             'swiss_first_round_manual'   => 'nullable|boolean',
+            'league_points_win'          => 'nullable|integer|min:0|max:100',
+            'league_points_loss'         => 'nullable|integer|min:0|max:100',
         ]);
 
-        $format = $request->format;
+        $format  = $request->format;
         $isSwiss = $format === 'swiss_elimination';
+        $isLeague = $format === 'league';
 
         DB::table('lol_test_tournaments')->insert([
             'user_id'                    => auth()->id(),
@@ -281,6 +290,8 @@ class LolTournamentController extends Controller
             'swiss_wins_to_advance'      => $isSwiss ? ($request->swiss_wins_to_advance ?? 3) : 0,
             'swiss_losses_to_eliminate'  => $isSwiss ? ($request->swiss_losses_to_eliminate ?? 3) : 0,
             'swiss_first_round_manual'   => $isSwiss ? ($request->swiss_first_round_manual ?? false) : false,
+            'league_points_win'          => $isLeague ? ($request->league_points_win ?? 3) : 3,
+            'league_points_loss'         => $isLeague ? ($request->league_points_loss ?? 0) : 0,
             'created_at'                 => now(),
             'updated_at'                 => now(),
         ]);
@@ -1000,6 +1011,22 @@ class LolTournamentController extends Controller
         ]);
     }
 
+    /**
+     * GET /lol/{id}/ver — Página pública del torneo (sin autenticación)
+     */
+    public function publicView(int $id)
+    {
+        $this->ensureLolTablesReady();
+        $tournament = $this->getTournament($id);
+        abort_if(!$tournament, 404);
+
+        return Inertia::render('Lol/PublicView', [
+            'tournament' => $tournament,
+            'teams'      => $this->getTeams($id),
+            'matches'    => $this->getMatches($id),
+        ]);
+    }
+
     // -----------------------------------------------------------------------
     // DOUBLE ELIMINATION — WINNER BRACKET + LOSER BRACKET
     // -----------------------------------------------------------------------
@@ -1409,13 +1436,32 @@ class LolTournamentController extends Controller
     }
 
     /**
-     * Award 3 points to winner; finish tournament when all league matches are done.
+     * Award custom points to winner; finish tournament when all league matches are done.
      */
     private function handleLeagueResult($tournament, int $winnerId): void
     {
-        $id = $tournament->id;
+        $id          = $tournament->id;
+        $pointsWin   = isset($tournament->league_points_win) ? (int)$tournament->league_points_win : 3;
+        $pointsLoss  = isset($tournament->league_points_loss) ? (int)$tournament->league_points_loss : 0;
 
-        DB::table('lol_test_teams')->where('id', $winnerId)->increment('points', 3);
+        DB::table('lol_test_teams')->where('id', $winnerId)->increment('points', $pointsWin);
+
+        if ($pointsLoss > 0) {
+            // Award loss points to the loser
+            $match = DB::table('lol_test_matches')
+                ->where('lol_tournament_id', $id)
+                ->where('winner_id', $winnerId)
+                ->where('status', 'done')
+                ->orderBy('updated_at', 'desc')
+                ->first();
+
+            if ($match) {
+                $loserId = $match->team1_id == $winnerId ? $match->team2_id : $match->team1_id;
+                if ($loserId) {
+                    DB::table('lol_test_teams')->where('id', $loserId)->increment('points', $pointsLoss);
+                }
+            }
+        }
 
         $pending = DB::table('lol_test_matches')
             ->where('lol_tournament_id', $id)

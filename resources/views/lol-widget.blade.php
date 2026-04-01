@@ -496,23 +496,128 @@
             }
 
             // 3. Renderizar Fase Correspondiente
-            if ((p === 'all' || p === 'swiss') && tournament.format === 'swiss_elimination' && tournament.phase !== 'done') {
+            if (p === 'swiss' || (p === 'all' && tournament.format === 'swiss_elimination' && tournament.phase === 'swiss')) {
                 contentHTML += buildSwiss(matches, teams, tournament);
             }
             else if (p === 'elimination' || (p === 'all' && (tournament.phase === 'elimination' || tournament.phase === 'done') && tournament.format !== 'double_elimination' && tournament.format !== 'league')) {
                 contentHTML += buildElimination(matches, teams, tournament);
             }
-            else if (tournament.format === 'double_elimination' && (p === 'all' || p === 'elimination')) {
+            else if (p === 'winner') {
+                // WB only widget
+                const wbOnly = matches.filter(m => m.phase === 'winner');
+                contentHTML += buildWBOnly(wbOnly, teams);
+            }
+            else if (p === 'loser') {
+                // LB only widget
+                const lbOnly = matches.filter(m => m.phase === 'loser');
+                contentHTML += buildLBOnly(lbOnly, teams);
+            }
+            else if (p === 'all' && tournament.format === 'double_elimination') {
                 contentHTML += buildDoubleElimination(matches, teams, tournament);
             }
-            else if (tournament.format === 'league' && (p === 'all' || p === 'league')) {
+            else if (p === 'league' || (p === 'all' && tournament.format === 'league')) {
                 contentHTML += buildLeague(matches, teams, tournament);
             }
             else if (p === 'standings') {
                 contentHTML += buildStandings(teams, tournament);
             }
+            else if (p === 'all' && tournament.format === 'swiss_elimination' && tournament.phase !== 'swiss') {
+                contentHTML += buildElimination(matches, teams, tournament);
+            }
 
             root.innerHTML = contentHTML;
+        }
+
+        function buildWBOnly(wbMatches, teams) {
+            if (!wbMatches.length) {
+                return `<div class="text-white/40 text-center text-sm font-bold uppercase mt-20">Sin partidas WB aún</div>`;
+            }
+            const rounds = {};
+            wbMatches.forEach(m => { if (!rounds[m.round]) rounds[m.round] = []; rounds[m.round].push(m); });
+            const keys = Object.keys(rounds).sort((a,b) => a - b);
+            let html = `<div class="w-full max-w-3xl mx-auto p-4">
+                <div class="text-center text-sm font-black uppercase tracking-widest mb-4" style="color:#c084fc">🔴 WINNER BRACKET</div>`;
+            keys.forEach(r => {
+                const rNum = parseInt(r);
+                const total = keys.length;
+                const pos = keys.indexOf(r);
+                let label = `Ronda ${r}`;
+                if (total - pos === 1) label = 'WB FINAL';
+                else if (total - pos === 2) label = 'WB SEMIFINALES';
+                else if (total - pos === 3) label = 'WB CUARTOS';
+                html += `<div class="mb-4"><div class="text-[9px] font-black uppercase text-center text-purple-400/60 mb-2">${label}</div>
+                    <div class="flex flex-wrap justify-center gap-3">`;
+                rounds[r].forEach(m => {
+                    const t1 = teams.find(t => t.id === m.team1_id);
+                    const t2 = teams.find(t => t.id === m.team2_id);
+                    const isDone = m.status === 'done';
+                    html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded px-4 py-3 min-w-[180px]">
+                        <div class="flex items-center gap-2 mb-1.5">
+                            ${teamHex(t1)}
+                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? 'color:#c084fc' : ''}">
+                                ${t1?.name ?? 'TBD'}
+                            </span>
+                            ${isDone ? `<span class="text-xs font-black" style="color:#c084fc">${m.score1}</span>` : ''}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${teamHex(t2)}
+                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? 'color:#c084fc' : ''}">
+                                ${t2?.name ?? 'TBD'}
+                            </span>
+                            ${isDone ? `<span class="text-xs font-black" style="color:#c084fc">${m.score2}</span>` : ''}
+                        </div>
+                        ${isDone ? '' : '<div class="text-[8px] text-white/20 text-center mt-1 uppercase">Pendiente</div>'}
+                    </div>`;
+                });
+                html += `</div></div>`;
+            });
+            html += `</div>`;
+            return html;
+        }
+
+        function buildLBOnly(lbMatches, teams) {
+            if (!lbMatches.length) {
+                return `<div class="text-white/40 text-center text-sm font-bold uppercase mt-20">Sin partidas LB aún</div>`;
+            }
+            const rounds = {};
+            lbMatches.forEach(m => { if (!rounds[m.round]) rounds[m.round] = []; rounds[m.round].push(m); });
+            const keys = Object.keys(rounds).sort((a,b) => a - b);
+            let html = `<div class="w-full max-w-3xl mx-auto p-4">
+                <div class="text-center text-sm font-black uppercase tracking-widest mb-4" style="color:#60a5fa">🔵 LOSER BRACKET</div>`;
+            keys.forEach(r => {
+                const total = keys.length;
+                const pos = keys.indexOf(r);
+                let label = `Ronda ${r}`;
+                if (total - pos === 1) label = 'LB FINAL';
+                else if (total - pos === 2) label = 'LB SEMIFINALES';
+                html += `<div class="mb-4"><div class="text-[9px] font-black uppercase text-center text-blue-400/60 mb-2">${label}</div>
+                    <div class="flex flex-wrap justify-center gap-3">`;
+                rounds[r].forEach(m => {
+                    const t1 = teams.find(t => t.id === m.team1_id);
+                    const t2 = teams.find(t => t.id === m.team2_id);
+                    const isDone = m.status === 'done';
+                    html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded px-4 py-3 min-w-[180px]">
+                        <div class="flex items-center gap-2 mb-1.5">
+                            ${teamHex(t1)}
+                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? 'color:#60a5fa' : ''}">
+                                ${t1?.name ?? 'TBD'}
+                            </span>
+                            ${isDone ? `<span class="text-xs font-black" style="color:#60a5fa">${m.score1}</span>` : ''}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${teamHex(t2)}
+                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? 'color:#60a5fa' : ''}">
+                                ${t2?.name ?? 'TBD'}
+                            </span>
+                            ${isDone ? `<span class="text-xs font-black" style="color:#60a5fa">${m.score2}</span>` : ''}
+                        </div>
+                        ${isDone ? '' : '<div class="text-[8px] text-white/20 text-center mt-1 uppercase">Pendiente</div>'}
+                    </div>`;
+                });
+                html += `</div></div>`;
+            });
+            html += `</div>`;
+            return html;
         }
 
         function buildDoubleElimination(matches, teams, tournament) {
