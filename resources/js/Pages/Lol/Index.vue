@@ -236,6 +236,20 @@ function swissConfigLabel(t: any) {
                     <div class="text-xl mb-1">🔵</div>
                     Solo Eliminación
                   </button>
+                  <button type="button" @click="form.format = 'double_elimination'"
+                    class="p-3 rounded-lg border text-xs font-bold uppercase text-center transition-all" :class="form.format === 'double_elimination'
+                      ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                      : 'border-white/10 text-gray-500 hover:border-white/30 hover:text-gray-300'">
+                    <div class="text-xl mb-1">🔴🔵</div>
+                    Doble Eliminación
+                  </button>
+                  <button type="button" @click="form.format = 'league'"
+                    class="p-3 rounded-lg border text-xs font-bold uppercase text-center transition-all" :class="form.format === 'league'
+                      ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                      : 'border-white/10 text-gray-500 hover:border-white/30 hover:text-gray-300'">
+                    <div class="text-xl mb-1">⚽</div>
+                    Liga
+                  </button>
                 </div>
               </div>
 
