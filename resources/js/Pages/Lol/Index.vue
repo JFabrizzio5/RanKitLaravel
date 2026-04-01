@@ -22,6 +22,8 @@ const form = useForm({
   swiss_wins_to_advance: 3,
   swiss_losses_to_eliminate: 3,
   swiss_first_round_manual: false,
+  league_points_win: 3,
+  league_points_loss: 0,
 })
 
 function createTournament() {
@@ -36,6 +38,8 @@ function createTournament() {
       form.swiss_wins_to_advance = 3
       form.swiss_losses_to_eliminate = 3
       form.swiss_first_round_manual = false
+      form.league_points_win = 3
+      form.league_points_loss = 0
     }
   })
 }
@@ -75,7 +79,11 @@ function formatLabel(f: string) {
 
 function swissConfigLabel(t: any) {
   if (t.format === 'double_elimination') return 'Winner Bracket + Loser Bracket + Gran Final'
-  if (t.format === 'league') return 'Todos contra todos · 3 pts por victoria'
+  if (t.format === 'league') {
+    const win = t.league_points_win ?? 3
+    const loss = t.league_points_loss ?? 0
+    return `Todos contra todos · ${win} pts victoria · ${loss} pts derrota`
+  }
   if (t.format !== 'swiss_elimination') return 'Bracket desde inicio'
   const wins = t.swiss_wins_to_advance ?? 3
   const losses = t.swiss_losses_to_eliminate ?? 3
@@ -309,6 +317,28 @@ function swissConfigLabel(t: any) {
                   </button>
                 </div>
 
+              </div>
+
+              <!-- Config Liga (solo si aplica) -->
+              <div v-if="form.format === 'league'" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      ✅ Puntos por victoria
+                    </label>
+                    <input v-model.number="form.league_points_win" type="number" min="0" max="100"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition" />
+                    <p class="text-[9px] text-gray-600 mt-1">Por defecto: 3</p>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      ❌ Puntos por derrota
+                    </label>
+                    <input v-model.number="form.league_points_loss" type="number" min="0" max="100"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition" />
+                    <p class="text-[9px] text-gray-600 mt-1">Por defecto: 0</p>
+                  </div>
+                </div>
               </div>
 
               <!-- Actions -->

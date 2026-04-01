@@ -97,6 +97,8 @@ Route::middleware('auth')->prefix('lol')->name('lol.')->group(function () {
 Route::get('/lol/{id}/widget',      [LolTournamentController::class, 'widget'])->name('lol.widget');
 Route::get('/lol/{id}/bracket',     [LolTournamentController::class, 'bracket'])->name('lol.bracket');
 Route::get('/lol/{id}/widget-data', [LolTournamentController::class, 'widgetData'])->name('lol.widget.data');
+// Página pública del torneo — SIN autenticación (compartible)
+Route::get('/lol/{id}/ver',         [LolTournamentController::class, 'publicView'])->name('lol.public.view');
 
 
 
