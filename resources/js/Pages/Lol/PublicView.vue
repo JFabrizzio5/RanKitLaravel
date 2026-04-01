@@ -504,50 +504,77 @@ function copyLink() {
               🔴 Winner Bracket (WB)</h3>
             <div class="h-px flex-1 bg-white/5"></div>
           </div>
-          <div v-for="(roundMatches, round) in wbRounds" :key="`wb-${round}`" class="space-y-3">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400/70 text-center">
-              {{ labelRound('winner', Number(round)) }}</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div v-for="match in roundMatches" :key="match.id"
-                class="bg-[#0c0c0c] rounded-xl p-4 border relative overflow-hidden"
-                :class="match.status === 'done' ? 'border-purple-500/20' : 'border-white/10'">
-                <div v-if="match.status === 'done'" class="absolute top-0 right-0 w-1 h-full bg-purple-500 opacity-50"></div>
-                <div v-if="!match.team2" class="text-xs text-gray-500 text-center">
-                  <span class="font-bold text-white">{{ match.team1?.name }}</span> · BYE ✅
-                </div>
-                <div v-else>
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                      <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-purple-400">
-                        <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
-                        <span v-else>{{ match.team1?.name?.[0] }}</span>
+          <div class="overflow-x-auto pb-2">
+            <div class="flex min-w-max">
+              <template v-for="(roundMatches, round, roundIdx) in wbRounds" :key="`wb-${round}`">
+                <div class="flex flex-col" style="min-width: 210px; width: 210px">
+                  <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400/60 text-center mb-3 px-2">
+                    {{ labelRound('winner', Number(round)) }}</p>
+                  <div class="flex flex-col flex-1 px-2">
+                    <template v-for="(match, matchIdx) in roundMatches" :key="match.id">
+                      <div v-if="matchIdx > 0 && matchIdx % 2 === 0" class="h-6"></div>
+                      <div v-else-if="matchIdx > 0" class="h-2"></div>
+                      <div class="relative"
+                        :class="{
+                          'pub-wb-match-top': matchIdx % 2 === 0 && roundMatches[matchIdx + 1] && roundIdx < Object.keys(wbRounds).length - 1,
+                          'pub-wb-match-bottom': matchIdx % 2 === 1 && roundIdx < Object.keys(wbRounds).length - 1,
+                          'pub-wb-match-right': roundIdx < Object.keys(wbRounds).length - 1
+                        }">
+                        <div class="bg-[#0c0c0c] rounded-lg border overflow-hidden"
+                          :class="match.status === 'done' ? 'border-purple-500/30' : 'border-white/10'">
+                          <div v-if="match.status === 'done'" class="h-0.5 bg-gradient-to-r from-purple-600 to-purple-400 opacity-70"></div>
+                          <div v-if="!match.team2" class="px-3 py-3 text-[10px] text-gray-500 text-center">
+                            <span class="font-bold text-white text-xs">{{ match.team1?.name }}</span> · BYE ✅
+                          </div>
+                          <div v-else>
+                            <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/5"
+                              :class="match.status === 'done' && match.winner_id == match.team1_id ? 'bg-purple-500/10' : ''">
+                              <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                <div class="w-4 h-4 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[7px]">
+                                  <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
+                                  <span v-else class="text-purple-400/80">{{ match.team1?.name?.[0] ?? '?' }}</span>
+                                </div>
+                                <span class="text-[11px] font-bold truncate"
+                                  :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500 line-through opacity-50' : match.status === 'done' && match.winner_id == match.team1_id ? 'text-purple-300' : 'text-white'">
+                                  {{ match.team1?.name ?? 'TBD' }}
+                                </span>
+                              </div>
+                              <span class="text-[11px] font-mono font-bold flex-shrink-0"
+                                :class="match.status === 'done' ? 'text-purple-400' : 'text-gray-700'">
+                                {{ match.status === 'done' ? match.score1 : '–' }}
+                              </span>
+                            </div>
+                            <div class="flex items-center justify-between gap-2 px-3 py-2"
+                              :class="match.status === 'done' && match.winner_id == match.team2_id ? 'bg-purple-500/10' : ''">
+                              <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                <div class="w-4 h-4 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[7px]">
+                                  <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
+                                  <span v-else class="text-purple-400/80">{{ match.team2?.name?.[0] ?? '?' }}</span>
+                                </div>
+                                <span class="text-[11px] font-bold truncate"
+                                  :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500 line-through opacity-50' : match.status === 'done' && match.winner_id == match.team2_id ? 'text-purple-300' : 'text-white'">
+                                  {{ match.team2?.name ?? 'TBD' }}
+                                </span>
+                              </div>
+                              <span class="text-[11px] font-mono font-bold flex-shrink-0"
+                                :class="match.status === 'done' ? 'text-purple-400' : 'text-gray-700'">
+                                {{ match.status === 'done' ? match.score2 : '–' }}
+                              </span>
+                            </div>
+                            <div v-if="match.status === 'done'" class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600">
+                              Perdedor → 🔵 LB
+                            </div>
+                            <div v-else class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600 uppercase font-bold">
+                              Pendiente
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <span class="font-bold text-sm truncate"
-                        :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500 line-through opacity-60' : ''"
-                        :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: '#c084fc' } : {}">
-                        {{ match.team1?.name ?? 'TBD' }}
-                      </span>
-                    </div>
-                    <span class="text-xs text-gray-500 font-bold">VS</span>
-                    <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
-                      <span class="font-bold text-sm truncate"
-                        :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500 line-through opacity-60' : ''"
-                        :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: '#c084fc' } : {}">
-                        {{ match.team2?.name ?? 'TBD' }}
-                      </span>
-                      <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-purple-400">
-                        <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
-                        <span v-else>{{ match.team2?.name?.[0] }}</span>
-                      </div>
-                    </div>
+                    </template>
                   </div>
-                  <div v-if="match.status === 'done'" class="text-center mt-2 text-xs text-gray-500 font-mono">
-                    <span class="text-purple-400 font-black text-base">{{ match.score1 }} – {{ match.score2 }}</span>
-                    <span class="ml-2 text-[9px]">· Perdedor → 🔵 LB</span>
-                  </div>
-                  <div v-else class="text-center mt-2 text-[10px] text-gray-600 uppercase font-bold">Pendiente</div>
                 </div>
-              </div>
+                <div v-if="roundIdx < Object.keys(wbRounds).length - 1" class="w-3 flex-shrink-0"></div>
+              </template>
             </div>
           </div>
         </template>
@@ -560,50 +587,77 @@ function copyLink() {
               🔵 Loser Bracket (LB)</h3>
             <div class="h-px flex-1 bg-white/5"></div>
           </div>
-          <div v-for="(roundMatches, round) in lbRounds" :key="`lb-${round}`" class="space-y-3">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-blue-400/70 text-center">
-              {{ labelRound('loser', Number(round)) }}</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div v-for="match in roundMatches" :key="match.id"
-                class="bg-[#0c0c0c] rounded-xl p-4 border relative overflow-hidden"
-                :class="match.status === 'done' ? 'border-blue-500/20' : 'border-white/10'">
-                <div v-if="match.status === 'done'" class="absolute top-0 right-0 w-1 h-full bg-blue-500 opacity-50"></div>
-                <div v-if="!match.team2" class="text-xs text-gray-500 text-center">
-                  <span class="font-bold text-white">{{ match.team1?.name }}</span> · BYE ✅
-                </div>
-                <div v-else>
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                      <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-blue-400">
-                        <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
-                        <span v-else>{{ match.team1?.name?.[0] }}</span>
+          <div class="overflow-x-auto pb-2">
+            <div class="flex min-w-max">
+              <template v-for="(roundMatches, round, roundIdx) in lbRounds" :key="`lb-${round}`">
+                <div class="flex flex-col" style="min-width: 210px; width: 210px">
+                  <p class="text-[10px] font-bold uppercase tracking-widest text-blue-400/60 text-center mb-3 px-2">
+                    {{ labelRound('loser', Number(round)) }}</p>
+                  <div class="flex flex-col flex-1 px-2">
+                    <template v-for="(match, matchIdx) in roundMatches" :key="match.id">
+                      <div v-if="matchIdx > 0 && matchIdx % 2 === 0" class="h-6"></div>
+                      <div v-else-if="matchIdx > 0" class="h-2"></div>
+                      <div class="relative"
+                        :class="{
+                          'pub-lb-match-top': matchIdx % 2 === 0 && roundMatches[matchIdx + 1] && roundIdx < Object.keys(lbRounds).length - 1,
+                          'pub-lb-match-bottom': matchIdx % 2 === 1 && roundIdx < Object.keys(lbRounds).length - 1,
+                          'pub-lb-match-right': roundIdx < Object.keys(lbRounds).length - 1
+                        }">
+                        <div class="bg-[#0c0c0c] rounded-lg border overflow-hidden"
+                          :class="match.status === 'done' ? 'border-blue-500/30' : 'border-white/10'">
+                          <div v-if="match.status === 'done'" class="h-0.5 bg-gradient-to-r from-blue-600 to-blue-400 opacity-70"></div>
+                          <div v-if="!match.team2" class="px-3 py-3 text-[10px] text-gray-500 text-center">
+                            <span class="font-bold text-white text-xs">{{ match.team1?.name }}</span> · BYE ✅
+                          </div>
+                          <div v-else>
+                            <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/5"
+                              :class="match.status === 'done' && match.winner_id == match.team1_id ? 'bg-blue-500/10' : ''">
+                              <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                <div class="w-4 h-4 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[7px]">
+                                  <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
+                                  <span v-else class="text-blue-400/80">{{ match.team1?.name?.[0] ?? '?' }}</span>
+                                </div>
+                                <span class="text-[11px] font-bold truncate"
+                                  :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500 line-through opacity-50' : match.status === 'done' && match.winner_id == match.team1_id ? 'text-blue-300' : 'text-white'">
+                                  {{ match.team1?.name ?? 'TBD' }}
+                                </span>
+                              </div>
+                              <span class="text-[11px] font-mono font-bold flex-shrink-0"
+                                :class="match.status === 'done' ? 'text-blue-400' : 'text-gray-700'">
+                                {{ match.status === 'done' ? match.score1 : '–' }}
+                              </span>
+                            </div>
+                            <div class="flex items-center justify-between gap-2 px-3 py-2"
+                              :class="match.status === 'done' && match.winner_id == match.team2_id ? 'bg-blue-500/10' : ''">
+                              <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                <div class="w-4 h-4 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[7px]">
+                                  <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
+                                  <span v-else class="text-blue-400/80">{{ match.team2?.name?.[0] ?? '?' }}</span>
+                                </div>
+                                <span class="text-[11px] font-bold truncate"
+                                  :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500 line-through opacity-50' : match.status === 'done' && match.winner_id == match.team2_id ? 'text-blue-300' : 'text-white'">
+                                  {{ match.team2?.name ?? 'TBD' }}
+                                </span>
+                              </div>
+                              <span class="text-[11px] font-mono font-bold flex-shrink-0"
+                                :class="match.status === 'done' ? 'text-blue-400' : 'text-gray-700'">
+                                {{ match.status === 'done' ? match.score2 : '–' }}
+                              </span>
+                            </div>
+                            <div v-if="match.status === 'done'" class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600">
+                              Perdedor ❌ eliminado
+                            </div>
+                            <div v-else class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600 uppercase font-bold">
+                              Pendiente
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <span class="font-bold text-sm truncate"
-                        :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500 line-through opacity-60' : ''"
-                        :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: '#60a5fa' } : {}">
-                        {{ match.team1?.name ?? 'TBD' }}
-                      </span>
-                    </div>
-                    <span class="text-xs text-gray-500 font-bold">VS</span>
-                    <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
-                      <span class="font-bold text-sm truncate"
-                        :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500 line-through opacity-60' : ''"
-                        :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: '#60a5fa' } : {}">
-                        {{ match.team2?.name ?? 'TBD' }}
-                      </span>
-                      <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-blue-400">
-                        <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
-                        <span v-else>{{ match.team2?.name?.[0] }}</span>
-                      </div>
-                    </div>
+                    </template>
                   </div>
-                  <div v-if="match.status === 'done'" class="text-center mt-2 text-xs text-gray-500 font-mono">
-                    <span class="text-blue-400 font-black text-base">{{ match.score1 }} – {{ match.score2 }}</span>
-                    <span class="ml-2 text-[9px]">· Perdedor ❌ eliminado</span>
-                  </div>
-                  <div v-else class="text-center mt-2 text-[10px] text-gray-600 uppercase font-bold">Pendiente</div>
                 </div>
-              </div>
+                <div v-if="roundIdx < Object.keys(lbRounds).length - 1" class="w-3 flex-shrink-0"></div>
+              </template>
             </div>
           </div>
         </template>
@@ -721,4 +775,67 @@ function copyLink() {
 </template>
 
 <style scoped>
+/* ── Winner Bracket connector lines (public view) ── */
+.pub-wb-match-right::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+  background: rgba(192, 132, 252, 0.3);
+  transform: translateX(100%) translateY(-50%);
+}
+
+.pub-wb-match-top::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  width: 1px;
+  height: calc(100% + 8px);
+  background: rgba(192, 132, 252, 0.25);
+}
+
+.pub-wb-match-bottom::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  bottom: 50%;
+  width: 1px;
+  height: calc(100% + 8px);
+  background: rgba(192, 132, 252, 0.25);
+}
+
+/* ── Loser Bracket connector lines (public view) ── */
+.pub-lb-match-right::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+  background: rgba(96, 165, 250, 0.3);
+  transform: translateX(100%) translateY(-50%);
+}
+
+.pub-lb-match-top::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  width: 1px;
+  height: calc(100% + 8px);
+  background: rgba(96, 165, 250, 0.25);
+}
+
+.pub-lb-match-bottom::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  bottom: 50%;
+  width: 1px;
+  height: calc(100% + 8px);
+  background: rgba(96, 165, 250, 0.25);
+}
 </style>
