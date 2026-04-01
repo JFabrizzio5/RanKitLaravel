@@ -11,10 +11,12 @@ interface Team {
   wins: number
   losses: number
   swiss_status: 'active' | 'advanced' | 'eliminated'
+  de_bracket: 'wb' | 'lb' | 'out'
+  points: number
 }
 interface LolMatch {
   id: number
-  phase: 'swiss' | 'elimination'
+  phase: 'swiss' | 'elimination' | 'winner' | 'loser' | 'grand_final' | 'league'
   round: number
   team1_id: number
   team2_id: number | null
@@ -30,8 +32,8 @@ interface Tournament {
   id: number
   name: string
   game: string
-  format: 'elimination' | 'swiss_elimination'
-  phase: 'pending' | 'swiss' | 'elimination' | 'done'
+  format: 'elimination' | 'swiss_elimination' | 'double_elimination' | 'league'
+  phase: 'pending' | 'swiss' | 'elimination' | 'league' | 'done'
   swiss_rounds_total: number
   elimination_teams: number
   swiss_wins_to_advance: number
@@ -53,6 +55,11 @@ const gameIcon = computed(() => props.tournament.game === 'valorant' ? '🎯' : 
 
 const swissMatches = computed(() => props.matches.filter(m => m.phase === 'swiss'))
 const elimMatches = computed(() => props.matches.filter(m => m.phase === 'elimination'))
+const wbMatches = computed(() => props.matches.filter(m => m.phase === 'winner'))
+const lbMatches = computed(() => props.matches.filter(m => m.phase === 'loser'))
+const gfMatch = computed(() => props.matches.find(m => m.phase === 'grand_final') ?? null)
+const leagueMatches = computed(() => props.matches.filter(m => m.phase === 'league'))
+
 const maxSwissRound = computed(() => swissMatches.value.reduce((m, x) => Math.max(m, x.round), 0))
 const maxElimRound = computed(() => elimMatches.value.reduce((m, x) => Math.max(m, x.round), 0))
 
@@ -66,6 +73,21 @@ const elimRounds = computed(() => {
   for (const m of elimMatches.value) { if (!r[m.round]) r[m.round] = []; r[m.round].push(m) }
   return r
 })
+const wbRounds = computed(() => {
+  const r: Record<number, LolMatch[]> = {}
+  for (const m of wbMatches.value) { if (!r[m.round]) r[m.round] = []; r[m.round].push(m) }
+  return r
+})
+const lbRounds = computed(() => {
+  const r: Record<number, LolMatch[]> = {}
+  for (const m of lbMatches.value) { if (!r[m.round]) r[m.round] = []; r[m.round].push(m) }
+  return r
+})
+const leagueRounds = computed(() => {
+  const r: Record<number, LolMatch[]> = {}
+  for (const m of leagueMatches.value) { if (!r[m.round]) r[m.round] = []; r[m.round].push(m) }
+  return r
+})
 
 const pendingSwiss = computed(() => swissMatches.value.filter(m => m.status === 'pending').length)
 const allSwissDone = computed(() => swissMatches.value.length > 0 && pendingSwiss.value === 0)
@@ -76,8 +98,21 @@ const activeTeams = computed(() => props.teams.filter(t => (t.swiss_status ?? 'a
 const advancedTeams = computed(() => props.teams.filter(t => t.swiss_status === 'advanced'))
 const eliminatedTeams = computed(() => props.teams.filter(t => t.swiss_status === 'eliminated'))
 
+// League standings (sorted by points, then wins, then name)
+const leagueStandings = computed(() => [...props.teams].sort((a, b) => {
+  if (b.points !== a.points) return b.points - a.points
+  if (b.wins !== a.wins) return b.wins - a.wins
+  return a.name.localeCompare(b.name)
+}))
+
 const champion = computed(() => {
   if (props.tournament.phase !== 'done') return null
+  if (props.tournament.format === 'double_elimination') {
+    return gfMatch.value?.winner ?? null
+  }
+  if (props.tournament.format === 'league') {
+    return leagueStandings.value[0] ?? null
+  }
   const lastRound = elimMatches.value.filter(m => m.round === maxElimRound.value)
   return lastRound.length === 1 && lastRound[0].winner ? lastRound[0].winner : null
 })
@@ -85,7 +120,6 @@ const champion = computed(() => {
 const canGenerateSwiss = computed(() => {
   if (props.tournament.format !== 'swiss_elimination') return false
   if (['elimination', 'done'].includes(props.tournament.phase)) return false
-  // Si Round 1 es manual y no hay ningún match swiss aún, bloquear el botón automático
   if (props.tournament.swiss_first_round_manual && swissMatches.value.length === 0) return false
   if (props.tournament.swiss_rounds_total > 0 && currentSwissRound.value >= props.tournament.swiss_rounds_total) return false
   if (currentSwissRound.value > 0 && pendingSwiss.value > 0) return false
@@ -99,7 +133,19 @@ const canAdvanceManually = computed(() => {
   return allSwissDone.value
 })
 
-// Round 1 Manual — si el torneo pide R1 manual y aún no hay ningún match swiss
+const canGenerateDE = computed(() =>
+  props.tournament.format === 'double_elimination' &&
+  props.tournament.phase === 'pending' &&
+  props.teams.length >= 2
+)
+
+const canGenerateLeague = computed(() =>
+  props.tournament.format === 'league' &&
+  props.tournament.phase === 'pending' &&
+  props.teams.length >= 2
+)
+
+// Round 1 Manual
 const needsManualRound1 = computed(() =>
   props.tournament.swiss_first_round_manual &&
   props.tournament.format === 'swiss_elimination' &&
@@ -127,7 +173,6 @@ const resultForm = useForm({ match_id: 0, winner_id: 0, score1: 0, score2: 0 })
 const editForm = useForm({ name: '', logo: '' })
 
 // --- Manual Round 1 state ---
-// pairs: array de { t1_id: number, t2_id: number | null }
 const manualPairs = ref<{ t1_id: number; t2_id: number | null }[]>([])
 const showManualSetup = ref(false)
 
@@ -205,8 +250,26 @@ function submitResult() {
 }
 
 function labelRound(phase: string, round: number) {
-  const rounds = phase === 'elimination' ? Object.keys(elimRounds.value) : Object.keys(swissRounds.value)
   if (phase === 'swiss') return `Ronda Swiss ${round}`
+  if (phase === 'league') return `Jornada ${round}`
+  if (phase === 'winner') {
+    const wbKeys = Object.keys(wbRounds.value)
+    const total = wbKeys.length
+    const pos = wbKeys.indexOf(String(round))
+    if (total - pos === 1) return 'WB FINAL'
+    if (total - pos === 2) return 'WB SEMIFINALES'
+    if (total - pos === 3) return 'WB CUARTOS'
+    return `WB Ronda ${round}`
+  }
+  if (phase === 'loser') {
+    const lbKeys = Object.keys(lbRounds.value)
+    const total = lbKeys.length
+    const pos = lbKeys.indexOf(String(round))
+    if (total - pos === 1) return 'LB FINAL'
+    if (total - pos === 2) return 'LB SEMIFINALES'
+    return `LB Ronda ${round}`
+  }
+  const rounds = phase === 'elimination' ? Object.keys(elimRounds.value) : []
   const total = rounds.length
   const pos = rounds.indexOf(String(round))
   if (total - pos === 1) return 'LA FINAL'
@@ -277,8 +340,11 @@ function getTeamById(id: number) {
         <span class="text-[10px] font-black uppercase px-2 py-1 rounded border border-white/10"
           :style="{ color: gameNeon }">
           {{ tournament.phase === 'pending' ? 'Sin Iniciar' :
-            tournament.phase === 'swiss' ? `Swiss R${currentSwissRound}` :
-              tournament.phase === 'elimination' ? 'Eliminación' : '🏆 Finalizado' }}
+             tournament.phase === 'swiss' ? `Swiss R${currentSwissRound}` :
+             tournament.phase === 'elimination' && tournament.format === 'double_elimination' ? '🔴🔵 WB/LB' :
+             tournament.phase === 'elimination' ? 'Eliminación' :
+             tournament.phase === 'league' ? '⚽ Liga' :
+             '🏆 Finalizado' }}
         </span>
       </div>
     </div>
@@ -287,7 +353,7 @@ function getTeamById(id: number) {
     <div v-if="champion"
       class="fixed top-14 left-0 w-full z-40 text-center py-2 text-sm font-black uppercase tracking-widest"
       :style="{ background: `${gameNeon}20`, color: gameNeon }">
-      🏆 Campeón: {{ champion.name }}
+      🏆 {{ tournament.format === 'league' ? 'Campeón de Liga' : 'Campeón' }}: {{ champion.name }}
     </div>
 
     <main class="max-w-7xl mx-auto px-5 pt-24 grid grid-cols-1 lg:grid-cols-12 gap-6" :class="{ 'pt-32': !!champion }">
@@ -335,17 +401,25 @@ function getTeamById(id: number) {
                   <span v-else>{{ team.name[0] }}</span>
                 </div>
                 <span class="text-sm font-bold text-white">{{ team.name }}</span>
-                <!-- Status badge -->
-                <span v-if="team.swiss_status === 'advanced'"
+                <!-- Swiss status badge -->
+                <span v-if="tournament.format === 'swiss_elimination' && team.swiss_status === 'advanced'"
                   class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded"
                   style="background:#15803d20;color:#4ade80;">✅ Clasificado</span>
-                <span v-else-if="team.swiss_status === 'eliminated'"
+                <span v-else-if="tournament.format === 'swiss_elimination' && team.swiss_status === 'eliminated'"
+                  class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded"
+                  style="background:#dc262620;color:#f87171;">❌ Eliminado</span>
+                <!-- DE bracket badge -->
+                <span v-if="tournament.format === 'double_elimination' && team.de_bracket === 'lb'"
+                  class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded"
+                  style="background:#2563eb20;color:#60a5fa;">🔵 LB</span>
+                <span v-else-if="tournament.format === 'double_elimination' && team.de_bracket === 'out'"
                   class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded"
                   style="background:#dc262620;color:#f87171;">❌ Eliminado</span>
               </div>
               <div class="flex items-center gap-2">
-                <span class="text-[10px] font-mono" :style="{ color: gameNeon }">{{ team.wins }}W / {{ team.losses
-                }}L</span>
+                <!-- League points -->
+                <span v-if="tournament.format === 'league'" class="text-[10px] font-mono text-yellow-400 font-black">{{ team.points }}pts</span>
+                <span v-else class="text-[10px] font-mono" :style="{ color: gameNeon }">{{ team.wins }}W / {{ team.losses }}L</span>
                 <button @click="openEdit(team)"
                   class="text-gray-700 hover:text-white transition text-xs opacity-0 group-hover:opacity-100">✎</button>
                 <button @click="removeTeam(team.id)"
@@ -382,7 +456,19 @@ function getTeamById(id: number) {
             🔵 Generar Bracket Eliminación
           </button>
 
-          <!-- Manual advance -->
+          <!-- Double Elimination generate -->
+          <button v-if="canGenerateDE" @click="generate"
+            class="w-full py-2.5 text-xs font-black uppercase rounded border transition-all border-red-500/60 text-red-400 hover:bg-red-500/10">
+            🔴🔵 Generar Doble Eliminación
+          </button>
+
+          <!-- League generate -->
+          <button v-if="canGenerateLeague" @click="generate"
+            class="w-full py-2.5 text-xs font-black uppercase rounded border transition-all border-green-500/60 text-green-400 hover:bg-green-500/10">
+            🏆 Generar Jornadas de Liga
+          </button>
+
+          <!-- Manual advance (swiss) -->
           <button v-if="canAdvanceManually" @click="advancePhase"
             class="w-full py-2.5 text-xs font-black uppercase rounded border border-blue-500/60 text-blue-400 transition-all hover:bg-blue-500/10">
             🔵 Avanzar a Eliminación →
@@ -409,6 +495,64 @@ function getTeamById(id: number) {
             <span>⚔️ {{ activeTeams.length }} activos</span>
             <span>·</span>
             <span>❌ {{ eliminatedTeams.length }} eliminados</span>
+          </div>
+        </div>
+
+        <!-- Double Elimination info panel -->
+        <div v-if="tournament.format === 'double_elimination' && tournament.phase !== 'pending'"
+          class="bg-[#0c0c0c] border border-white/5 rounded-xl p-4 space-y-2">
+          <h3 class="text-[10px] font-black uppercase tracking-widest text-gray-500">Estado DE</h3>
+          <div class="grid grid-cols-3 gap-2 text-[10px]">
+            <div class="bg-purple-900/20 border border-purple-500/20 rounded p-2 text-center">
+              <div class="text-gray-500 uppercase text-[8px]">WB</div>
+              <div class="text-purple-400 font-black text-base">{{ teams.filter(t => t.de_bracket === 'wb').length }}</div>
+            </div>
+            <div class="bg-blue-900/20 border border-blue-500/20 rounded p-2 text-center">
+              <div class="text-gray-500 uppercase text-[8px]">LB</div>
+              <div class="text-blue-400 font-black text-base">{{ teams.filter(t => t.de_bracket === 'lb').length }}</div>
+            </div>
+            <div class="bg-red-900/20 border border-red-500/20 rounded p-2 text-center">
+              <div class="text-gray-500 uppercase text-[8px]">Eliminados</div>
+              <div class="text-red-400 font-black text-base">{{ teams.filter(t => t.de_bracket === 'out').length }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- League Standings -->
+        <div v-if="tournament.format === 'league' && leagueMatches.length > 0"
+          class="bg-[#0c0c0c] border border-white/5 rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+            <h2 class="text-xs font-black uppercase tracking-widest text-green-400" style="font-family:'Chakra Petch',sans-serif">
+              🏆 Tabla de Posiciones</h2>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- Header -->
+            <div class="flex items-center gap-2 px-4 py-1.5 text-[9px] font-bold uppercase text-gray-600">
+              <span class="w-4">#</span>
+              <span class="flex-1">Equipo</span>
+              <span class="w-8 text-center">PJ</span>
+              <span class="w-8 text-center">G</span>
+              <span class="w-8 text-center">P</span>
+              <span class="w-10 text-center text-green-400">PTS</span>
+            </div>
+            <div v-for="(team, idx) in leagueStandings" :key="team.id"
+              class="flex items-center gap-2 px-4 py-2 transition-colors"
+              :class="idx === 0 && tournament.phase === 'done' ? 'bg-green-500/5' : 'hover:bg-white/5'">
+              <span class="text-[10px] font-mono text-gray-600 w-4">
+                {{ idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1 }}
+              </span>
+              <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                :style="{ color: gameNeon }">
+                <img v-if="team.logo" :src="team.logo" :alt="team.name[0]" class="w-full h-full object-cover" />
+                <span v-else>{{ team.name[0] }}</span>
+              </div>
+              <span class="flex-1 text-sm font-bold"
+                :class="idx === 0 && tournament.phase === 'done' ? 'text-green-400' : 'text-white'">{{ team.name }}</span>
+              <span class="w-8 text-center text-[10px] font-mono text-gray-500">{{ team.wins + team.losses }}</span>
+              <span class="w-8 text-center text-[10px] font-mono text-green-400">{{ team.wins }}</span>
+              <span class="w-8 text-center text-[10px] font-mono text-red-400">{{ team.losses }}</span>
+              <span class="w-10 text-center text-sm font-black text-yellow-400">{{ team.points }}</span>
+            </div>
           </div>
         </div>
 
@@ -540,11 +684,18 @@ function getTeamById(id: number) {
         <div v-if="matches.length === 0 && teams.length >= 2"
           class="bg-[#0c0c0c] border border-dashed border-white/10 rounded-xl p-12 text-center space-y-3">
           <p class="text-gray-500 text-sm">
-                        {{ tournament.format === 'swiss_elimination'
+            {{ tournament.format === 'swiss_elimination'
               ? (tournament.swiss_first_round_manual ? 'Configura los emparejamientos del Round 1.' : 'Genera la primera ronda Swiss para comenzar.')
-              : 'Genera el bracket de eliminación para comenzar.' }}
+              : tournament.format === 'double_elimination'
+                ? 'Genera el bracket de Doble Eliminación para comenzar.'
+                : tournament.format === 'league'
+                  ? 'Genera las jornadas de Liga para comenzar.'
+                  : 'Genera el bracket de eliminación para comenzar.' }}
           </p>
-          <button v-if="!tournament.swiss_first_round_manual || tournament.format === 'elimination'" @click="generate"
+          <button v-if="tournament.format === 'elimination' || tournament.format === 'double_elimination' || tournament.format === 'league'" @click="generate"
+            class="px-6 py-2 text-xs font-bold uppercase rounded border transition-all"
+            :style="{ borderColor: gameNeon, color: gameNeon }">Generar →</button>
+          <button v-if="tournament.format === 'swiss_elimination' && !tournament.swiss_first_round_manual" @click="generate"
             class="px-6 py-2 text-xs font-bold uppercase rounded border transition-all"
             :style="{ borderColor: gameNeon, color: gameNeon }">Generar bracket →</button>
           <button v-if="tournament.swiss_first_round_manual && swissMatches.length === 0" @click="initManualPairs"
@@ -587,16 +738,14 @@ function getTeamById(id: number) {
                       <span class="font-bold text-sm truncate"
                         :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500' : ''"
                         :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: gameNeon } : {}">{{
-                          match.team1?.name ??
-                          'TBD' }}</span>
+                          match.team1?.name ?? 'TBD' }}</span>
                     </div>
                     <span class="text-xs text-gray-500 font-bold">VS</span>
                     <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
                       <span class="font-bold text-sm truncate"
                         :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500' : ''"
                         :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: gameNeon } : {}">{{
-                          match.team2?.name ??
-                          'TBD' }}</span>
+                          match.team2?.name ?? 'TBD' }}</span>
                       <div
                         class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-blue-400">
                         <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" /><span
@@ -616,6 +765,244 @@ function getTeamById(id: number) {
             </div>
           </div>
         </template>
+
+        <!-- ═══ DOUBLE ELIMINATION BRACKETS ═══ -->
+        <template v-if="tournament.format === 'double_elimination' && (wbMatches.length > 0 || lbMatches.length > 0 || gfMatch)">
+
+          <!-- Winner Bracket -->
+          <template v-if="wbMatches.length > 0">
+            <div class="flex items-center gap-3">
+              <div class="h-px flex-1 bg-white/5"></div>
+              <h3 class="text-xs font-black uppercase tracking-widest px-3 py-1 rounded border border-purple-500/30 text-purple-400">
+                🔴 Winner Bracket (WB)</h3>
+              <div class="h-px flex-1 bg-white/5"></div>
+            </div>
+            <div v-for="(roundMatches, round) in wbRounds" :key="`wb-${round}`" class="space-y-3">
+              <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400/70 text-center">
+                {{ labelRound('winner', Number(round)) }}</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div v-for="match in roundMatches" :key="match.id"
+                  class="bg-[#0c0c0c] rounded-xl p-4 border transition-all relative overflow-hidden"
+                  :class="match.status === 'done' ? 'border-purple-500/20' : 'border-white/10'">
+                  <div v-if="match.status === 'done'" class="absolute top-0 right-0 w-1 h-full bg-purple-500 opacity-50"></div>
+                  <div v-if="!match.team2" class="text-xs text-gray-500 text-center">
+                    <span class="font-bold text-white">{{ match.team1?.name }}</span> · BYE ✅
+                  </div>
+                  <div v-else>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                        <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-purple-400">
+                          <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
+                          <span v-else>{{ match.team1?.name?.[0] }}</span>
+                        </div>
+                        <span class="font-bold text-sm truncate"
+                          :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500 line-through opacity-60' : ''"
+                          :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: '#c084fc' } : {}">
+                          {{ match.team1?.name ?? 'TBD' }}
+                        </span>
+                      </div>
+                      <span class="text-xs text-gray-500 font-bold">VS</span>
+                      <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+                        <span class="font-bold text-sm truncate"
+                          :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500 line-through opacity-60' : ''"
+                          :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: '#c084fc' } : {}">
+                          {{ match.team2?.name ?? 'TBD' }}
+                        </span>
+                        <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-purple-400">
+                          <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
+                          <span v-else>{{ match.team2?.name?.[0] }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-if="match.status === 'done'" class="text-center mt-2 text-xs text-gray-500 font-mono">
+                      <span class="text-purple-400 font-black text-base">{{ match.score1 }} – {{ match.score2 }}</span>
+                      <span class="ml-2 text-[9px]">· Perdedor → 🔵 LB</span>
+                    </div>
+                    <button v-if="match.status === 'pending'" @click="openResult(match)"
+                      class="mt-3 w-full text-xs font-bold uppercase py-1.5 rounded border border-purple-500/40 text-purple-400 transition-all hover:bg-purple-500/10">
+                      Registrar resultado →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Loser Bracket -->
+          <template v-if="lbMatches.length > 0">
+            <div class="flex items-center gap-3">
+              <div class="h-px flex-1 bg-white/5"></div>
+              <h3 class="text-xs font-black uppercase tracking-widest px-3 py-1 rounded border border-blue-500/30 text-blue-400">
+                🔵 Loser Bracket (LB)</h3>
+              <div class="h-px flex-1 bg-white/5"></div>
+            </div>
+            <div v-for="(roundMatches, round) in lbRounds" :key="`lb-${round}`" class="space-y-3">
+              <p class="text-[10px] font-bold uppercase tracking-widest text-blue-400/70 text-center">
+                {{ labelRound('loser', Number(round)) }}</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div v-for="match in roundMatches" :key="match.id"
+                  class="bg-[#0c0c0c] rounded-xl p-4 border transition-all relative overflow-hidden"
+                  :class="match.status === 'done' ? 'border-blue-500/20' : 'border-white/10'">
+                  <div v-if="match.status === 'done'" class="absolute top-0 right-0 w-1 h-full bg-blue-500 opacity-50"></div>
+                  <div v-if="!match.team2" class="text-xs text-gray-500 text-center">
+                    <span class="font-bold text-white">{{ match.team1?.name }}</span> · BYE ✅
+                  </div>
+                  <div v-else>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                        <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-blue-400">
+                          <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
+                          <span v-else>{{ match.team1?.name?.[0] }}</span>
+                        </div>
+                        <span class="font-bold text-sm truncate"
+                          :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500 line-through opacity-60' : ''"
+                          :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: '#60a5fa' } : {}">
+                          {{ match.team1?.name ?? 'TBD' }}
+                        </span>
+                      </div>
+                      <span class="text-xs text-gray-500 font-bold">VS</span>
+                      <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+                        <span class="font-bold text-sm truncate"
+                          :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500 line-through opacity-60' : ''"
+                          :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: '#60a5fa' } : {}">
+                          {{ match.team2?.name ?? 'TBD' }}
+                        </span>
+                        <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-blue-400">
+                          <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
+                          <span v-else>{{ match.team2?.name?.[0] }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-if="match.status === 'done'" class="text-center mt-2 text-xs text-gray-500 font-mono">
+                      <span class="text-blue-400 font-black text-base">{{ match.score1 }} – {{ match.score2 }}</span>
+                      <span class="ml-2 text-[9px]">· Perdedor ❌ eliminado</span>
+                    </div>
+                    <button v-if="match.status === 'pending'" @click="openResult(match)"
+                      class="mt-3 w-full text-xs font-bold uppercase py-1.5 rounded border border-blue-500/40 text-blue-400 transition-all hover:bg-blue-500/10">
+                      Registrar resultado →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Grand Final -->
+          <template v-if="gfMatch">
+            <div class="flex items-center gap-3">
+              <div class="h-px flex-1 bg-white/5"></div>
+              <h3 class="text-xs font-black uppercase tracking-widest px-3 py-1 rounded border text-yellow-400"
+                style="border-color: rgba(234,179,8,0.4); background: rgba(234,179,8,0.05)">
+                🏆 GRAN FINAL — WB vs LB</h3>
+              <div class="h-px flex-1 bg-white/5"></div>
+            </div>
+            <div class="max-w-sm mx-auto">
+              <div class="bg-[#0c0c0c] rounded-2xl p-6 border relative overflow-hidden"
+                :class="gfMatch.status === 'done' ? 'border-yellow-500/40' : 'border-yellow-500/20'">
+                <div v-if="gfMatch.status === 'done'" class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500 to-yellow-300"></div>
+                <div class="flex items-center justify-between gap-4">
+                  <div class="flex flex-col items-center gap-2 flex-1">
+                    <div class="w-12 h-12 rounded-full overflow-hidden bg-white/5 border-2 border-purple-500/50 flex items-center justify-center text-xl font-black text-purple-400">
+                      <img v-if="gfMatch.team1?.logo" :src="gfMatch.team1.logo" class="w-full h-full object-cover" />
+                      <span v-else>{{ gfMatch.team1?.name?.[0] }}</span>
+                    </div>
+                    <span class="text-xs font-bold text-center"
+                      :class="gfMatch.status === 'done' && gfMatch.winner_id == gfMatch.team1_id ? 'text-yellow-400' : gfMatch.status === 'done' ? 'text-gray-500 line-through' : 'text-white'">
+                      {{ gfMatch.team1?.name ?? 'WB Champion' }}
+                    </span>
+                    <span class="text-[9px] text-purple-400/70 font-bold uppercase">WB</span>
+                  </div>
+                  <div class="text-center">
+                    <div v-if="gfMatch.status === 'done'" class="text-2xl font-black font-mono text-yellow-400">
+                      {{ gfMatch.score1 }} – {{ gfMatch.score2 }}
+                    </div>
+                    <div v-else class="text-xl font-black text-gray-500">VS</div>
+                    <div v-if="gfMatch.status === 'done'" class="text-[9px] text-yellow-400/70 font-bold uppercase mt-1">
+                      🏆 {{ gfMatch.winner?.name }}
+                    </div>
+                  </div>
+                  <div class="flex flex-col items-center gap-2 flex-1">
+                    <div class="w-12 h-12 rounded-full overflow-hidden bg-white/5 border-2 border-blue-500/50 flex items-center justify-center text-xl font-black text-blue-400">
+                      <img v-if="gfMatch.team2?.logo" :src="gfMatch.team2.logo" class="w-full h-full object-cover" />
+                      <span v-else>{{ gfMatch.team2?.name?.[0] }}</span>
+                    </div>
+                    <span class="text-xs font-bold text-center"
+                      :class="gfMatch.status === 'done' && gfMatch.winner_id == gfMatch.team2_id ? 'text-yellow-400' : gfMatch.status === 'done' ? 'text-gray-500 line-through' : 'text-white'">
+                      {{ gfMatch.team2?.name ?? 'LB Champion' }}
+                    </span>
+                    <span class="text-[9px] text-blue-400/70 font-bold uppercase">LB</span>
+                  </div>
+                </div>
+                <button v-if="gfMatch.status === 'pending'" @click="openResult(gfMatch)"
+                  class="mt-4 w-full text-xs font-bold uppercase py-2 rounded border border-yellow-500/40 text-yellow-400 transition-all hover:bg-yellow-500/10">
+                  🏆 Registrar resultado GRAN FINAL →
+                </button>
+              </div>
+            </div>
+          </template>
+        </template>
+
+        <!-- ═══ LIGA: JORNADAS ═══ -->
+        <template v-if="tournament.format === 'league' && leagueMatches.length > 0">
+          <div class="flex items-center gap-3">
+            <div class="h-px flex-1 bg-white/5"></div>
+            <h3 class="text-xs font-black uppercase tracking-widest px-3 py-1 rounded border border-green-500/30 text-green-400">
+              ⚽ Jornadas de Liga</h3>
+            <div class="h-px flex-1 bg-white/5"></div>
+          </div>
+          <div v-for="(roundMatches, round) in leagueRounds" :key="`jornada-${round}`" class="space-y-3">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-green-400/70 text-center">
+              {{ labelRound('league', Number(round)) }}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div v-for="match in roundMatches" :key="match.id"
+                class="bg-[#0c0c0c] rounded-xl p-4 border transition-all relative overflow-hidden"
+                :class="match.status === 'done' ? 'border-green-500/20' : 'border-white/10'">
+                <div v-if="match.status === 'done'" class="absolute top-0 right-0 w-1 h-full bg-green-500 opacity-50"></div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                    <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-green-400">
+                      <img v-if="match.team1?.logo" :src="match.team1.logo" class="w-full h-full object-cover" />
+                      <span v-else>{{ match.team1?.name?.[0] }}</span>
+                    </div>
+                    <div>
+                      <span class="font-bold text-sm truncate block"
+                        :class="match.status === 'done' && match.winner_id != match.team1_id ? 'text-gray-500' : ''"
+                        :style="match.status === 'done' && match.winner_id == match.team1_id ? { color: '#4ade80' } : {}">
+                        {{ match.team1?.name ?? 'TBD' }}
+                      </span>
+                      <span class="text-[9px] text-gray-600">{{ match.team1?.points ?? 0 }} pts</span>
+                    </div>
+                  </div>
+                  <div class="text-center flex-shrink-0">
+                    <div v-if="match.status === 'done'" class="text-base font-black font-mono text-green-400">
+                      {{ match.score1 }} – {{ match.score2 }}
+                    </div>
+                    <span v-else class="text-xs text-gray-500 font-bold">VS</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+                    <div class="text-right">
+                      <span class="font-bold text-sm truncate block"
+                        :class="match.status === 'done' && match.winner_id != match.team2_id ? 'text-gray-500' : ''"
+                        :style="match.status === 'done' && match.winner_id == match.team2_id ? { color: '#4ade80' } : {}">
+                        {{ match.team2?.name ?? 'TBD' }}
+                      </span>
+                      <span class="text-[9px] text-gray-600">{{ match.team2?.points ?? 0 }} pts</span>
+                    </div>
+                    <div class="w-5 h-5 rounded-full overflow-hidden bg-white/5 flex-shrink-0 flex items-center justify-center text-[8px] text-green-400">
+                      <img v-if="match.team2?.logo" :src="match.team2.logo" class="w-full h-full object-cover" />
+                      <span v-else>{{ match.team2?.name?.[0] }}</span>
+                    </div>
+                  </div>
+                </div>
+                <button v-if="match.status === 'pending'" @click="openResult(match)"
+                  class="mt-3 w-full text-xs font-bold uppercase py-1.5 rounded border border-green-500/40 text-green-400 transition-all hover:bg-green-500/10">
+                  Registrar resultado →
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
       </div>
     </main>
 

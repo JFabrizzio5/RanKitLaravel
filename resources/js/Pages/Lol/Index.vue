@@ -16,8 +16,8 @@ const showCreate = ref(false)
 const form = useForm({
   name: '',
   game: props.game,
-  format: 'swiss_elimination' as 'elimination' | 'swiss_elimination',
-  swiss_rounds_total: 0,            // 0 = ilimitado (solo por umbral)
+  format: 'swiss_elimination' as 'elimination' | 'swiss_elimination' | 'double_elimination' | 'league',
+  swiss_rounds_total: 0,
   elimination_teams: 4,
   swiss_wins_to_advance: 3,
   swiss_losses_to_eliminate: 3,
@@ -46,6 +46,16 @@ function deleteTournament(id: number) {
 }
 
 function phaseLabel(t: any) {
+  if (t.format === 'league') {
+    if (t.phase === 'done') return '🏆 Finalizada'
+    if (t.phase === 'league') return '⚽ Jornadas'
+    return '⏳ Sin iniciar'
+  }
+  if (t.format === 'double_elimination') {
+    if (t.phase === 'done') return '🏆 Finalizado'
+    if (t.phase === 'elimination') return '🔴🔵 WB/LB'
+    return '⏳ Sin iniciar'
+  }
   if (t.format === 'elimination') {
     return t.phase === 'done' ? '🏆 Finalizado' : '🔵 Eliminación'
   }
@@ -57,10 +67,15 @@ function phaseLabel(t: any) {
 }
 
 function formatLabel(f: string) {
-  return f === 'swiss_elimination' ? 'Suiza + Eliminación' : 'Eliminación Directa'
+  if (f === 'swiss_elimination') return 'Suiza + Eliminación'
+  if (f === 'double_elimination') return 'Doble Eliminación'
+  if (f === 'league') return 'Liga'
+  return 'Eliminación Directa'
 }
 
 function swissConfigLabel(t: any) {
+  if (t.format === 'double_elimination') return 'Winner Bracket + Loser Bracket + Gran Final'
+  if (t.format === 'league') return 'Todos contra todos · 3 pts por victoria'
   if (t.format !== 'swiss_elimination') return 'Bracket desde inicio'
   const wins = t.swiss_wins_to_advance ?? 3
   const losses = t.swiss_losses_to_eliminate ?? 3
