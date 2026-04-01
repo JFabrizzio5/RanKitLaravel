@@ -854,10 +854,10 @@ function getTeamById(id: number) {
                 🔴 Winner Bracket (WB)</h3>
               <div class="h-px flex-1 bg-white/5"></div>
             </div>
-            <div class="overflow-x-auto pb-2">
-              <div class="flex min-w-max">
+            <div class="w-full pb-2">
+              <div class="flex w-full">
                 <template v-for="(roundMatches, round, roundIdx) in wbRounds" :key="`wb-${round}`">
-                  <div class="flex flex-col" style="min-width: 210px; width: 210px">
+                  <div class="flex flex-col flex-1 min-w-0">
                     <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400/60 text-center mb-3 px-2">
                       {{ labelRound('winner', Number(round)) }}</p>
                     <div class="flex flex-col flex-1 px-2">
@@ -940,10 +940,10 @@ function getTeamById(id: number) {
                 🔵 Loser Bracket (LB)</h3>
               <div class="h-px flex-1 bg-white/5"></div>
             </div>
-            <div class="overflow-x-auto pb-2">
-              <div class="flex min-w-max">
+            <div class="w-full pb-2">
+              <div class="flex w-full">
                 <template v-for="(roundMatches, round, roundIdx) in lbRounds" :key="`lb-${round}`">
-                  <div class="flex flex-col" style="min-width: 210px; width: 210px">
+                  <div class="flex flex-col flex-1 min-w-0">
                     <p class="text-[10px] font-bold uppercase tracking-widest text-blue-400/60 text-center mb-3 px-2">
                       {{ labelRound('loser', Number(round)) }}</p>
                     <div class="flex flex-col flex-1 px-2">
