@@ -129,10 +129,10 @@ onMounted(() => {
         </div>
 
         <!-- VISTA TABLA GENERAL -->
-        <div v-else class="animate-slide-in !overflow-visible relative mb-8 w-auto">
+        <div v-else class="w-[400px] animate-slide-in !overflow-visible relative mb-8">
             <div class="bg-[#050505] border-2 border-white shadow-neo-purple overflow-hidden">
                 
-                <div class="flex items-center justify-between px-5 py-2 bg-[#0a0a0a] border-b-2 border-[#bf00ff]">
+                <div class="flex items-center justify-between px-5 py-3 bg-[#0a0a0a] border-b-2 border-[#bf00ff]">
                     <div class="flex items-center gap-3">
                          <h2 class="text-[10px] font-black tracking-widest text-white uppercase font-display">
                             {{ widgetTitle }}
@@ -141,53 +141,55 @@ onMounted(() => {
                     <span class="w-2 h-2 bg-[#bf00ff] rounded-full animate-pulse"></span>
                 </div>
                 
-                <div class="flex divide-x divide-white/5">
+                <div class="divide-y divide-white/5">
                     <div v-for="(item, idx) in items" :key="idx" 
-                        class="flex flex-col items-center px-4 py-3 transition-colors relative min-w-[80px]"
+                        class="flex items-center justify-between px-4 py-2.5 transition-colors relative overflow-hidden"
                         :class="[
                             idx === 0 ? 'bg-[#bf00ff]/10' : 'bg-transparent',
-                            item.total_kills === maxKills && maxKills > 0 ? 'border-b-4 border-red-600' : ''
+                            item.total_kills === maxKills && maxKills > 0 ? 'border-r-4 border-red-600' : ''
                         ]"
                     >
                         <div v-if="item.total_kills === maxKills && maxKills > 0" class="absolute inset-0 pointer-events-none bg-red-600/5"></div>
 
-                        <div class="relative z-10 flex items-center justify-center w-7 h-7 text-xs font-black skew-x-[-10deg] border border-white/20 mb-1.5" 
-                            :class="[
-                                idx === 0 ? 'bg-yellow-500 text-black border-yellow-300' : 
-                                idx === 1 ? 'bg-gray-300 text-black border-white' : 
-                                idx === 2 ? 'bg-orange-600 text-white border-orange-400' : 
-                                'bg-[#1a1a1a] text-gray-500'
-                            ]">
-                            <span class="skew-x-[10deg] flex items-center justify-center">
-                                <template v-if="idx === 0">🏆</template>
-                                <template v-else-if="idx === 1">🥈</template>
-                                <template v-else-if="idx === 2">🥉</template>
-                                <template v-else>{{ item.rank }}</template>
-                            </span>
-                        </div>
-                        
-                        <div class="relative z-10 flex flex-col items-center text-center">
-                            <div class="text-[9px] font-bold tracking-tight uppercase font-display max-w-[72px] truncate text-center"
-                                 :class="item.total_kills === maxKills && maxKills > 0 ? 'text-red-500' : 'text-white'">
-                                {{ params.type === 'teams' ? item.member_names.join(', ') : item.player_name }}
+                        <div class="relative z-10 flex items-center gap-4">
+                            <div class="flex items-center justify-center w-8 h-8 text-xs font-black skew-x-[-10deg] border border-white/20" 
+                                :class="[
+                                    idx === 0 ? 'bg-yellow-500 text-black border-yellow-300' : 
+                                    idx === 1 ? 'bg-gray-300 text-black border-white' : 
+                                    idx === 2 ? 'bg-orange-600 text-white border-orange-400' : 
+                                    'bg-[#1a1a1a] text-gray-500'
+                                ]">
+                                <span class="skew-x-[10deg] flex items-center justify-center">
+                                    <template v-if="idx === 0">🏆</template>
+                                    <template v-else-if="idx === 1">🥈</template>
+                                    <template v-else-if="idx === 2">🥉</template>
+                                    <template v-else>{{ item.rank }}</template>
+                                </span>
                             </div>
-                            <div class="text-[7px] font-bold text-gray-600 uppercase">{{ item.games_played }}G</div>
+                            
+                            <div class="flex flex-col truncate">
+                                <div class="text-sm font-bold tracking-tight uppercase truncate w-44 font-display"
+                                     :class="item.total_kills === maxKills && maxKills > 0 ? 'text-red-500' : 'text-white'">
+                                    {{ params.type === 'teams' ? item.member_names.join(', ') : item.player_name }}
+                                </div>
+                                <div class="text-[8px] font-bold text-gray-600 uppercase">{{ item.games_played }} Games</div>
+                            </div>
                         </div>
                         
-                        <div class="relative z-10 text-center mt-1.5">
-                            <div class="text-base font-black leading-none font-display" 
+                        <div class="relative z-10 text-right">
+                            <div class="text-lg font-black leading-none font-display" 
                                 :class="params.sort === 'kills' ? 'text-red-500' : 'text-[#bf00ff]'">
                                 {{ params.sort === 'kills' ? item.total_kills : item.total_points }}
                             </div>
-                            <div class="text-[6px] font-bold text-gray-500 uppercase tracking-tighter">
-                                {{ params.sort === 'kills' ? 'KILLS' : 'PTS' }}
+                            <div class="text-[7px] font-bold text-gray-500 uppercase mt-0.5 tracking-tighter">
+                                {{ params.sort === 'kills' ? 'KILLS' : 'PUNTOS' }}
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Footer Separador -->
-                <div class="h-5 bg-[#000]"></div>
+                <div class="h-6 bg-[#000]"></div>
             </div>
 
             <!-- Logo Flotante Inferior -->
