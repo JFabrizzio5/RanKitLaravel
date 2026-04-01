@@ -372,6 +372,10 @@ function getTeamById(id: number) {
               :class="widgetCopied === 'winner' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'">
               {{ widgetCopied === 'winner' ? '¡Listo!' : 'OBS WB' }}
             </button>
+            <button @click="copyWidget('de_bracket')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
+              :class="widgetCopied === 'de_bracket' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'">
+              {{ widgetCopied === 'de_bracket' ? '¡Listo!' : 'OBS Bracket DE' }}
+            </button>
             <button @click="copyWidget('loser')" class="px-2 py-1 text-[9px] font-bold uppercase rounded transition"
               :class="widgetCopied === 'loser' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'">
               {{ widgetCopied === 'loser' ? '¡Listo!' : 'OBS LB' }}
