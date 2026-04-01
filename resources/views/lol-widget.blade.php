@@ -535,43 +535,48 @@
             const rounds = {};
             wbMatches.forEach(m => { if (!rounds[m.round]) rounds[m.round] = []; rounds[m.round].push(m); });
             const keys = Object.keys(rounds).sort((a,b) => a - b);
-            let html = `<div class="w-full max-w-3xl mx-auto p-4">
-                <div class="text-center text-sm font-black uppercase tracking-widest mb-4" style="color:#c084fc">🔴 WINNER BRACKET</div>`;
+            let html = `<div class="w-full h-full flex flex-col overflow-hidden p-2">
+                <div class="text-center text-xs font-black uppercase tracking-widest mb-3" style="color:#c084fc">🔴 WINNER BRACKET</div>
+                <div class="flex flex-1 w-full items-center gap-2">`;
             keys.forEach(r => {
-                const rNum = parseInt(r);
                 const total = keys.length;
                 const pos = keys.indexOf(r);
                 let label = `Ronda ${r}`;
                 if (total - pos === 1) label = 'WB FINAL';
                 else if (total - pos === 2) label = 'WB SEMIFINALES';
                 else if (total - pos === 3) label = 'WB CUARTOS';
-                html += `<div class="mb-4"><div class="text-[9px] font-black uppercase text-center text-purple-400/60 mb-2">${label}</div>
-                    <div class="flex flex-wrap justify-center gap-3">`;
+                html += `<div class="flex flex-col flex-1 min-w-0">
+                    <div class="text-[9px] font-black uppercase text-center mb-2" style="color:#c084fc;opacity:0.6">${label}</div>
+                    <div class="flex flex-col gap-2 items-stretch">`;
                 rounds[r].forEach(m => {
                     const t1 = teams.find(t => t.id === m.team1_id);
                     const t2 = teams.find(t => t.id === m.team2_id);
                     const isDone = m.status === 'done';
-                    html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded px-4 py-3 min-w-[180px]">
-                        <div class="flex items-center gap-2 mb-1.5">
-                            ${teamHex(t1)}
-                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? 'color:#c084fc' : ''}">
-                                ${t1?.name ?? 'TBD'}
-                            </span>
-                            ${isDone ? `<span class="text-xs font-black" style="color:#c084fc">${m.score1}</span>` : ''}
+                    html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded w-full">
+                        <div class="flex items-center justify-between gap-1.5 px-3 py-2 border-b border-white/5 ${isDone && m.winner_id == m.team1_id ? 'bg-purple-500/10' : ''}">
+                            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                ${teamHex(t1)}
+                                <span class="text-[10px] font-bold truncate ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? 'color:#c084fc' : ''}">
+                                    ${t1?.name ?? 'TBD'}
+                                </span>
+                            </div>
+                            <span class="text-[10px] font-black flex-shrink-0" style="color:${isDone ? '#c084fc' : '#374151'}">${isDone ? m.score1 : '–'}</span>
                         </div>
-                        <div class="flex items-center gap-2">
-                            ${teamHex(t2)}
-                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? 'color:#c084fc' : ''}">
-                                ${t2?.name ?? 'TBD'}
-                            </span>
-                            ${isDone ? `<span class="text-xs font-black" style="color:#c084fc">${m.score2}</span>` : ''}
+                        <div class="flex items-center justify-between gap-1.5 px-3 py-2 ${isDone && m.winner_id == m.team2_id ? 'bg-purple-500/10' : ''}">
+                            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                ${teamHex(t2)}
+                                <span class="text-[10px] font-bold truncate ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? 'color:#c084fc' : ''}">
+                                    ${t2?.name ?? 'TBD'}
+                                </span>
+                            </div>
+                            <span class="text-[10px] font-black flex-shrink-0" style="color:${isDone ? '#c084fc' : '#374151'}">${isDone ? m.score2 : '–'}</span>
                         </div>
-                        ${isDone ? '' : '<div class="text-[8px] text-white/20 text-center mt-1 uppercase">Pendiente</div>'}
+                        ${!isDone ? '<div class="text-[8px] text-white/20 text-center py-1 uppercase">Pendiente</div>' : ''}
                     </div>`;
                 });
                 html += `</div></div>`;
             });
-            html += `</div>`;
+            html += `</div></div>`;
             return html;
         }
 
@@ -582,41 +587,47 @@
             const rounds = {};
             lbMatches.forEach(m => { if (!rounds[m.round]) rounds[m.round] = []; rounds[m.round].push(m); });
             const keys = Object.keys(rounds).sort((a,b) => a - b);
-            let html = `<div class="w-full max-w-3xl mx-auto p-4">
-                <div class="text-center text-sm font-black uppercase tracking-widest mb-4" style="color:#60a5fa">🔵 LOSER BRACKET</div>`;
+            let html = `<div class="w-full h-full flex flex-col overflow-hidden p-2">
+                <div class="text-center text-xs font-black uppercase tracking-widest mb-3" style="color:#60a5fa">🔵 LOSER BRACKET</div>
+                <div class="flex flex-1 w-full items-center gap-2">`;
             keys.forEach(r => {
                 const total = keys.length;
                 const pos = keys.indexOf(r);
                 let label = `Ronda ${r}`;
                 if (total - pos === 1) label = 'LB FINAL';
                 else if (total - pos === 2) label = 'LB SEMIFINALES';
-                html += `<div class="mb-4"><div class="text-[9px] font-black uppercase text-center text-blue-400/60 mb-2">${label}</div>
-                    <div class="flex flex-wrap justify-center gap-3">`;
+                html += `<div class="flex flex-col flex-1 min-w-0">
+                    <div class="text-[9px] font-black uppercase text-center mb-2" style="color:#60a5fa;opacity:0.6">${label}</div>
+                    <div class="flex flex-col gap-2 items-stretch">`;
                 rounds[r].forEach(m => {
                     const t1 = teams.find(t => t.id === m.team1_id);
                     const t2 = teams.find(t => t.id === m.team2_id);
                     const isDone = m.status === 'done';
-                    html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded px-4 py-3 min-w-[180px]">
-                        <div class="flex items-center gap-2 mb-1.5">
-                            ${teamHex(t1)}
-                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? 'color:#60a5fa' : ''}">
-                                ${t1?.name ?? 'TBD'}
-                            </span>
-                            ${isDone ? `<span class="text-xs font-black" style="color:#60a5fa">${m.score1}</span>` : ''}
+                    html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded w-full">
+                        <div class="flex items-center justify-between gap-1.5 px-3 py-2 border-b border-white/5 ${isDone && m.winner_id == m.team1_id ? 'bg-blue-500/10' : ''}">
+                            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                ${teamHex(t1)}
+                                <span class="text-[10px] font-bold truncate ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? 'color:#60a5fa' : ''}">
+                                    ${t1?.name ?? 'TBD'}
+                                </span>
+                            </div>
+                            <span class="text-[10px] font-black flex-shrink-0" style="color:${isDone ? '#60a5fa' : '#374151'}">${isDone ? m.score1 : '–'}</span>
                         </div>
-                        <div class="flex items-center gap-2">
-                            ${teamHex(t2)}
-                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? 'color:#60a5fa' : ''}">
-                                ${t2?.name ?? 'TBD'}
-                            </span>
-                            ${isDone ? `<span class="text-xs font-black" style="color:#60a5fa">${m.score2}</span>` : ''}
+                        <div class="flex items-center justify-between gap-1.5 px-3 py-2 ${isDone && m.winner_id == m.team2_id ? 'bg-blue-500/10' : ''}">
+                            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                ${teamHex(t2)}
+                                <span class="text-[10px] font-bold truncate ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? 'color:#60a5fa' : ''}">
+                                    ${t2?.name ?? 'TBD'}
+                                </span>
+                            </div>
+                            <span class="text-[10px] font-black flex-shrink-0" style="color:${isDone ? '#60a5fa' : '#374151'}">${isDone ? m.score2 : '–'}</span>
                         </div>
-                        ${isDone ? '' : '<div class="text-[8px] text-white/20 text-center mt-1 uppercase">Pendiente</div>'}
+                        ${!isDone ? '<div class="text-[8px] text-white/20 text-center py-1 uppercase">Pendiente</div>' : ''}
                     </div>`;
                 });
                 html += `</div></div>`;
             });
-            html += `</div>`;
+            html += `</div></div>`;
             return html;
         }
 
