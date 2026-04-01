@@ -458,7 +458,10 @@
             const p = PHASE_FILTER || 'all';
 
             // 1. Configurar Marquesina Superior
-            const phaseLabels = { pending:'Sin Iniciar', swiss:'Fase Suiza', elimination:'Eliminatoria', done:'Torneo Finalizado' };
+            const phaseLabels = {
+                pending:'Sin Iniciar', swiss:'Fase Suiza', elimination:'Eliminatoria',
+                league: 'Liga', done:'Torneo Finalizado'
+            };
             const label = phaseLabels[tournament.phase] || tournament.phase;
             document.getElementById('top-marquee').innerHTML = (`${tournament.name} • ${label} • `).repeat(10);
 
@@ -466,15 +469,28 @@
 
             // 2. Banner de Campeón (Si ya terminó)
             if (tournament.phase === 'done') {
-                const elimM = matches.filter(m => m.phase === 'elimination');
-                const maxR = Math.max(...elimM.map(m => m.round));
-                const fin = elimM.find(m => m.round === maxR);
-                if (fin && fin.winner_id) {
-                    const champ = teams.find(t => t.id === fin.winner_id);
+                let champName = null;
+
+                if (tournament.format === 'double_elimination') {
+                    const gf = matches.find(m => m.phase === 'grand_final' && m.winner_id);
+                    if (gf) champName = (teams.find(t => t.id === gf.winner_id) || {}).name;
+                } else if (tournament.format === 'league') {
+                    const sorted = [...teams].sort((a,b) => b.points - a.points || b.wins - a.wins);
+                    champName = sorted[0]?.name;
+                } else {
+                    const elimM = matches.filter(m => m.phase === 'elimination');
+                    if (elimM.length > 0) {
+                        const maxR = Math.max(...elimM.map(m => m.round));
+                        const fin = elimM.find(m => m.round === maxR);
+                        if (fin && fin.winner_id) champName = (teams.find(t => t.id === fin.winner_id) || {}).name;
+                    }
+                }
+
+                if (champName) {
                     contentHTML += `
                     <div class="absolute top-10 left-1/2 -translate-x-1/2 z-50 text-center bg-black/90 border-2 border-neon px-12 py-4 shadow-neon">
                         <div class="text-xs tracking-[0.3em] uppercase text-white/70 mb-2">🏆 Campeón del Torneo</div>
-                        <div class="text-4xl font-black uppercase text-neon tracking-widest drop-shadow-md">${champ ? champ.name : 'TBD'}</div>
+                        <div class="text-4xl font-black uppercase text-neon tracking-widest drop-shadow-md">${champName}</div>
                     </div>`;
                 }
             }
@@ -482,15 +498,159 @@
             // 3. Renderizar Fase Correspondiente
             if ((p === 'all' || p === 'swiss') && tournament.format === 'swiss_elimination' && tournament.phase !== 'done') {
                 contentHTML += buildSwiss(matches, teams, tournament);
-            } 
-            else if (p === 'elimination' || (p === 'all' && (tournament.phase === 'elimination' || tournament.phase === 'done'))) {
+            }
+            else if (p === 'elimination' || (p === 'all' && (tournament.phase === 'elimination' || tournament.phase === 'done') && tournament.format !== 'double_elimination' && tournament.format !== 'league')) {
                 contentHTML += buildElimination(matches, teams, tournament);
             }
+            else if (tournament.format === 'double_elimination' && (p === 'all' || p === 'elimination')) {
+                contentHTML += buildDoubleElimination(matches, teams, tournament);
+            }
+            else if (tournament.format === 'league' && (p === 'all' || p === 'league')) {
+                contentHTML += buildLeague(matches, teams, tournament);
+            }
             else if (p === 'standings') {
-                contentHTML += buildStandings(teams);
+                contentHTML += buildStandings(teams, tournament);
             }
 
             root.innerHTML = contentHTML;
+        }
+
+        function buildDoubleElimination(matches, teams, tournament) {
+            const wbMatches = matches.filter(m => m.phase === 'winner');
+            const lbMatches = matches.filter(m => m.phase === 'loser');
+            const gf = matches.find(m => m.phase === 'grand_final');
+
+            function buildBracketSection(sectionMatches, color, label) {
+                if (!sectionMatches.length) return '';
+                const rounds = {};
+                sectionMatches.forEach(m => { if (!rounds[m.round]) rounds[m.round] = []; rounds[m.round].push(m); });
+                let html = `<div class="mb-6"><div class="text-center text-xs font-black uppercase tracking-widest mb-3" style="color:${color}">${label}</div>`;
+                Object.entries(rounds).forEach(([round, rMatches]) => {
+                    html += `<div class="text-[9px] text-center font-bold uppercase text-white/40 mb-1">Ronda ${round}</div>`;
+                    html += `<div class="flex flex-wrap justify-center gap-3 mb-3">`;
+                    rMatches.forEach(m => {
+                        const t1 = teams.find(t => t.id === m.team1_id);
+                        const t2 = teams.find(t => t.id === m.team2_id);
+                        const isDone = m.status === 'done';
+                        html += `<div class="match-node ${isDone ? 'winner-node' : ''} rounded px-4 py-3 min-w-[160px]">`;
+                        html += `<div class="flex items-center gap-2 mb-1">
+                            ${teamHex(t1)}
+                            <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team1_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team1_id ? `color:${color}` : ''}">${t1?.name ?? 'TBD'}</span>
+                            ${isDone ? `<span class="text-xs font-black" style="color:${color}">${m.score1}</span>` : ''}
+                        </div>`;
+                        if (t2) {
+                            html += `<div class="flex items-center gap-2">
+                                ${teamHex(t2)}
+                                <span class="flex-1 text-xs font-bold ${isDone && m.winner_id !== m.team2_id ? 'opacity-40 line-through' : ''}" style="${isDone && m.winner_id == m.team2_id ? `color:${color}` : ''}">${t2?.name ?? 'TBD'}</span>
+                                ${isDone ? `<span class="text-xs font-black" style="color:${color}">${m.score2}</span>` : ''}
+                            </div>`;
+                        } else {
+                            html += `<div class="text-[9px] text-white/30">BYE ✅</div>`;
+                        }
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+
+            let html = `<div class="w-full max-w-4xl mx-auto p-4 space-y-4">`;
+            html += buildBracketSection(wbMatches, '#c084fc', '🔴 Winner Bracket');
+            html += buildBracketSection(lbMatches, '#60a5fa', '🔵 Loser Bracket');
+            if (gf) {
+                const t1 = teams.find(t => t.id === gf.team1_id);
+                const t2 = teams.find(t => t.id === gf.team2_id);
+                html += `<div class="text-center"><div class="text-yellow-400 text-sm font-black uppercase tracking-widest mb-3">🏆 GRAN FINAL</div>
+                <div class="inline-block bg-black/80 border-2 border-yellow-500 px-6 py-4 rounded">
+                    <div class="flex items-center gap-4">
+                        <div class="text-center"><div class="text-xs text-purple-400 font-bold">WB</div><div class="text-base font-black ${gf.winner_id == gf.team1_id ? 'text-yellow-400' : gf.status === 'done' ? 'opacity-40 line-through text-white' : 'text-white'}">${t1?.name ?? 'TBD'}</div></div>
+                        <div class="text-2xl font-black text-white/40">${gf.status === 'done' ? `${gf.score1}-${gf.score2}` : 'VS'}</div>
+                        <div class="text-center"><div class="text-xs text-blue-400 font-bold">LB</div><div class="text-base font-black ${gf.winner_id == gf.team2_id ? 'text-yellow-400' : gf.status === 'done' ? 'opacity-40 line-through text-white' : 'text-white'}">${t2?.name ?? 'TBD'}</div></div>
+                    </div>
+                </div></div>`;
+            }
+            html += `</div>`;
+            return html;
+        }
+
+        function buildLeague(matches, teams, tournament) {
+            const leagueMatches = matches.filter(m => m.phase === 'league');
+            const standings = [...teams].sort((a,b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name));
+
+            let html = `<div class="w-full max-w-4xl mx-auto p-4 flex gap-6">`;
+
+            // Standings table
+            html += `<div class="flex-1 bg-black/80 border border-neon p-4 rounded">
+                <h3 class="text-neon text-sm font-black uppercase tracking-widest mb-4 text-center">🏆 Tabla de Posiciones</h3>
+                <div class="grid grid-cols-5 gap-1 text-[9px] font-bold text-white/40 uppercase mb-2 px-2">
+                    <span class="col-span-2">Equipo</span><span class="text-center">PJ</span><span class="text-center">V</span><span class="text-center text-yellow-400">PTS</span>
+                </div>`;
+            standings.forEach((t, i) => {
+                const isTop = i === 0;
+                html += `<div class="grid grid-cols-5 gap-1 items-center py-1.5 px-2 border-b border-white/5 last:border-0 ${isTop ? 'bg-yellow-500/10 rounded' : ''}">
+                    <div class="col-span-2 flex items-center gap-2">${teamHex(t)}<span class="text-xs font-bold ${isTop ? 'text-yellow-400' : 'text-white'} truncate">${t.name}</span></div>
+                    <span class="text-center text-[10px] font-mono text-white/50">${t.wins + t.losses}</span>
+                    <span class="text-center text-[10px] font-mono text-green-400">${t.wins}</span>
+                    <span class="text-center text-sm font-black text-yellow-400">${t.points}</span>
+                </div>`;
+            });
+            html += `</div>`;
+
+            // Recent/pending matches
+            const pending = leagueMatches.filter(m => m.status === 'pending').slice(0, 6);
+            const recent = leagueMatches.filter(m => m.status === 'done').slice(-4);
+            const toShow = recent.concat(pending);
+            if (toShow.length > 0) {
+                html += `<div class="w-64 space-y-2">
+                    <div class="text-neon text-[10px] font-black uppercase tracking-widest text-center mb-2">Próximos / Recientes</div>`;
+                toShow.forEach(m => {
+                    const t1 = teams.find(t => t.id === m.team1_id);
+                    const t2 = teams.find(t => t.id === m.team2_id);
+                    const isDone = m.status === 'done';
+                    html += `<div class="bg-black/60 border ${isDone ? 'border-neon/30' : 'border-white/10'} p-2 rounded text-xs flex items-center gap-2">
+                        <span class="font-bold ${isDone && m.winner_id == m.team1_id ? 'text-neon' : isDone ? 'opacity-50' : 'text-white'} flex-1 truncate">${t1?.name ?? '?'}</span>
+                        <span class="font-black text-white/40">${isDone ? `${m.score1}-${m.score2}` : 'vs'}</span>
+                        <span class="font-bold ${isDone && m.winner_id == m.team2_id ? 'text-neon' : isDone ? 'opacity-50' : 'text-white'} flex-1 truncate text-right">${t2?.name ?? '?'}</span>
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+
+            html += `</div>`;
+            return html;
+        }
+
+        function buildStandings(teams, tournament) {
+            let sorted;
+            if (tournament && tournament.format === 'league') {
+                sorted = [...teams].sort((a,b) => b.points - a.points || b.wins - a.wins);
+            } else {
+                sorted = [...teams].sort((a,b) => b.wins - a.wins || a.losses - b.losses);
+            }
+            let html = `
+            <div class="w-full max-w-xl mx-auto flex flex-col h-full justify-center">
+                <div class="bg-black/80 border border-neon p-6 shadow-neon">
+                    <h2 class="text-neon text-xl font-black uppercase tracking-widest text-center mb-6">Clasificación Global</h2>
+                    <div class="flex flex-col gap-3">`;
+
+            sorted.forEach((t, i) => {
+                const isTop = i < 3;
+                html += `
+                <div class="flex items-center gap-4 py-2 border-b border-white/10 last:border-0">
+                    <div class="${isTop ? 'text-neon text-xl' : 'text-white/50 text-md'} font-black w-6 text-center">${i+1}</div>
+                    ${teamHex(t)}
+                    <div class="flex-1 font-bold text-sm uppercase tracking-wider ${isTop ? 'text-white' : 'text-white/80'}">${t.name}</div>
+                    <div class="font-bold text-xs bg-white/5 px-3 py-1 rounded">
+                        ${tournament && tournament.format === 'league'
+                            ? `<span class="text-neon">${t.points} pts</span>`
+                            : `<span class="text-neon">${t.wins}W</span> - <span class="text-white/50">${t.losses}L</span>`}
+                    </div>
+                </div>`;
+            });
+
+            html += `</div></div></div>`;
+            return html;
         }
 
         fetchData();

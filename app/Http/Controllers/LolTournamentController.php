@@ -63,6 +63,8 @@ class LolTournamentController extends Controller
                 $table->integer('wins')->default(0);
                 $table->integer('losses')->default(0);
                 $table->string('swiss_status')->default('active'); // active | advanced | eliminated
+                $table->string('de_bracket')->default('wb');       // wb | lb | out  (double elimination)
+                $table->integer('points')->default(0);             // liga
                 $table->timestamps();
             });
         } else {
@@ -71,6 +73,10 @@ class LolTournamentController extends Controller
                     $table->string('logo')->nullable()->after('name');
                 if (!Schema::hasColumn('lol_test_teams', 'swiss_status'))
                     $table->string('swiss_status')->default('active')->after('losses');
+                if (!Schema::hasColumn('lol_test_teams', 'de_bracket'))
+                    $table->string('de_bracket')->default('wb')->after('swiss_status');
+                if (!Schema::hasColumn('lol_test_teams', 'points'))
+                    $table->integer('points')->default(0)->after('de_bracket');
             });
         }
 
@@ -253,7 +259,7 @@ class LolTournamentController extends Controller
         $request->validate([
             'name'                       => 'required|string|max:100',
             'game'                       => 'required|in:lol,valorant',
-            'format'                     => 'required|in:elimination,swiss_elimination',
+            'format'                     => 'required|in:elimination,swiss_elimination,double_elimination,league',
             'swiss_rounds_total'         => 'nullable|integer|min:0|max:20',
             'elimination_teams'          => 'nullable|integer|min:2|max:64',
             'swiss_wins_to_advance'      => 'nullable|integer|min:1|max:20',
@@ -262,18 +268,19 @@ class LolTournamentController extends Controller
         ]);
 
         $format = $request->format;
+        $isSwiss = $format === 'swiss_elimination';
 
         DB::table('lol_test_tournaments')->insert([
             'user_id'                    => auth()->id(),
             'name'                       => $request->name,
             'game'                       => $request->game,
             'format'                     => $format,
-            'phase'                      => $format === 'swiss_elimination' ? 'pending' : 'elimination',
-            'swiss_rounds_total'         => $format === 'swiss_elimination' ? ($request->swiss_rounds_total ?? 0) : 0,
+            'phase'                      => $format === 'elimination' ? 'elimination' : 'pending',
+            'swiss_rounds_total'         => $isSwiss ? ($request->swiss_rounds_total ?? 0) : 0,
             'elimination_teams'          => $request->elimination_teams ?? 4,
-            'swiss_wins_to_advance'      => $format === 'swiss_elimination' ? ($request->swiss_wins_to_advance ?? 3) : 0,
-            'swiss_losses_to_eliminate'  => $format === 'swiss_elimination' ? ($request->swiss_losses_to_eliminate ?? 3) : 0,
-            'swiss_first_round_manual'   => $format === 'swiss_elimination' ? ($request->swiss_first_round_manual ?? false) : false,
+            'swiss_wins_to_advance'      => $isSwiss ? ($request->swiss_wins_to_advance ?? 3) : 0,
+            'swiss_losses_to_eliminate'  => $isSwiss ? ($request->swiss_losses_to_eliminate ?? 3) : 0,
+            'swiss_first_round_manual'   => $isSwiss ? ($request->swiss_first_round_manual ?? false) : false,
             'created_at'                 => now(),
             'updated_at'                 => now(),
         ]);
@@ -433,6 +440,16 @@ class LolTournamentController extends Controller
 
         if (count($teams) < 2) {
             return back()->with('error', 'Necesitas al menos 2 equipos.');
+        }
+
+        // Double Elimination — initial generation
+        if ($tournament->format === 'double_elimination' && $tournament->phase === 'pending') {
+            return $this->generateDoubleElimStart($tournament, $teams);
+        }
+
+        // League — generate all round-robin matches
+        if ($tournament->format === 'league' && $tournament->phase === 'pending') {
+            return $this->generateLeagueMatches($tournament, $teams);
         }
 
         if ($tournament->format === 'swiss_elimination' && in_array($tournament->phase, ['pending', 'swiss'])) {
@@ -803,6 +820,25 @@ class LolTournamentController extends Controller
             $this->maybeGenerateNextElimRound($tournament, $match->round);
         }
 
+        // Double Elimination — handle WB/LB/GF advancement
+        if (in_array($match->phase, ['winner', 'loser', 'grand_final'])) {
+            $updatedMatch = (object)[
+                'id'        => $match->id,
+                'phase'     => $match->phase,
+                'round'     => $match->round,
+                'team1_id'  => $match->team1_id,
+                'team2_id'  => $match->team2_id,
+                'winner_id' => $winnerId,
+                'status'    => 'done',
+            ];
+            $this->handleDeResult($tournament, $updatedMatch);
+        }
+
+        // League — award points
+        if ($match->phase === 'league') {
+            $this->handleLeagueResult($tournament, $winnerId);
+        }
+
         return back()->with('success', 'Resultado registrado.');
     }
 
@@ -962,5 +998,435 @@ class LolTournamentController extends Controller
             'teams'      => $this->getTeams($id),
             'matches'    => $this->getMatches($id),
         ]);
+    }
+
+    // -----------------------------------------------------------------------
+    // DOUBLE ELIMINATION — WINNER BRACKET + LOSER BRACKET
+    // -----------------------------------------------------------------------
+
+    /**
+     * Initial generation: WB Round 1 with all seeded teams.
+     */
+    private function generateDoubleElimStart($tournament, array $teams): \Illuminate\Http\RedirectResponse
+    {
+        $id    = $tournament->id;
+        $count = count($teams);
+
+        if ($count < 2) {
+            return back()->with('error', 'Necesitas al menos 2 equipos para Double Elimination.');
+        }
+
+        // Reset de_bracket for all teams
+        DB::table('lol_test_teams')
+            ->where('lol_tournament_id', $id)
+            ->update(['de_bracket' => 'wb', 'updated_at' => now()]);
+
+        // Build seeded bracket (pad to next power of 2)
+        $bracketSize = 1;
+        while ($bracketSize < $count) $bracketSize *= 2;
+
+        $bracket = $teams;
+        while (count($bracket) < $bracketSize) $bracket[] = null;
+
+        $insertRows = [];
+        for ($i = 0; $i < $bracketSize; $i += 2) {
+            $t1    = $bracket[$i];
+            $t2    = $bracket[$i + 1];
+            $isBye = ($t1 && !$t2);
+
+            if (!$t1) continue;
+
+            $insertRows[] = $this->matchRow([
+                'lol_tournament_id' => $id,
+                'phase'             => 'winner',
+                'round'             => 1,
+                'team1_id'          => $t1->id,
+                'team2_id'          => $t2 ? $t2->id : null,
+                'winner_id'         => $isBye ? $t1->id : null,
+                'status'            => $isBye ? 'done' : 'pending',
+            ]);
+        }
+
+        DB::table('lol_test_matches')->insert($insertRows);
+        DB::table('lol_test_tournaments')->where('id', $id)->update([
+            'phase' => 'elimination', 'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Double Elimination iniciado — WB Ronda 1 generada.');
+    }
+
+    /**
+     * Called after a DE match result is recorded.
+     * Routes to WB/LB/GF handlers.
+     */
+    private function handleDeResult($tournament, object $match): void
+    {
+        $id       = $tournament->id;
+        $winnerId = $match->winner_id;
+        $loserId  = ($match->team1_id == $winnerId) ? $match->team2_id : $match->team1_id;
+
+        if ($match->phase === 'grand_final') {
+            DB::table('lol_test_tournaments')->where('id', $id)->update([
+                'phase' => 'done', 'updated_at' => now(),
+            ]);
+            return;
+        }
+
+        // Loser drops to LB (WB) or gets eliminated (LB)
+        if ($loserId) {
+            if ($match->phase === 'winner') {
+                DB::table('lol_test_teams')->where('id', $loserId)
+                    ->update(['de_bracket' => 'lb', 'updated_at' => now()]);
+            } elseif ($match->phase === 'loser') {
+                DB::table('lol_test_teams')->where('id', $loserId)
+                    ->update(['de_bracket' => 'out', 'updated_at' => now()]);
+            }
+        }
+
+        // Check if this entire round is done
+        $pending = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', $match->phase)
+            ->where('round', $match->round)
+            ->where('status', 'pending')
+            ->count();
+
+        if ($pending > 0) return; // round not done yet
+
+        if ($match->phase === 'winner') {
+            $this->generateDeAfterWBRound($tournament, $match->round);
+        } elseif ($match->phase === 'loser') {
+            $this->tryGenerateLBRound($tournament);
+            $this->checkDeGrandFinal($tournament);
+        }
+    }
+
+    /**
+     * After a WB round is fully done: generate next WB round + try next LB round.
+     */
+    private function generateDeAfterWBRound($tournament, int $wbRound): void
+    {
+        $id = $tournament->id;
+
+        $wbWinners = DB::table('lol_test_matches')
+            ->join('lol_test_teams', 'lol_test_matches.winner_id', '=', 'lol_test_teams.id')
+            ->where('lol_test_matches.lol_tournament_id', $id)
+            ->where('lol_test_matches.phase', 'winner')
+            ->where('lol_test_matches.round', $wbRound)
+            ->whereNotNull('lol_test_matches.winner_id')
+            ->select('lol_test_teams.*')
+            ->orderBy('lol_test_teams.seed')
+            ->get()->toArray();
+
+        // Generate next WB round if more than 1 winner
+        if (count($wbWinners) > 1) {
+            $nextWBRound = $wbRound + 1;
+            $insertRows  = [];
+
+            for ($i = 0; $i < count($wbWinners) - 1; $i += 2) {
+                $insertRows[] = $this->matchRow([
+                    'lol_tournament_id' => $id,
+                    'phase'             => 'winner',
+                    'round'             => $nextWBRound,
+                    'team1_id'          => $wbWinners[$i]->id,
+                    'team2_id'          => $wbWinners[$i + 1]->id,
+                    'status'            => 'pending',
+                ]);
+            }
+
+            // Bye if odd
+            if (count($wbWinners) % 2 !== 0) {
+                $bye = $wbWinners[count($wbWinners) - 1];
+                $insertRows[] = $this->matchRow([
+                    'lol_tournament_id' => $id,
+                    'phase'             => 'winner',
+                    'round'             => $nextWBRound,
+                    'team1_id'          => $bye->id,
+                    'team2_id'          => null,
+                    'winner_id'         => $bye->id,
+                    'status'            => 'done',
+                ]);
+            }
+
+            DB::table('lol_test_matches')->insert($insertRows);
+        }
+        // If count == 1: WB champion identified; Grand Final check will handle it
+
+        // Try generating next LB round (using new WB losers)
+        $this->tryGenerateLBRound($tournament);
+
+        // Check if Grand Final can be generated
+        $this->checkDeGrandFinal($tournament);
+    }
+
+    /**
+     * Attempt to generate the next LB round.
+     * Combines LB survivors from the last completed LB round + unmatched WB losers.
+     */
+    private function tryGenerateLBRound($tournament): void
+    {
+        $id = $tournament->id;
+
+        // Do not generate if there are still pending LB matches
+        $pendingLB = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'loser')
+            ->where('status', 'pending')
+            ->count();
+
+        if ($pendingLB > 0) return;
+
+        $lbSurvivors     = $this->getLBSurvivors($id);
+        $unmatchedLBTeams = $this->getUnmatchedLBTeams($id);
+
+        $lbTeams = array_merge($lbSurvivors, $unmatchedLBTeams);
+
+        if (count($lbTeams) < 2) return;
+
+        $nextLBRound = (DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'loser')
+            ->max('round') ?? 0) + 1;
+
+        $insertRows = [];
+
+        for ($i = 0; $i < count($lbTeams) - 1; $i += 2) {
+            $insertRows[] = $this->matchRow([
+                'lol_tournament_id' => $id,
+                'phase'             => 'loser',
+                'round'             => $nextLBRound,
+                'team1_id'          => $lbTeams[$i]->id,
+                'team2_id'          => $lbTeams[$i + 1]->id,
+                'status'            => 'pending',
+            ]);
+        }
+
+        // Bye for odd count
+        if (count($lbTeams) % 2 !== 0) {
+            $bye = $lbTeams[count($lbTeams) - 1];
+            $insertRows[] = $this->matchRow([
+                'lol_tournament_id' => $id,
+                'phase'             => 'loser',
+                'round'             => $nextLBRound,
+                'team1_id'          => $bye->id,
+                'team2_id'          => null,
+                'winner_id'         => $bye->id,
+                'status'            => 'done',
+            ]);
+        }
+
+        DB::table('lol_test_matches')->insert($insertRows);
+    }
+
+    /**
+     * Returns winners of the last fully-completed LB round.
+     */
+    private function getLBSurvivors(int $tournamentId): array
+    {
+        $maxLBRound = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $tournamentId)
+            ->where('phase', 'loser')
+            ->max('round') ?? 0;
+
+        if ($maxLBRound === 0) return [];
+
+        $pending = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $tournamentId)
+            ->where('phase', 'loser')
+            ->where('round', $maxLBRound)
+            ->where('status', 'pending')
+            ->count();
+
+        if ($pending > 0) return [];
+
+        return DB::table('lol_test_matches')
+            ->join('lol_test_teams', 'lol_test_matches.winner_id', '=', 'lol_test_teams.id')
+            ->where('lol_test_matches.lol_tournament_id', $tournamentId)
+            ->where('lol_test_matches.phase', 'loser')
+            ->where('lol_test_matches.round', $maxLBRound)
+            ->whereNotNull('lol_test_matches.winner_id')
+            ->select('lol_test_teams.*')
+            ->get()->toArray();
+    }
+
+    /**
+     * Returns LB teams (de_bracket = 'lb') that have NOT yet been assigned to any LB match.
+     */
+    private function getUnmatchedLBTeams(int $tournamentId): array
+    {
+        $matchedIds = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $tournamentId)
+            ->where('phase', 'loser')
+            ->get(['team1_id', 'team2_id'])
+            ->flatMap(fn($m) => array_filter([$m->team1_id, $m->team2_id]))
+            ->unique()
+            ->values()
+            ->toArray();
+
+        return DB::table('lol_test_teams')
+            ->where('lol_tournament_id', $tournamentId)
+            ->where('de_bracket', 'lb')
+            ->whereNotIn('id', $matchedIds)
+            ->get()->toArray();
+    }
+
+    /**
+     * Generate Grand Final if WB champion and LB champion are both determined.
+     */
+    private function checkDeGrandFinal($tournament): void
+    {
+        $id = $tournament->id;
+
+        if (DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'grand_final')
+            ->exists()) return;
+
+        // Find WB champion: last WB round with exactly 1 (non-bye) completed match
+        $maxWBRound = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'winner')
+            ->max('round') ?? 0;
+
+        if ($maxWBRound === 0) return;
+
+        $wbLastMatches = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'winner')
+            ->where('round', $maxWBRound)
+            ->get();
+
+        $wbPending    = $wbLastMatches->where('status', 'pending')->count();
+        $realWBMatches = $wbLastMatches->whereNotNull('team2_id')->count();
+
+        if ($wbPending > 0 || $realWBMatches !== 1) return;
+
+        $wbChampionId = $wbLastMatches->first()->winner_id;
+        if (!$wbChampionId) return;
+
+        // No unmatched LB teams should remain
+        if (count($this->getUnmatchedLBTeams($id)) > 0) return;
+
+        // Find LB champion: last LB round fully done, 1 match
+        $maxLBRound = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'loser')
+            ->max('round') ?? 0;
+
+        if ($maxLBRound === 0) return;
+
+        $lbLastMatches = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'loser')
+            ->where('round', $maxLBRound)
+            ->get();
+
+        $lbPending     = $lbLastMatches->where('status', 'pending')->count();
+        $realLBMatches = $lbLastMatches->whereNotNull('team2_id')->count();
+
+        if ($lbPending > 0 || $realLBMatches !== 1) return;
+
+        $lbChampionId = $lbLastMatches->first()->winner_id;
+        if (!$lbChampionId) return;
+
+        // Generate Grand Final
+        DB::table('lol_test_matches')->insert($this->matchRow([
+            'lol_tournament_id' => $id,
+            'phase'             => 'grand_final',
+            'round'             => 1,
+            'team1_id'          => $wbChampionId,
+            'team2_id'          => $lbChampionId,
+            'status'            => 'pending',
+        ]));
+    }
+
+    // -----------------------------------------------------------------------
+    // LIGA (ROUND-ROBIN)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Generate all round-robin matches using the polygon rotation algorithm.
+     * Win = 3 points, Loss = 0 points.
+     */
+    private function generateLeagueMatches($tournament, array $teams): \Illuminate\Http\RedirectResponse
+    {
+        $id    = $tournament->id;
+        $count = count($teams);
+
+        if ($count < 2) {
+            return back()->with('error', 'Necesitas al menos 2 equipos para la Liga.');
+        }
+
+        if (DB::table('lol_test_matches')->where('lol_tournament_id', $id)->where('phase', 'league')->exists()) {
+            return back()->with('error', 'Los partidos de liga ya fueron generados.');
+        }
+
+        // Reset points
+        DB::table('lol_test_teams')
+            ->where('lol_tournament_id', $id)
+            ->update(['points' => 0, 'wins' => 0, 'losses' => 0, 'updated_at' => now()]);
+
+        // Pad to even number for round-robin
+        $teamList = array_values($teams);
+        $n        = $count;
+
+        if ($n % 2 !== 0) {
+            $teamList[] = null; // bye slot
+            $n++;
+        }
+
+        $insertRows = [];
+        $rounds     = $n - 1;
+
+        for ($round = 1; $round <= $rounds; $round++) {
+            for ($match = 0; $match < $n / 2; $match++) {
+                $t1 = $teamList[$match];
+                $t2 = $teamList[$n - 1 - $match];
+
+                if ($t1 === null || $t2 === null) continue; // skip BYE
+
+                $insertRows[] = $this->matchRow([
+                    'lol_tournament_id' => $id,
+                    'phase'             => 'league',
+                    'round'             => $round,
+                    'team1_id'          => $t1->id,
+                    'team2_id'          => $t2->id,
+                    'status'            => 'pending',
+                ]);
+            }
+
+            // Rotate: fix first team, rotate the rest
+            $last = array_pop($teamList);
+            array_splice($teamList, 1, 0, [$last]);
+        }
+
+        DB::table('lol_test_matches')->insert($insertRows);
+        DB::table('lol_test_tournaments')->where('id', $id)->update([
+            'phase' => 'league', 'updated_at' => now(),
+        ]);
+
+        return back()->with('success', "Liga generada: {$count} equipos, " . count($insertRows) . " partidos.");
+    }
+
+    /**
+     * Award 3 points to winner; finish tournament when all league matches are done.
+     */
+    private function handleLeagueResult($tournament, int $winnerId): void
+    {
+        $id = $tournament->id;
+
+        DB::table('lol_test_teams')->where('id', $winnerId)->increment('points', 3);
+
+        $pending = DB::table('lol_test_matches')
+            ->where('lol_tournament_id', $id)
+            ->where('phase', 'league')
+            ->where('status', 'pending')
+            ->count();
+
+        if ($pending === 0) {
+            DB::table('lol_test_tournaments')->where('id', $id)->update([
+                'phase' => 'done', 'updated_at' => now(),
+            ]);
+        }
     }
 }
