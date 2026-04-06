@@ -23,6 +23,7 @@ interface LolMatch {
   score1: number
   score2: number
   status: 'pending' | 'done'
+  scheduled_at: string | null
   team1: Team | null
   team2: Team | null
   winner: Team | null
@@ -124,6 +125,12 @@ function phaseLabel() {
   if (t.phase === 'elimination') return '🔵 Eliminación'
   if (t.phase === 'done') return '🏆 Finalizado'
   return t.phase
+}
+
+function formatScheduledAt(scheduledAt: string | null): string {
+  if (!scheduledAt) return ''
+  const d = new Date(scheduledAt)
+  return d.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
 }
 
 function labelRound(phase: string, round: number) {
@@ -434,7 +441,12 @@ function copyLink() {
                     class="text-center mt-2 text-lg font-black font-mono tracking-widest" :style="{ color: gameNeon }">
                     {{ match.score1 }} – {{ match.score2 }}
                   </div>
-                  <div v-else class="text-center mt-2 text-[10px] text-gray-600 uppercase font-bold">Pendiente</div>
+                  <div v-else>
+                    <div v-if="match.scheduled_at" class="text-center mt-2 text-[10px] text-purple-400/70">
+                      🕐 {{ formatScheduledAt(match.scheduled_at) }}
+                    </div>
+                    <div v-else class="text-center mt-2 text-[10px] text-gray-600 uppercase font-bold">Pendiente</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -489,7 +501,12 @@ function copyLink() {
                   <div v-if="match.status === 'done'" class="text-center mt-2 text-lg font-black font-mono tracking-widest text-blue-400">
                     {{ match.score1 }} – {{ match.score2 }}
                   </div>
-                  <div v-else class="text-center mt-2 text-[10px] text-gray-600 uppercase font-bold">Pendiente</div>
+                  <div v-else>
+                    <div v-if="match.scheduled_at" class="text-center mt-2 text-[10px] text-blue-400/70">
+                      🕐 {{ formatScheduledAt(match.scheduled_at) }}
+                    </div>
+                    <div v-else class="text-center mt-2 text-[10px] text-gray-600 uppercase font-bold">Pendiente</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -564,8 +581,9 @@ function copyLink() {
                             <div v-if="match.status === 'done'" class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600">
                               Perdedor → 🔵 LB
                             </div>
-                            <div v-else class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600 uppercase font-bold">
-                              Pendiente
+                            <div v-else class="border-t border-white/5 px-3 py-1 text-[9px]"
+                              :class="match.scheduled_at ? 'text-purple-400/70' : 'text-gray-600 uppercase font-bold'">
+                              {{ match.scheduled_at ? '🕐 ' + formatScheduledAt(match.scheduled_at) : 'Pendiente' }}
                             </div>
                           </div>
                         </div>
@@ -647,8 +665,9 @@ function copyLink() {
                             <div v-if="match.status === 'done'" class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600">
                               Perdedor ❌ eliminado
                             </div>
-                            <div v-else class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600 uppercase font-bold">
-                              Pendiente
+                            <div v-else class="border-t border-white/5 px-3 py-1 text-[9px]"
+                              :class="match.scheduled_at ? 'text-blue-400/70' : 'text-gray-600 uppercase font-bold'">
+                              {{ match.scheduled_at ? '🕐 ' + formatScheduledAt(match.scheduled_at) : 'Pendiente' }}
                             </div>
                           </div>
                         </div>
@@ -694,6 +713,9 @@ function copyLink() {
                   <div v-else class="text-xl font-black text-gray-500">VS</div>
                   <div v-if="gfMatch.status === 'done'" class="text-[9px] text-yellow-400/70 font-bold uppercase mt-1">
                     🏆 {{ gfMatch.winner?.name }}
+                  </div>
+                  <div v-else-if="gfMatch.scheduled_at" class="text-[9px] text-yellow-400/70 mt-1">
+                    🕐 {{ formatScheduledAt(gfMatch.scheduled_at) }}
                   </div>
                 </div>
                 <div class="flex flex-col items-center gap-2 flex-1">
@@ -763,6 +785,9 @@ function copyLink() {
                       <span v-else>{{ match.team2?.name?.[0] }}</span>
                     </div>
                   </div>
+                </div>
+                <div v-if="match.status !== 'done' && match.scheduled_at" class="text-center mt-2 text-[10px] text-green-400/70">
+                  🕐 {{ formatScheduledAt(match.scheduled_at) }}
                 </div>
               </div>
             </div>
