@@ -24,6 +24,7 @@ interface LolMatch {
   score1: number
   score2: number
   status: 'pending' | 'done'
+  scheduled_at: string | null
   team1: Team | null
   team2: Team | null
   winner: Team | null
@@ -183,9 +184,11 @@ const newTeamName = ref('')
 const newTeamLogo = ref('')
 const resultModal = ref<LolMatch | null>(null)
 const editTeam = ref<Team | null>(null)
+const scheduleModal = ref<LolMatch | null>(null)
 
 const resultForm = useForm({ match_id: 0, winner_id: 0, score1: 0, score2: 0 })
 const editForm = useForm({ name: '', logo: '' })
+const scheduleForm = useForm({ match_id: 0, scheduled_at: '' })
 
 // --- Manual Round 1 state ---
 const manualPairs = ref<{ t1_id: number; t2_id: number | null }[]>([])
@@ -264,6 +267,22 @@ function submitResult() {
   })
 }
 
+function openSchedule(match: LolMatch) {
+  scheduleModal.value = match
+  scheduleForm.match_id = match.id
+  scheduleForm.scheduled_at = match.scheduled_at
+    ? new Date(match.scheduled_at).toISOString().slice(0, 16)
+    : ''
+}
+
+function submitSchedule() {
+  if (!scheduleForm.scheduled_at) { alert('Selecciona una fecha y hora'); return }
+  scheduleForm.post(route('lol.schedule', props.tournament.id), {
+    onSuccess: () => { scheduleModal.value = null },
+    preserveScroll: true,
+  })
+}
+
 function labelRound(phase: string, round: number) {
   if (phase === 'swiss') return `Ronda Swiss ${round}`
   if (phase === 'league') return `Jornada ${round}`
@@ -308,6 +327,12 @@ function availableOpponents(pairIdx: number, currentT2: number | null) {
 
 function getTeamById(id: number) {
   return props.teams.find(t => t.id === id)
+}
+
+function formatScheduledAt(scheduledAt: string | null): string {
+  if (!scheduledAt) return ''
+  const d = new Date(scheduledAt)
+  return d.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
 }
 </script>
 
@@ -916,10 +941,19 @@ function getTeamById(id: number) {
                                 </span>
                               </div>
                               <div v-if="match.status === 'pending'" class="border-t border-white/5 px-3 py-1.5">
-                                <button @click="openResult(match)"
-                                  class="w-full text-[10px] font-bold uppercase py-1 rounded border border-purple-500/40 text-purple-400 transition-all hover:bg-purple-500/10">
-                                  Registrar →
-                                </button>
+                                <div v-if="match.scheduled_at" class="text-[9px] text-purple-400/70 text-center mb-1">
+                                  🕐 {{ formatScheduledAt(match.scheduled_at) }}
+                                </div>
+                                <div class="flex gap-1.5">
+                                  <button @click="openSchedule(match)"
+                                    class="flex-1 text-[10px] font-bold uppercase py-1 rounded border border-purple-500/20 text-purple-400/60 transition-all hover:bg-purple-500/10">
+                                    📅 Horario
+                                  </button>
+                                  <button @click="openResult(match)"
+                                    class="flex-1 text-[10px] font-bold uppercase py-1 rounded border border-purple-500/40 text-purple-400 transition-all hover:bg-purple-500/10">
+                                    Registrar →
+                                  </button>
+                                </div>
                               </div>
                               <div v-if="match.status === 'done'" class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600">
                                 Perdedor → 🔵 LB
@@ -1002,10 +1036,19 @@ function getTeamById(id: number) {
                                 </span>
                               </div>
                               <div v-if="match.status === 'pending'" class="border-t border-white/5 px-3 py-1.5">
-                                <button @click="openResult(match)"
-                                  class="w-full text-[10px] font-bold uppercase py-1 rounded border border-blue-500/40 text-blue-400 transition-all hover:bg-blue-500/10">
-                                  Registrar →
-                                </button>
+                                <div v-if="match.scheduled_at" class="text-[9px] text-blue-400/70 text-center mb-1">
+                                  🕐 {{ formatScheduledAt(match.scheduled_at) }}
+                                </div>
+                                <div class="flex gap-1.5">
+                                  <button @click="openSchedule(match)"
+                                    class="flex-1 text-[10px] font-bold uppercase py-1 rounded border border-blue-500/20 text-blue-400/60 transition-all hover:bg-blue-500/10">
+                                    📅 Horario
+                                  </button>
+                                  <button @click="openResult(match)"
+                                    class="flex-1 text-[10px] font-bold uppercase py-1 rounded border border-blue-500/40 text-blue-400 transition-all hover:bg-blue-500/10">
+                                    Registrar →
+                                  </button>
+                                </div>
                               </div>
                               <div v-if="match.status === 'done'" class="border-t border-white/5 px-3 py-1 text-[9px] text-gray-600">
                                 Perdedor ❌ eliminado
@@ -1068,10 +1111,21 @@ function getTeamById(id: number) {
                     <span class="text-[9px] text-blue-400/70 font-bold uppercase">LB</span>
                   </div>
                 </div>
-                <button v-if="gfMatch.status === 'pending'" @click="openResult(gfMatch)"
-                  class="mt-4 w-full text-xs font-bold uppercase py-2 rounded border border-yellow-500/40 text-yellow-400 transition-all hover:bg-yellow-500/10">
-                  🏆 Registrar resultado GRAN FINAL →
-                </button>
+                <div v-if="gfMatch.status === 'pending'" class="mt-4 space-y-2">
+                  <div v-if="gfMatch.scheduled_at" class="text-[10px] text-yellow-400/70 text-center">
+                    🕐 {{ formatScheduledAt(gfMatch.scheduled_at) }}
+                  </div>
+                  <div class="flex gap-2">
+                    <button @click="openSchedule(gfMatch)"
+                      class="flex-1 text-xs font-bold uppercase py-2 rounded border border-yellow-500/20 text-yellow-400/60 transition-all hover:bg-yellow-500/10">
+                      📅 Horario
+                    </button>
+                    <button @click="openResult(gfMatch)"
+                      class="flex-1 text-xs font-bold uppercase py-2 rounded border border-yellow-500/40 text-yellow-400 transition-all hover:bg-yellow-500/10">
+                      🏆 Registrar resultado →
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </template>
@@ -1129,10 +1183,21 @@ function getTeamById(id: number) {
                     </div>
                   </div>
                 </div>
-                <button v-if="match.status === 'pending'" @click="openResult(match)"
-                  class="mt-3 w-full text-xs font-bold uppercase py-1.5 rounded border border-green-500/40 text-green-400 transition-all hover:bg-green-500/10">
-                  Registrar resultado →
-                </button>
+                <div v-if="match.status === 'pending'" class="mt-3 space-y-1.5">
+                  <div v-if="match.scheduled_at" class="text-[9px] text-green-400/70 text-center">
+                    🕐 {{ formatScheduledAt(match.scheduled_at) }}
+                  </div>
+                  <div class="flex gap-1.5">
+                    <button @click="openSchedule(match)"
+                      class="flex-1 text-xs font-bold uppercase py-1.5 rounded border border-green-500/20 text-green-400/60 transition-all hover:bg-green-500/10">
+                      📅 Horario
+                    </button>
+                    <button @click="openResult(match)"
+                      class="flex-1 text-xs font-bold uppercase py-1.5 rounded border border-green-500/40 text-green-400 transition-all hover:bg-green-500/10">
+                      Registrar →
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1194,6 +1259,43 @@ function getTeamById(id: number) {
                   class="flex-1 py-2 text-xs font-bold uppercase rounded-lg text-black disabled:opacity-40"
                   :style="{ background: gameNeon }">
                   {{ resultForm.processing ? 'Guardando...' : 'Confirmar' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- ═══ SCHEDULE MODAL ═══ -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="scheduleModal" class="fixed inset-0 z-[200] flex items-center justify-center p-4"
+          @click.self="scheduleModal = null">
+          <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+          <div
+            class="relative z-10 w-full max-w-sm bg-[#0e0e0e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-white/5">
+              <h2 class="font-black uppercase text-base tracking-tight" style="font-family:'Chakra Petch',sans-serif">
+                📅 Registrar Horario</h2>
+              <button @click="scheduleModal = null" class="text-gray-500 hover:text-white transition text-xl">×</button>
+            </div>
+            <form @submit.prevent="submitSchedule" class="p-5 space-y-4">
+              <div class="text-center text-sm font-bold text-gray-400">
+                {{ scheduleModal.team1?.name }} <span class="text-gray-600">vs</span> {{ scheduleModal.team2?.name }}
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">Fecha y Hora del Partido</label>
+                <input v-model="scheduleForm.scheduled_at" type="datetime-local"
+                  class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition" />
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button type="button" @click="scheduleModal = null"
+                  class="flex-1 py-2 text-xs font-bold uppercase border border-white/10 text-gray-400 rounded-lg hover:border-white/30 transition">Cancelar</button>
+                <button type="submit" :disabled="scheduleForm.processing"
+                  class="flex-1 py-2 text-xs font-bold uppercase rounded-lg text-black disabled:opacity-40"
+                  :style="{ background: gameNeon }">
+                  {{ scheduleForm.processing ? 'Guardando...' : 'Guardar Horario' }}
                 </button>
               </div>
             </form>

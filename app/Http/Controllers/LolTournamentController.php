@@ -99,7 +99,13 @@ class LolTournamentController extends Controller
                 $table->integer('score1')->default(0);
                 $table->integer('score2')->default(0);
                 $table->string('status')->default('pending');
+                $table->timestamp('scheduled_at')->nullable();
                 $table->timestamps();
+            });
+        } else {
+            Schema::table('lol_test_matches', function (Blueprint $table) {
+                if (!Schema::hasColumn('lol_test_matches', 'scheduled_at'))
+                    $table->timestamp('scheduled_at')->nullable()->after('status');
             });
         }
     }
@@ -161,6 +167,7 @@ class LolTournamentController extends Controller
             'score1'            => 0,
             'score2'            => 0,
             'status'            => 'pending',
+            'scheduled_at'      => null,
             'created_at'        => now(),
             'updated_at'        => now(),
         ], $overrides);
@@ -851,6 +858,35 @@ class LolTournamentController extends Controller
         }
 
         return back()->with('success', 'Resultado registrado.');
+    }
+
+    /**
+     * Registrar horario de partido (winner, loser, grand_final, league)
+     */
+    public function scheduleMatch(Request $request, int $id)
+    {
+        $this->ensureLolTablesReady();
+        $tournament = $this->getTournament($id, auth()->id());
+        abort_if(!$tournament, 404);
+
+        $request->validate([
+            'match_id'     => 'required|integer',
+            'scheduled_at' => 'required|date',
+        ]);
+
+        $match = DB::table('lol_test_matches')
+            ->where('id', $request->match_id)
+            ->where('lol_tournament_id', $id)
+            ->first();
+
+        abort_if(!$match, 404, 'Partida no encontrada.');
+
+        DB::table('lol_test_matches')->where('id', $match->id)->update([
+            'scheduled_at' => $request->scheduled_at,
+            'updated_at'   => now(),
+        ]);
+
+        return back()->with('success', 'Horario registrado.');
     }
 
     /**
