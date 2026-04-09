@@ -39,6 +39,10 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('rankit.profile');
         }
 
+        if ($request->user()->isAdmin()) {
+            return redirect()->route('game.selector');
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

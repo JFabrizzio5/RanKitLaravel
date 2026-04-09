@@ -31,8 +31,7 @@ Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name
 
 // --- DASHBOARD USUARIO ---
 Route::get('/dashboard', function () {
-    if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
-        // Ahora va al selector de juego en lugar de directo al panel Fortnite
+    if (auth()->user()->isAdmin()) {
         return redirect()->route('game.selector');
     }
     return Inertia::render('Dashboard');
