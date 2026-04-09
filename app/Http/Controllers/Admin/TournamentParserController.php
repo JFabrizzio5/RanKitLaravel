@@ -58,6 +58,16 @@ class TournamentParserController extends Controller
                 if (!Schema::hasColumn('tournaments', 'scoring_format')) $table->json('scoring_format')->nullable();
                 if (!Schema::hasColumn('tournaments', 'table_name')) $table->string('table_name')->nullable();
              });
+
+            // Asignar torneos huérfanos (sin user_id) al usuario jangel
+            if (Schema::hasColumn('tournaments', 'user_id')) {
+                $jangel = DB::table('users')->where('email', '18jangel18@gmail.com')->first();
+                if ($jangel) {
+                    DB::table('tournaments')
+                        ->whereNull('user_id')
+                        ->update(['user_id' => $jangel->id]);
+                }
+            }
         }
 
         // 2. Tabla de Partidas (Matches)
@@ -131,8 +141,7 @@ class TournamentParserController extends Controller
      */
     private function isSuperAdmin($user)
     {
-        $superAdmins = ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com']; 
-        return in_array($user->email, $superAdmins) || ($user->role === 'admin');
+        return $user->isSuperAdmin();
     }
 
     private function getTournamentIfOwner($id) 
