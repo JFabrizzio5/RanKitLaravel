@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Auth\GoogleController;
 
 use App\Http\Controllers\Admin\TournamentParserController; // Admin Nuevo
+use App\Http\Controllers\Admin\AdminUserController; // Gestión de usuarios
 use App\Http\Controllers\Public\PublicTournamentController; // Publico Nuevo
 use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
 use App\Http\Controllers\TournamentController; // Dashboard Viejo
@@ -131,7 +132,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // --- PANEL ADMIN JANGEL ---
-    Route::prefix('admin')->group(function () {
+    Route::prefix('admin')->middleware('superadmin')->group(function () {
         // Vista Principal
         Route::get('/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
         
@@ -158,6 +159,11 @@ Route::middleware('auth')->group(function () {
         // API Leaderboard
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
+
+        // --- GESTIÓN DE USUARIOS ---
+        Route::get('/users', [AdminUserController::class, 'index'])->name('admin.users.index');
+        Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
+        Route::put('/users/{user}/role', [AdminUserController::class, 'updateRole'])->name('admin.users.role');
     });
 });
 Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
@@ -165,8 +171,11 @@ Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublic
 
     //IMPLEMENTACIONES RAPIDAS
 Route::post('/admin/tournaments/{tournament}/adjust-score', [TournamentParserController::class, 'adjustPlayerScore'])
+    ->middleware(['auth', 'superadmin'])
     ->name('jangel.score.adjust');
- Route::post('/admin/tournaments/{id}/appeal', [TournamentParserController::class, 'appealReplay'])->name('tournament.appeal');
+ Route::post('/admin/tournaments/{id}/appeal', [TournamentParserController::class, 'appealReplay'])
+    ->middleware(['auth', 'superadmin'])
+    ->name('tournament.appeal');
     
  
  // Esta ruta acepta el parámetro opcional ?code=XYZ
