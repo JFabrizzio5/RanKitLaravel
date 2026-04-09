@@ -132,7 +132,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // --- PANEL ADMIN JANGEL ---
-    Route::prefix('admin')->middleware('superadmin')->group(function () {
+    Route::prefix('admin')->group(function () {
         // Vista Principal
         Route::get('/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
         
@@ -160,10 +160,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
 
-        // --- GESTIÓN DE USUARIOS ---
-        Route::get('/users', [AdminUserController::class, 'index'])->name('admin.users.index');
-        Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
-        Route::put('/users/{user}/role', [AdminUserController::class, 'updateRole'])->name('admin.users.role');
+        // --- GESTIÓN DE USUARIOS (solo superadmin) ---
+        Route::middleware('superadmin')->group(function () {
+            Route::get('/users', [AdminUserController::class, 'index'])->name('admin.users.index');
+            Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
+            Route::put('/users/{user}/role', [AdminUserController::class, 'updateRole'])->name('admin.users.role');
+        });
     });
 });
 Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
