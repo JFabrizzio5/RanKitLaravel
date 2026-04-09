@@ -563,6 +563,11 @@ const copyInviteLink = () => {
       </Link>
 
       <div class="flex items-center gap-4">
+        <Link :href="route('admin.users.index')" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-yellow-500 uppercase transition-all border rounded-lg border-yellow-500/20 hover:bg-yellow-500 hover:text-black hover:border-yellow-500">
+            <i class="text-lg ph-bold ph-users"></i>
+            <span class="hidden sm:inline">Usuarios</span>
+        </Link>
+
         <button @click="toggleTheme" class="p-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-neon dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
           <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
           <i v-else class="text-xl ph-fill ph-moon"></i>
