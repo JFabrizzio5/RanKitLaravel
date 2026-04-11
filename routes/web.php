@@ -141,6 +141,9 @@ Route::middleware('auth')->group(function () {
         
         // Eliminar Torneo
         Route::delete('/tournaments/{id}', [TournamentParserController::class, 'destroy'])->name('jangel.tournament.delete');
+
+        // Subir imagen de banner del torneo
+        Route::post('/tournaments/{id}/banner', [TournamentParserController::class, 'uploadBanner'])->name('jangel.tournament.banner');
         
         // Crear Slot (Código)
         Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');

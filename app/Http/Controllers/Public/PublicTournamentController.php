@@ -44,6 +44,10 @@ class PublicTournamentController extends Controller
         $expected = $tournament->expected_matches ?? 5;
         $tournament->progress = "Partida $matchesProcessed / {$expected}";
 
+        if (!empty($tournament->banner_image)) {
+            $tournament->banner_image = asset($tournament->banner_image);
+        }
+
         return Inertia::render('Public/TournamentLive', [
             'tournament' => $tournament,
             'accessCode' => $request->query('code')
@@ -97,6 +101,7 @@ class PublicTournamentController extends Controller
                 'name' => $tournament->name,
                 'progress' => "Partida $matchesProcessed / {$expected}",
                 'twitch_channel' => $tournament->twitch_channel ?? null,
+                'banner_image' => !empty($tournament->banner_image) ? asset($tournament->banner_image) : null,
                 // Agregamos esto para poder mostrar la tabla de puntos en el frontend
                 'scoring_format' => $tournament->scoring_format ?? null 
             ],

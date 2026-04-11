@@ -42,6 +42,7 @@ class TournamentParserController extends Controller
                 $table->longText('prizes')->nullable(); // Premios
                 $table->json('scoring_format')->nullable(); // Configuración de puntos JSON
                 $table->string('table_name')->nullable();
+                $table->string('banner_image')->nullable();
                 $table->timestamps();
             });
         } else {
@@ -57,6 +58,7 @@ class TournamentParserController extends Controller
                 if (!Schema::hasColumn('tournaments', 'prizes')) $table->longText('prizes')->nullable();
                 if (!Schema::hasColumn('tournaments', 'scoring_format')) $table->json('scoring_format')->nullable();
                 if (!Schema::hasColumn('tournaments', 'table_name')) $table->string('table_name')->nullable();
+                if (!Schema::hasColumn('tournaments', 'banner_image')) $table->string('banner_image')->nullable();
              });
 
             // Asignar torneos huérfanos (sin user_id) al usuario jangel
@@ -261,6 +263,40 @@ class TournamentParserController extends Controller
         
         DB::table('tournaments')->where('id', $id)->delete();
         return back()->with('success', 'Torneo eliminado.');
+    }
+
+    public function uploadBanner(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+
+        $request->validate(['banner' => 'required|image|mimes:jpg,jpeg,png,gif,webp|max:5120']);
+
+        $file = $request->file('banner');
+        $filename = 'banner_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
+
+        $destination = public_path('torneos');
+        if (!file_exists($destination)) {
+            mkdir($destination, 0755, true);
+        }
+
+        // Eliminar imagen anterior si existe
+        if (!empty($tournament->banner_image)) {
+            $oldPath = public_path($tournament->banner_image);
+            if (file_exists($oldPath)) {
+                unlink($oldPath);
+            }
+        }
+
+        $file->move($destination, $filename);
+
+        DB::table('tournaments')->where('id', $id)->update([
+            'banner_image' => 'torneos/' . $filename,
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Imagen del torneo actualizada.');
     }
 
     public function storeScheduledMatch(Request $request, $tournamentId) {

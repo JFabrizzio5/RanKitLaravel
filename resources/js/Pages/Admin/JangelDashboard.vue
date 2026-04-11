@@ -22,6 +22,7 @@ interface Tournament {
     twitch_channel?: string;
     is_private?: boolean;
     access_code?: string;
+    banner_image?: string;
     // Nuevos campos
     rules?: string;
     prizes?: string;
@@ -162,6 +163,10 @@ const formCreateTournament = useForm({
     twitch_channel: '',
     is_private: false,
     access_code: ''
+});
+
+const formBanner = useForm({
+    banner: null as File | null,
 });
 
 // Estados UI
@@ -482,6 +487,24 @@ const formatDec = (num: number | string) => {
     return isNaN(n) ? '0' : n.toFixed(1).replace(/\.0$/, '');
 };
 
+const handleBannerFileChange = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.files && target.files[0]) {
+        formBanner.banner = target.files[0];
+    }
+};
+
+const uploadBannerImage = () => {
+    if (!formBanner.banner || !selectedTournament.value) return;
+    formBanner.post(route('jangel.tournament.banner', selectedTournament.value.id), {
+        onSuccess: () => {
+            formBanner.reset();
+            alert('✅ Imagen del torneo actualizada.');
+        },
+        onError: (err) => alert('Error al subir la imagen: ' + JSON.stringify(err))
+    });
+};
+
 const copyGlobalObsLink = () => {
     if (!selectedTournament.value) return;
     const baseUrl = `${window.location.origin}/widget/obs/global/${selectedTournament.value.id}`;
@@ -514,7 +537,7 @@ const copyInviteLink = () => {
 </script>
 
 <template>
-  <Head title="Admin Dashboard - BellzCup">
+  <Head title="Admin Dashboard - Rankit">
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Archivo:wght@300;400;600;800&display=swap" rel="stylesheet" />
   </Head>
 
@@ -559,7 +582,7 @@ const copyInviteLink = () => {
           <path d="M45 10 L95 10 L75 50 L45 50 Z" fill="currentColor" />
           <path d="M50 55 L80 55 L95 90 L65 90 Z" fill="var(--rankit-neon)" />
         </svg>
-        <span class="text-2xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">BellzCup</span>
+        <span class="text-2xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">Rankit</span>
       </Link>
 
       <div class="flex items-center gap-4">
@@ -908,6 +931,23 @@ const copyInviteLink = () => {
                         <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Canal de Twitch</label>
                         <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
                     </div>
+
+                    <!-- BANNER IMAGE -->
+                    <div class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5">
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-2">Imagen de Fondo (Banner)</label>
+                        <div v-if="selectedTournament?.banner_image" class="mb-2">
+                            <img :src="selectedTournament.banner_image" class="w-full h-24 object-cover rounded opacity-80" />
+                            <p class="text-[9px] text-gray-400 mt-1">Imagen actual. Sube una nueva para reemplazarla.</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="file" accept="image/*" @change="handleBannerFileChange" class="flex-1 text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-bold file:bg-[var(--rankit-neon)] file:text-white hover:file:opacity-80" />
+                            <button @click="uploadBannerImage" :disabled="!formBanner.banner || formBanner.processing" class="px-3 py-1.5 text-xs font-bold text-white uppercase bg-[var(--rankit-neon)] rounded hover:opacity-80 transition disabled:opacity-40 whitespace-nowrap">
+                                <i class="ph-bold ph-upload-simple"></i> Subir
+                            </button>
+                        </div>
+                        <p class="text-[9px] text-gray-400 mt-1">JPG, PNG, GIF o WebP · Máx. 5 MB</p>
+                    </div>
+
                     <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
                         <label class="flex items-center gap-2 mb-2 cursor-pointer">
                             <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />

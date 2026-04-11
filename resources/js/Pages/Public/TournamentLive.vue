@@ -33,6 +33,7 @@ interface TournamentInfo {
   progress?: string;
   twitch_channel?: string;
   hero_image?: string;
+  banner_image?: string;
   status?: string;
   game?: string;
   // Nuevos campos
@@ -226,7 +227,7 @@ const switchTab = (tab: string) => {
 }
 
 const twitchChannel = computed(() => tournamentData.value.twitch_channel ?? props.tournament?.twitch_channel ?? 'Rankit')
-const tournamentTitle = computed(() => tournamentData.value.name ?? 'bellzCup') 
+const tournamentTitle = computed(() => tournamentData.value.name ?? 'Rankit') 
 
 // --- COMPUTED PARA SCORING FORMAT ---
 const parsedScoring = computed(() => {
@@ -327,7 +328,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Head title="bellzCup - Rankit">
+  <Head :title="tournamentTitle + ' - Rankit'">
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Archivo:wght@300;400;600;800&display=swap" rel="stylesheet" />
   </Head>
 
@@ -360,7 +361,7 @@ onUnmounted(() => {
 
     <header class="relative min-h-[500px] h-auto flex items-end pt-24 overflow-hidden group pb-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]">
       <div class="absolute inset-0 z-0 pointer-events-none">
-        <img src="https://rankit.pro/public/BellzCupBeta/BannerBellzCup.png" class="w-full h-full object-cover opacity-30 dark:opacity-40 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear" />
+        <img v-if="tournamentData.banner_image || props.tournament?.banner_image" :src="tournamentData.banner_image || props.tournament?.banner_image" class="w-full h-full object-cover opacity-30 dark:opacity-40 transform scale-105 group-hover:scale-110 transition duration-[30s] ease-linear" />
         <div class="absolute inset-0 bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-[#050505] dark:via-[#050505]/80 dark:to-transparent"></div>
       </div>
 
@@ -393,7 +394,7 @@ onUnmounted(() => {
               <div class="text-3xl font-black text-black font-display dark:text-white">
                 {{ (props.totalPoints ?? 0).toLocaleString?.() ?? (props.totalPoints ?? 0) }}
               </div>
-              <div class="text-[10px] text-gray-500">Rifa bellzCup</div>
+              <div class="text-[10px] text-gray-500">Rifa Rankit</div>
             </div>
 
             <div class="flex flex-1 gap-3">
