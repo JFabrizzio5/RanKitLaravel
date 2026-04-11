@@ -178,6 +178,10 @@ class TournamentParserController extends Controller
 
         foreach($tournaments as $tn) {
             $tn->scoring_format = json_decode($tn->scoring_format ?? '{}');
+
+            if (!empty($tn->banner_image)) {
+                $tn->banner_image = asset('public/' . $tn->banner_image);
+            }
             
             $tn->matches = DB::table('tournament_matches')
                 ->where('tournament_id', $tn->id)
