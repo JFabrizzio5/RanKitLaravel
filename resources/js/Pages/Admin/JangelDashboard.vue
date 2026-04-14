@@ -158,6 +158,15 @@ const formEditMatch = useForm({
     custom_code: ''
 });
 
+// Edición directa de resultado de jugador
+const formEditResult = useForm({
+    player_name: '',
+    kills: 0,
+    placement: 1,
+    points_override: '' as string | number,
+});
+const editResultMatchId = ref<number | null>(null);
+
 const formCreateTournament = useForm({
     name: '',
     twitch_channel: '',
@@ -177,6 +186,7 @@ const showSettingsModal = ref(false);
 const showEditMatchModal = ref(false);
 const showCreateModal = ref(false); 
 const showManualAdjustModal = ref(false);
+const showEditResultModal = ref(false);
 const uploadProgress = ref(0);
 
 // --- INICIALIZACIÓN ---
@@ -413,7 +423,34 @@ const submitManualAdjust = () => {
 };
 
 
-// --- APELACIÓN AUTOMÁTICA ---
+// --- EDICIÓN DIRECTA DE RESULTADO ---
+const openEditResult = (item: LeaderboardItem) => {
+    formEditResult.reset();
+    formEditResult.player_name = item.player_name;
+    formEditResult.kills = item.total_kills;
+    formEditResult.placement = item.best_placement;
+    formEditResult.points_override = formatDec(item.total_points);
+
+    // Usar la partida ya seleccionada, si la hay
+    editResultMatchId.value = selectedMatchId.value;
+
+    showEditResultModal.value = true;
+};
+
+const submitEditResult = () => {
+    const matchId = editResultMatchId.value;
+    if (!matchId) { alert("Selecciona una partida específica del historial (panel MATCHES)."); return; }
+    if (!selectedTournament.value) return;
+
+    formEditResult.put(route('jangel.player.result.update', matchId), {
+        onSuccess: () => {
+            showEditResultModal.value = false;
+            alert("✅ Resultado actualizado correctamente.");
+            fetchLeaderboard(selectedTournament.value!, selectedMatchId.value);
+        },
+        onError: (err) => alert("Error: " + JSON.stringify(err))
+    });
+};
 const openAppealModal = (matchId: number) => {
     formAppeal.reset();
     showAppealModal.value = true;
@@ -765,6 +802,9 @@ const copyInviteLink = () => {
                   <p class="text-xs font-bold tracking-wide text-gray-500 uppercase">
                       {{ filteredLeaderboard.length }} Resultados
                   </p>
+                  <p v-if="!selectedMatchId" class="text-[10px] text-blue-500 mt-1">
+                      <i class="ph ph-info"></i> Selecciona una partida en el panel MATCHES para editar resultados individuales.
+                  </p>
               </div>
 
               <!-- Filtro de Modalidad Global -->
@@ -846,8 +886,11 @@ const copyInviteLink = () => {
                                      <button @click.stop="copyTrackingLink(item.player_name)" class="px-3 py-2 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold uppercase rounded hover:opacity-80 transition flex items-center gap-2 whitespace-nowrap">
                                         <i class="ph ph-target"></i> Tracking
                                     </button>
+                                    <button v-if="selectedMatchId" @click.stop="openEditResult(item)" class="px-3 py-2 bg-blue-600 text-white text-[10px] font-bold uppercase rounded hover:bg-blue-700 transition flex items-center gap-2 whitespace-nowrap">
+                                        <i class="ph ph-pencil-simple-line"></i> Editar Resultado
+                                    </button>
                                     <button v-if="selectedMatchId" @click.stop="openManualAdjust(item)" class="px-3 py-2 bg-red-500 text-white text-[10px] font-bold uppercase rounded hover:bg-red-600 transition flex items-center gap-2 whitespace-nowrap">
-                                        <i class="ph ph-warning"></i> Gestionar Puntos
+                                        <i class="ph ph-warning"></i> Ajuste Pts
                                     </button>
                                 </div>
                             </div>
@@ -1070,6 +1113,51 @@ const copyInviteLink = () => {
                 <button @click="submitManualAdjust" :disabled="formManualAdjust.processing || !formManualAdjust.reason" class="w-full py-3 text-xs font-bold text-white uppercase transition bg-red-500 rounded hover:bg-red-600">
                     Confirmar Ajuste
                 </button>
+            </div>
+        </div>
+    </Modal>
+
+    <!-- MODAL EDITAR RESULTADO DIRECTO -->
+    <Modal :show="showEditResultModal" @close="showEditResultModal = false" maxWidth="sm">
+        <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white">
+            <h2 class="mb-1 text-lg italic font-bold text-blue-500 uppercase font-display">
+                <i class="ph ph-pencil-simple-line"></i> Editar Resultado
+            </h2>
+            <p class="mb-4 text-[10px] text-gray-500 uppercase font-bold">Modifica directamente kills, posición y puntos del jugador en esta partida.</p>
+
+            <div class="space-y-4">
+                <!-- Jugador -->
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Jugador</label>
+                    <div class="p-2 font-bold bg-gray-100 rounded dark:bg-white/5 text-sm">{{ formEditResult.player_name }}</div>
+                </div>
+
+                <!-- Kills -->
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Kills</label>
+                    <input type="number" v-model="formEditResult.kills" min="0" class="w-full p-2 font-bold bg-gray-100 border-none rounded dark:bg-white/5 text-center text-lg" />
+                </div>
+
+                <!-- Posición -->
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Posición (Placement)</label>
+                    <input type="number" v-model="formEditResult.placement" min="1" class="w-full p-2 font-bold bg-gray-100 border-none rounded dark:bg-white/5 text-center text-lg" />
+                </div>
+
+                <!-- Puntos Override (Opcional) -->
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">
+                        Puntos Totales <span class="text-gray-400 normal-case">(opcional · si se deja vacío, se recalculan automáticamente)</span>
+                    </label>
+                    <input type="number" v-model="formEditResult.points_override" class="w-full p-2 font-bold bg-gray-100 border-none rounded dark:bg-white/5 text-center text-lg" placeholder="Auto" />
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="showEditResultModal = false" class="flex-1 py-2 text-xs font-bold uppercase border border-gray-300 dark:border-gray-700 rounded">Cancelar</button>
+                    <button @click="submitEditResult" :disabled="formEditResult.processing" class="flex-1 py-2 bg-blue-600 text-white font-bold uppercase text-xs rounded hover:bg-blue-700 transition disabled:opacity-50">
+                        <i class="ph ph-check"></i> Guardar Cambios
+                    </button>
+                </div>
             </div>
         </div>
     </Modal>

@@ -794,6 +794,125 @@ class TournamentParserController extends Controller
         };
     }
 
+    /**
+     * Edita directamente las estadísticas (kills, placement, puntos) de un jugador en una partida.
+     * Accesible para todos los admins (no requiere superadmin).
+     */
+    public function updatePlayerResult(Request $request, $matchId)
+    {
+        $this->ensureDatabaseIsReady();
+
+        $match = DB::table('tournament_matches')->where('id', $matchId)->first();
+        if (!$match) return back()->with('error', 'Partida no encontrada.');
+
+        $tournament = $this->getTournamentIfOwner($match->tournament_id);
+        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+
+        $request->validate([
+            'player_name'     => 'required|string',
+            'kills'           => 'required|integer|min:0',
+            'placement'       => 'required|integer|min:1',
+            'points_override' => 'nullable|numeric',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $player = $request->player_name;
+            $newKills = (int) $request->kills;
+            $newPlacement = (int) $request->placement;
+
+            $pStat = DB::table('player_match_stats')
+                ->where('tournament_match_id', $matchId)
+                ->where('player_name', $player)
+                ->first();
+
+            if (!$pStat) {
+                DB::rollBack();
+                return back()->with('error', 'Jugador no encontrado en esta partida.');
+            }
+
+            $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
+
+            // Calcular puntos: si se proporciona un override directo, usarlo; si no, recalcular
+            if ($request->filled('points_override')) {
+                $newTotalPoints = (float) $request->points_override;
+                $newKillPoints = $newKills * (isset($scoringFormat->kill_points) ? (float)$scoringFormat->kill_points : 1);
+                $newPlacementPoints = $newTotalPoints - $newKillPoints;
+            } else {
+                $newTotalPoints = $this->calculateScore($newPlacement, $newKills, $scoringFormat, $match->game_mode);
+                $newKillPoints = $newKills * (isset($scoringFormat->kill_points) ? (float)$scoringFormat->kill_points : 1);
+                $newPlacementPoints = $newTotalPoints - $newKillPoints;
+            }
+
+            $extra = json_decode($pStat->extra_stats, true) ?? [];
+            $oldTotalPoints = (float)($extra['totalPoints'] ?? 0);
+            $extra['totalPoints'] = $newTotalPoints;
+            $extra['killPoints'] = $newKillPoints;
+            $extra['placementPoints'] = $newPlacementPoints;
+            $extra['manual_points'] = $extra['manual_points'] ?? 0;
+            $extra['edited_by_admin'] = true;
+
+            DB::table('player_match_stats')
+                ->where('id', $pStat->id)
+                ->update([
+                    'kills'       => $newKills,
+                    'placement'   => $newPlacement,
+                    'extra_stats' => json_encode($extra),
+                ]);
+
+            // Actualizar estadísticas del equipo si aplica
+            $escapedPlayer = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $player);
+            $teamStats = DB::table('team_match_stats')
+                ->where('tournament_match_id', $matchId)
+                ->where('member_names', 'LIKE', '%"' . $escapedPlayer . '"%')
+                ->first();
+
+            if ($teamStats) {
+                $members = json_decode($teamStats->member_names);
+                $teamTotalKills = 0;
+                $teamManualPoints = 0;
+
+                foreach ($members as $m) {
+                    $ps = DB::table('player_match_stats')
+                        ->where('tournament_match_id', $matchId)
+                        ->where('player_name', $m)
+                        ->first();
+                    if ($ps) {
+                        $ex = json_decode($ps->extra_stats, true);
+                        $teamTotalKills += $ps->kills;
+                        $teamManualPoints += ($ex['manual_points'] ?? 0);
+                    }
+                }
+
+                $teamTotalPoints = $this->calculateScore($teamStats->rank, $teamTotalKills, $scoringFormat, $match->game_mode) + $teamManualPoints;
+
+                DB::table('team_match_stats')->where('id', $teamStats->id)->update([
+                    'total_points' => $teamTotalPoints,
+                    'total_kills'  => $teamTotalKills,
+                ]);
+            }
+
+            DB::table('tournament_score_logs')->insert([
+                'tournament_id' => $tournament->id,
+                'match_id'      => $matchId,
+                'player_name'   => $player,
+                'points_change' => $newTotalPoints - $oldTotalPoints,
+                'reason'        => 'Edición directa de resultado por admin (kills: ' . $newKills . ', pos: ' . $newPlacement . ', pts: ' . $newTotalPoints . ')',
+                'admin_id'      => auth()->id(),
+                'created_at'    => now(),
+                'updated_at'    => now(),
+            ]);
+
+            DB::commit();
+            return back()->with('success', "Resultado de {$player} actualizado correctamente.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
     public function getLeaderboard(Request $request, $tournamentId)
     {
         $type = $request->query('type', 'players'); 
