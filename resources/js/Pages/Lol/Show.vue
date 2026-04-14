@@ -183,6 +183,7 @@ function copyPublicLink() {
 const newTeamName = ref('')
 const newTeamLogo = ref('')
 const resultModal = ref<LolMatch | null>(null)
+const isEditingResult = ref(false)
 const editTeam = ref<Team | null>(null)
 const scheduleModal = ref<LolMatch | null>(null)
 
@@ -252,6 +253,7 @@ function advancePhase() {
 }
 
 function openResult(match: LolMatch) {
+  isEditingResult.value = false
   resultModal.value = match
   resultForm.match_id = match.id
   resultForm.winner_id = 0
@@ -259,9 +261,19 @@ function openResult(match: LolMatch) {
   resultForm.score2 = 0
 }
 
+function openEditResult(match: LolMatch) {
+  isEditingResult.value = true
+  resultModal.value = match
+  resultForm.match_id = match.id
+  resultForm.winner_id = match.winner_id ?? 0
+  resultForm.score1 = match.score1
+  resultForm.score2 = match.score2
+}
+
 function submitResult() {
   if (!resultForm.winner_id) { alert('Selecciona un ganador'); return }
-  resultForm.post(route('lol.result', props.tournament.id), {
+  const routeName = isEditingResult.value ? 'lol.edit.result' : 'lol.result'
+  resultForm.post(route(routeName, props.tournament.id), {
     onSuccess: () => { resultModal.value = null },
     preserveScroll: true,
   })
@@ -1198,6 +1210,12 @@ function formatScheduledAt(scheduledAt: string | null): string {
                     </button>
                   </div>
                 </div>
+                <div v-if="match.status === 'done'" class="mt-3">
+                  <button @click="openEditResult(match)"
+                    class="w-full text-xs font-bold uppercase py-1.5 rounded border border-yellow-500/20 text-yellow-400/60 transition-all hover:bg-yellow-500/10 hover:text-yellow-400">
+                    ✏️ Corregir resultado
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1216,7 +1234,7 @@ function formatScheduledAt(scheduledAt: string | null): string {
             class="relative z-10 w-full max-w-sm bg-[#0e0e0e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
             <div class="flex items-center justify-between px-5 py-4 border-b border-white/5">
               <h2 class="font-black uppercase text-base tracking-tight" style="font-family:'Chakra Petch',sans-serif">
-                Resultado</h2>
+                {{ isEditingResult ? 'Corregir Resultado' : 'Resultado' }}</h2>
               <button @click="resultModal = null" class="text-gray-500 hover:text-white transition text-xl">×</button>
             </div>
             <form @submit.prevent="submitResult" class="p-5 space-y-4">
@@ -1257,8 +1275,8 @@ function formatScheduledAt(scheduledAt: string | null): string {
                   class="flex-1 py-2 text-xs font-bold uppercase border border-white/10 text-gray-400 rounded-lg hover:border-white/30 transition">Cancelar</button>
                 <button type="submit" :disabled="resultForm.processing || !resultForm.winner_id"
                   class="flex-1 py-2 text-xs font-bold uppercase rounded-lg text-black disabled:opacity-40"
-                  :style="{ background: gameNeon }">
-                  {{ resultForm.processing ? 'Guardando...' : 'Confirmar' }}
+                  :style="{ background: isEditingResult ? '#facc15' : gameNeon }">
+                  {{ resultForm.processing ? 'Guardando...' : (isEditingResult ? 'Corregir' : 'Confirmar') }}
                 </button>
               </div>
             </form>
