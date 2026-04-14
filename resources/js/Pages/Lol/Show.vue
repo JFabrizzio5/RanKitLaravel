@@ -1223,7 +1223,7 @@ function formatScheduledAt(scheduledAt: string | null): string {
                 </div>
                 <div v-if="match.status === 'done'" class="mt-3">
                   <button @click="openEditResult(match)"
-                    class="w-full text-xs font-bold uppercase py-1.5 rounded border border-yellow-500/40 text-yellow-400 transition-all hover:bg-yellow-500/10">
+                    class="w-full text-xs font-bold uppercase py-1.5 rounded border border-yellow-500/50 bg-yellow-500/5 text-yellow-400 transition-all hover:bg-yellow-500/15 hover:border-yellow-500/70">
                     ✏️ Corregir resultado
                   </button>
                 </div>
