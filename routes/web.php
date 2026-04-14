@@ -158,6 +158,9 @@ Route::middleware('auth')->group(function () {
         
         // Eliminar Partida
         Route::delete('/match/{matchId}', [TournamentParserController::class, 'deleteMatch'])->name('jangel.match.delete');
+
+        // Editar resultado directo de un jugador en una partida
+        Route::put('/match/{matchId}/player-result', [TournamentParserController::class, 'updatePlayerResult'])->name('jangel.player.result.update');
         
         // API Leaderboard
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
