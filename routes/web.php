@@ -90,6 +90,7 @@ Route::middleware('auth')->prefix('lol')->name('lol.')->group(function () {
     Route::post('/{id}/generate',                 [LolTournamentController::class, 'generateBracket'])->name('generate');
     Route::post('/{id}/result',                   [LolTournamentController::class, 'recordResult'])->name('result');
     Route::post('/{id}/edit-result',              [LolTournamentController::class, 'editResult'])->name('edit.result');
+    Route::post('/{id}/recalculate',              [LolTournamentController::class, 'recalculateLeague'])->name('recalculate');
     Route::post('/{id}/schedule-match',           [LolTournamentController::class, 'scheduleMatch'])->name('schedule');
     Route::post('/{id}/advance',                  [LolTournamentController::class, 'advancePhase'])->name('advance');
     Route::post('/{id}/manual-round1',            [LolTournamentController::class, 'setManualRound1'])->name('manual.round1');
