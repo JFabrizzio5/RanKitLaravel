@@ -861,6 +861,79 @@ class LolTournamentController extends Controller
     }
 
     /**
+     * Editar/corregir resultado de un partido ya registrado (solo fase 'league').
+     */
+    public function editResult(Request $request, int $id)
+    {
+        $this->ensureLolTablesReady();
+        $tournament = $this->getTournament($id, auth()->id());
+        abort_if(!$tournament, 404);
+
+        $request->validate([
+            'match_id'  => 'required|integer',
+            'winner_id' => 'required|integer',
+            'score1'    => 'nullable|integer|min:0',
+            'score2'    => 'nullable|integer|min:0',
+        ]);
+
+        $match = DB::table('lol_test_matches')
+            ->where('id', $request->match_id)
+            ->where('lol_tournament_id', $id)
+            ->first();
+
+        abort_if(!$match || $match->status !== 'done', 400, 'Partida no válida o aún no registrada.');
+
+        if ($match->phase !== 'league') {
+            return back()->with('error', 'Solo se pueden editar resultados de partidas de liga.');
+        }
+
+        $newWinnerId = (int) $request->winner_id;
+
+        if ($newWinnerId !== (int)$match->team1_id && $newWinnerId !== (int)$match->team2_id) {
+            return back()->with('error', 'El ganador seleccionado no pertenece a esta partida.');
+        }
+
+        $oldWinnerId = (int) $match->winner_id;
+        $oldLoserId  = ($match->team1_id == $oldWinnerId) ? (int)$match->team2_id : (int)$match->team1_id;
+        $newLoserId  = ($match->team1_id == $newWinnerId) ? (int)$match->team2_id : (int)$match->team1_id;
+
+        $pointsWin  = isset($tournament->league_points_win)  ? (int)$tournament->league_points_win  : 3;
+        $pointsLoss = isset($tournament->league_points_loss) ? (int)$tournament->league_points_loss : 0;
+
+        DB::transaction(function () use ($match, $oldWinnerId, $oldLoserId, $newWinnerId, $newLoserId, $pointsWin, $pointsLoss, $request) {
+            // Revertir estadísticas del resultado anterior
+            DB::table('lol_test_teams')->where('id', $oldWinnerId)
+                ->update(['wins'   => DB::raw('GREATEST(0, wins - 1)'), 'updated_at' => now()]);
+            DB::table('lol_test_teams')->where('id', $oldLoserId)
+                ->update(['losses' => DB::raw('GREATEST(0, losses - 1)'), 'updated_at' => now()]);
+            DB::table('lol_test_teams')->where('id', $oldWinnerId)
+                ->update(['points' => DB::raw('GREATEST(0, points - ' . $pointsWin . ')'), 'updated_at' => now()]);
+            if ($pointsLoss > 0) {
+                DB::table('lol_test_teams')->where('id', $oldLoserId)
+                    ->update(['points' => DB::raw('GREATEST(0, points - ' . $pointsLoss . ')'), 'updated_at' => now()]);
+            }
+
+            // Actualizar el partido con el nuevo resultado
+            DB::table('lol_test_matches')->where('id', $match->id)->update([
+                'winner_id'  => $newWinnerId,
+                'score1'     => $request->score1 ?? 0,
+                'score2'     => $request->score2 ?? 0,
+                'updated_at' => now(),
+            ]);
+
+            // Aplicar estadísticas del nuevo resultado
+            DB::table('lol_test_teams')->where('id', $newWinnerId)->increment('wins');
+            DB::table('lol_test_teams')->where('id', $newLoserId)->increment('losses');
+            DB::table('lol_test_teams')->where('id', $newWinnerId)->increment('points', $pointsWin);
+            if ($pointsLoss > 0) {
+                DB::table('lol_test_teams')->where('id', $newLoserId)->increment('points', $pointsLoss);
+            }
+        });
+
+        return back()->with('success', 'Resultado corregido correctamente.');
+    }
+
+    /**
      * Registrar horario de partido (winner, loser, grand_final, league)
      */
     public function scheduleMatch(Request $request, int $id)
