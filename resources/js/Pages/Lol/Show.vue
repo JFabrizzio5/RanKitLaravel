@@ -190,6 +190,7 @@ const scheduleModal = ref<LolMatch | null>(null)
 const resultForm = useForm({ match_id: 0, winner_id: 0, score1: 0, score2: 0 })
 const editForm = useForm({ name: '', logo: '' })
 const scheduleForm = useForm({ match_id: 0, scheduled_at: '' })
+const recalcForm = useForm({})
 
 // --- Manual Round 1 state ---
 const manualPairs = ref<{ t1_id: number; t2_id: number | null }[]>([])
@@ -293,6 +294,11 @@ function submitSchedule() {
     onSuccess: () => { scheduleModal.value = null },
     preserveScroll: true,
   })
+}
+
+function recalculateLeague() {
+  if (!confirm('¿Recalcular la tabla desde cero? Se recontarán victorias, derrotas y puntos a partir de todos los partidos registrados.')) return
+  recalcForm.post(route('lol.recalculate', props.tournament.id), { preserveScroll: true })
 }
 
 function labelRound(phase: string, round: number) {
@@ -642,6 +648,11 @@ function formatScheduledAt(scheduledAt: string | null): string {
           <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between">
             <h2 class="text-xs font-black uppercase tracking-widest text-green-400" style="font-family:'Chakra Petch',sans-serif">
               🏆 Tabla de Posiciones</h2>
+            <button @click="recalculateLeague" :disabled="recalcForm.processing"
+              class="text-[9px] font-bold uppercase px-2 py-1 rounded border border-green-500/30 text-green-400/70 hover:text-green-400 hover:border-green-500/60 transition-all disabled:opacity-40"
+              title="Recalcular standings desde los partidos registrados">
+              {{ recalcForm.processing ? '...' : '🔄 Recalcular' }}
+            </button>
           </div>
           <div class="divide-y divide-white/5">
             <!-- Header -->
@@ -1212,7 +1223,7 @@ function formatScheduledAt(scheduledAt: string | null): string {
                 </div>
                 <div v-if="match.status === 'done'" class="mt-3">
                   <button @click="openEditResult(match)"
-                    class="w-full text-xs font-bold uppercase py-1.5 rounded border border-yellow-500/20 text-yellow-400/60 transition-all hover:bg-yellow-500/10 hover:text-yellow-400">
+                    class="w-full text-xs font-bold uppercase py-1.5 rounded border border-yellow-500/40 text-yellow-400 transition-all hover:bg-yellow-500/10">
                     ✏️ Corregir resultado
                   </button>
                 </div>

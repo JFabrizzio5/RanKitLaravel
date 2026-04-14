@@ -930,7 +930,57 @@ class LolTournamentController extends Controller
             }
         });
 
-        return back()->with('success', 'Resultado corregido correctamente.');
+        return redirect()->route('lol.show', $id)->with('success', 'Resultado corregido correctamente.');
+    }
+
+    /**
+     * Recalcular standings de liga desde cero (suma puntos/wins/losses de todos los partidos registrados).
+     */
+    public function recalculateLeague(int $id)
+    {
+        $this->ensureLolTablesReady();
+        $tournament = $this->getTournament($id, auth()->id());
+        abort_if(!$tournament, 404);
+        abort_if($tournament->format !== 'league', 400, 'Solo aplica a torneos de liga.');
+
+        $pointsWin  = isset($tournament->league_points_win)  ? (int)$tournament->league_points_win  : 3;
+        $pointsLoss = isset($tournament->league_points_loss) ? (int)$tournament->league_points_loss : 0;
+
+        DB::transaction(function () use ($id, $pointsWin, $pointsLoss) {
+            // Reset all team stats
+            DB::table('lol_test_teams')
+                ->where('lol_tournament_id', $id)
+                ->update(['wins' => 0, 'losses' => 0, 'points' => 0, 'updated_at' => now()]);
+
+            // Re-apply results from all done league matches
+            $doneMatches = DB::table('lol_test_matches')
+                ->where('lol_tournament_id', $id)
+                ->where('phase', 'league')
+                ->where('status', 'done')
+                ->whereNotNull('winner_id')
+                ->get();
+
+            foreach ($doneMatches as $match) {
+                $winnerId = (int) $match->winner_id;
+                $loserId  = ($match->team1_id == $winnerId) ? (int)$match->team2_id : (int)$match->team1_id;
+
+                DB::table('lol_test_teams')->where('id', $winnerId)
+                    ->increment('wins', 1, ['updated_at' => now()]);
+                DB::table('lol_test_teams')->where('id', $winnerId)
+                    ->increment('points', $pointsWin, ['updated_at' => now()]);
+
+                if ($loserId) {
+                    DB::table('lol_test_teams')->where('id', $loserId)
+                        ->increment('losses', 1, ['updated_at' => now()]);
+                    if ($pointsLoss > 0) {
+                        DB::table('lol_test_teams')->where('id', $loserId)
+                            ->increment('points', $pointsLoss, ['updated_at' => now()]);
+                    }
+                }
+            }
+        });
+
+        return redirect()->route('lol.show', $id)->with('success', 'Tabla recalculada correctamente.');
     }
 
     /**
