@@ -862,9 +862,10 @@ class TournamentParserController extends Controller
                 ]);
 
             // Actualizar estadísticas del equipo si aplica
+            $escapedPlayer = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $player);
             $teamStats = DB::table('team_match_stats')
                 ->where('tournament_match_id', $matchId)
-                ->where('member_names', 'LIKE', '%"' . $player . '"%')
+                ->where('member_names', 'LIKE', '%"' . $escapedPlayer . '"%')
                 ->first();
 
             if ($teamStats) {
