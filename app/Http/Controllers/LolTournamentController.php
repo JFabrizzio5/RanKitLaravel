@@ -116,7 +116,12 @@ class LolTournamentController extends Controller
     private function getTournament(int $id, ?int $userId = null)
     {
         $q = DB::table('lol_test_tournaments')->where('id', $id);
-        if ($userId) $q->where('user_id', $userId);
+        if ($userId) {
+            $user = auth()->user();
+            if (!$user || !$user->isSuperAdmin()) {
+                $q->where('user_id', $userId);
+            }
+        }
         return $q->first();
     }
 
