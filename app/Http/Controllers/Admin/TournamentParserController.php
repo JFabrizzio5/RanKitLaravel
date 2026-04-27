@@ -493,14 +493,17 @@ class TournamentParserController extends Controller
                     return back()->with('error', 'El slot seleccionado no pertenece a este torneo.');
                 }
 
-                if ($existingCollision && $existingCollision->id != $targetMatchId) {
-                    DB::table('player_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
-                    DB::table('team_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
-                    DB::table('tournament_matches')->where('id', $existingCollision->id)->delete();
-                }
+                // Use a slot-scoped match_id to avoid unique constraint conflicts when
+                // the same game session is (re)assigned to a different slot.
                 $currentMatchId = $targetMatchId;
+                $slotMatchUid = $matchUid . '_' . $currentMatchId;
+
+                if ($existingCollision && $existingCollision->id != $targetMatchId) {
+                    DB::rollBack();
+                    return back()->with('error', 'Esta repetición ya fue procesada en otra partida de este torneo. Si deseas reasignarla aquí, primero elimina o resetea la otra partida.');
+                }
                 DB::table('tournament_matches')->where('id', $currentMatchId)->update([
-                    'match_id' => $matchUid,
+                    'match_id' => $slotMatchUid,
                     'game_session_id' => $sessionID, 
                     'raw_data' => json_encode($data),
                     'updated_at' => now(),
