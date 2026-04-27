@@ -435,7 +435,7 @@ class TournamentParserController extends Controller
             $mode = (int)$request->input('mode');
             $targetMatchId = $request->input('target_match_id');
             $fileContent = file_get_contents($file->getRealPath());
-            $fileName = $file->getClientOriginalName();
+            $fileName = uniqid() . '_' . $file->getClientOriginalName();
 
             // 1. ANALYZE-SUMMARY (Obtener SessionID)
             $summaryResponse = Http::timeout(60)
@@ -601,7 +601,7 @@ class TournamentParserController extends Controller
             $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
 
             $file = $request->file('replay');
-            $fileName = $file->getClientOriginalName();
+            $fileName = uniqid() . '_' . $file->getClientOriginalName();
             
             Log::info("--- INICIO APELACIÓN AUTOMÁTICA --- Tournament: $tournamentId");
 
