@@ -468,14 +468,31 @@ class TournamentParserController extends Controller
             $matchUid = 'sig_' . $contentSignature;
             
             if ($sessionID) {
-                $existingCollision = DB::table('tournament_matches')->where('game_session_id', $sessionID)->first();
+                $existingCollision = DB::table('tournament_matches')
+                    ->where('tournament_id', $id)
+                    ->where('game_session_id', $sessionID)
+                    ->first();
             } else {
-                $existingCollision = DB::table('tournament_matches')->where('match_id', $matchUid)->first();
+                $existingCollision = DB::table('tournament_matches')
+                    ->where('tournament_id', $id)
+                    ->where('match_id', $matchUid)
+                    ->first();
             }
 
             $currentMatchId = null;
 
             if ($targetMatchId) {
+                // Ensure the target slot belongs to this tournament
+                $targetSlot = DB::table('tournament_matches')
+                    ->where('id', $targetMatchId)
+                    ->where('tournament_id', $id)
+                    ->first();
+
+                if (!$targetSlot) {
+                    DB::rollBack();
+                    return back()->with('error', 'El slot seleccionado no pertenece a este torneo.');
+                }
+
                 if ($existingCollision && $existingCollision->id != $targetMatchId) {
                     DB::table('player_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
                     DB::table('team_match_stats')->where('tournament_match_id', $existingCollision->id)->delete();
