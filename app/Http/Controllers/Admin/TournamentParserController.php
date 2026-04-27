@@ -819,24 +819,69 @@ class TournamentParserController extends Controller
         $this->ensureDatabaseIsReady();
 
         $match = DB::table('tournament_matches')->where('id', $matchId)->first();
-        if (!$match) return back()->with('error', 'Partida no encontrada.');
+        if (!$match) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['player_name' => 'Partida no encontrada.']);
+        }
 
         $tournament = $this->getTournamentIfOwner($match->tournament_id);
-        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+        if (!$tournament) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['player_name' => 'Permiso denegado.']);
+        }
 
         $request->validate([
             'player_name'     => 'required|string',
             'kills'           => 'required|integer|min:0',
             'placement'       => 'required|integer|min:1',
             'points_override' => 'nullable|numeric',
+            'team_signature'  => 'nullable|string',
         ]);
 
+        $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
+        $newKills = (int) $request->kills;
+        $newPlacement = (int) $request->placement;
+
+        // --- Edición de equipo ---
+        if ($request->filled('team_signature')) {
+            $teamStats = DB::table('team_match_stats')
+                ->where('tournament_match_id', $matchId)
+                ->where('team_signature', $request->team_signature)
+                ->first();
+
+            if (!$teamStats) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['player_name' => 'Equipo no encontrado en esta partida.']);
+            }
+
+            if ($request->filled('points_override')) {
+                $newTotalPoints = (float) $request->points_override;
+            } else {
+                $newTotalPoints = $this->calculateScore($newPlacement, $newKills, $scoringFormat, $match->game_mode);
+            }
+
+            DB::table('team_match_stats')->where('id', $teamStats->id)->update([
+                'rank'         => $newPlacement,
+                'total_kills'  => $newKills,
+                'total_points' => $newTotalPoints,
+            ]);
+
+            DB::table('tournament_score_logs')->insert([
+                'tournament_id' => $tournament->id,
+                'match_id'      => $matchId,
+                'player_name'   => $request->player_name,
+                'points_change' => $newTotalPoints - $teamStats->total_points,
+                'reason'        => 'Edición directa de resultado de equipo por admin (kills: ' . $newKills . ', pos: ' . $newPlacement . ', pts: ' . $newTotalPoints . ')',
+                'admin_id'      => auth()->id(),
+                'created_at'    => now(),
+                'updated_at'    => now(),
+            ]);
+
+            return back()->with('success', "Resultado del equipo actualizado correctamente.");
+        }
+
+        // --- Edición de jugador individual ---
         try {
             DB::beginTransaction();
 
             $player = $request->player_name;
-            $newKills = (int) $request->kills;
-            $newPlacement = (int) $request->placement;
 
             $pStat = DB::table('player_match_stats')
                 ->where('tournament_match_id', $matchId)
@@ -845,10 +890,8 @@ class TournamentParserController extends Controller
 
             if (!$pStat) {
                 DB::rollBack();
-                return back()->with('error', 'Jugador no encontrado en esta partida.');
+                throw \Illuminate\Validation\ValidationException::withMessages(['player_name' => 'Jugador no encontrado en esta partida.']);
             }
-
-            $scoringFormat = $tournament->scoring_format ? json_decode($tournament->scoring_format) : null;
 
             // Calcular puntos: si se proporciona un override directo, usarlo; si no, recalcular
             if ($request->filled('points_override')) {
@@ -923,9 +966,12 @@ class TournamentParserController extends Controller
             DB::commit();
             return back()->with('success', "Resultado de {$player} actualizado correctamente.");
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', $e->getMessage());
+            throw \Illuminate\Validation\ValidationException::withMessages(['player_name' => $e->getMessage()]);
         }
     }
 

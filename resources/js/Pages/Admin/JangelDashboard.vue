@@ -36,6 +36,7 @@ interface Tournament {
 interface LeaderboardItem {
     player_name: string;
     member_names?: string[];
+    team_signature?: string;
     games_played: number;
     total_kills: number;
     total_points: number;
@@ -164,6 +165,7 @@ const formEditResult = useForm({
     kills: 0,
     placement: 1,
     points_override: '' as string | number,
+    team_signature: '',
 });
 const editResultMatchId = ref<number | null>(null);
 
@@ -430,6 +432,7 @@ const openEditResult = (item: LeaderboardItem) => {
     formEditResult.kills = item.total_kills;
     formEditResult.placement = item.best_placement;
     formEditResult.points_override = formatDec(item.total_points);
+    formEditResult.team_signature = item.team_signature ?? '';
 
     // Usar la partida ya seleccionada, si la hay
     editResultMatchId.value = selectedMatchId.value;
