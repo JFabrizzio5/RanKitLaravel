@@ -493,14 +493,15 @@ class TournamentParserController extends Controller
                     return back()->with('error', 'El slot seleccionado no pertenece a este torneo.');
                 }
 
+                // Use a slot-scoped match_id to avoid unique constraint conflicts when
+                // the same game session is (re)assigned to a different slot.
+                $currentMatchId = $targetMatchId;
+                $slotMatchUid = $matchUid . '_' . $currentMatchId;
+
                 if ($existingCollision && $existingCollision->id != $targetMatchId) {
                     DB::rollBack();
                     return back()->with('error', 'Esta repetición ya fue procesada en otra partida de este torneo. Si deseas reasignarla aquí, primero elimina o resetea la otra partida.');
                 }
-                $currentMatchId = $targetMatchId;
-                // Use a slot-scoped match_id to avoid unique constraint conflicts when
-                // the same game session is (re)assigned to a different slot.
-                $slotMatchUid = $matchUid . '_' . $currentMatchId;
                 DB::table('tournament_matches')->where('id', $currentMatchId)->update([
                     'match_id' => $slotMatchUid,
                     'game_session_id' => $sessionID, 
