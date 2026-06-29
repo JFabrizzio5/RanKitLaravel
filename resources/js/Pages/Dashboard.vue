@@ -28,7 +28,40 @@ const filteredTorneos = computed(() => {
                            (t.name && t.name.toLowerCase().includes(filterGame.value.toLowerCase())) ||
                            (t.slug && t.slug.toLowerCase().includes(filterGame.value.toLowerCase()));
                            
-        return matchesSearch && matchesGame;
+        // Filtrar para no mostrar los de la liga aquí si ya se muestran en su sección
+        const isLeague = t.slug && t.slug.startsWith('v0.1-rankit-league-');
+                           
+        return matchesSearch && matchesGame && !isLeague;
+    });
+});
+
+// Enlazar dinámicamente las 4 cartas de la Pro League con la Base de Datos
+const dynamicLeagueTournaments = computed(() => {
+    const list = [
+        { key: 'clasificatorio-1', defaultName: 'Semana 1: Qualifiers', defaultImage: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800' },
+        { key: 'clasificatorio-2', defaultName: 'Semana 2: Qualifiers', defaultImage: 'https://images.unsplash.com/photo-1534423861386-85a16f5d13fd?auto=format&fit=crop&q=80&w=800' },
+        { key: 'repechaje', defaultName: 'Repechaje (Wildcard)', defaultImage: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&q=80&w=800' },
+        { key: 'gran-final', defaultName: 'Gran Final', defaultImage: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?auto=format&fit=crop&q=80&w=800' }
+    ];
+
+    return list.map(item => {
+        const match = props.torneosPublicos?.find(t => t.slug === `v0.1-rankit-league-${item.key}`);
+        if (match) {
+            return {
+                id: match.id,
+                name: match.name,
+                date: match.is_private ? '🔒 PRIVADO' : '🟢 ABIERTO',
+                image: match.banner_image ? `/storage/${match.banner_image}` : item.defaultImage,
+                link: `/t/${match.id}`
+            };
+        }
+        return {
+            id: null,
+            name: item.defaultName,
+            date: 'PROXIMAMENTE',
+            image: item.defaultImage,
+            link: '/league'
+        };
     });
 });
 </script>
@@ -80,14 +113,14 @@ const filteredTorneos = computed(() => {
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div v-for="torneo in rankitLeagueTournaments" :key="torneo.id" class="group relative overflow-hidden rounded-xl border border-white/5 bg-[#111] hover:border-[var(--rankit-neon)]/50 transition-all duration-300">
+                        <div v-for="torneo in dynamicLeagueTournaments" :key="torneo.name" class="group relative overflow-hidden rounded-xl border border-white/5 bg-[#111] hover:border-[var(--rankit-neon)]/50 transition-all duration-300">
                             <div class="aspect-video overflow-hidden">
-                                <img :src="torneo.image" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700" alt="Placeholder">
+                                <img :src="torneo.image" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700" alt="Banner del torneo">
                             </div>
                             <div class="p-5">
                                 <div class="text-[10px] text-[var(--rankit-neon)] font-black uppercase tracking-widest mb-1">{{ torneo.date }}</div>
                                 <h3 class="text-lg font-bold uppercase font-display tracking-tight text-white mb-3">{{ torneo.name }}</h3>
-                                <Link href="/league" class="inline-block px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wider rounded text-white transition-colors">
+                                <Link :href="torneo.link" class="inline-block px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wider rounded text-white transition-colors">
                                     Ver Clasificación
                                 </Link>
                             </div>

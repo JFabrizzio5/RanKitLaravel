@@ -780,8 +780,8 @@ onUnmounted(() => {
                      </div>
                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div>
-                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">WhatsApp (Opcional)</label>
-                             <input v-model="registrationForm.whatsapp" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">WhatsApp (Requerido) *</label>
+                             <input v-model="registrationForm.whatsapp" type="text" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
                          </div>
                          <div>
                              <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Discord Tag (Opcional)</label>

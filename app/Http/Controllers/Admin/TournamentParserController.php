@@ -1135,7 +1135,7 @@ class TournamentParserController extends Controller
         $this->ensureDatabaseIsReady();
         $request->validate([
             'player_name' => 'required|string|max:255',
-            'whatsapp' => 'nullable|string|max:20',
+            'whatsapp' => 'required|string|max:20',
         ]);
 
         $user = auth()->user();
