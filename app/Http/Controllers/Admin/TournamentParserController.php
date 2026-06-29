@@ -1248,6 +1248,32 @@ class TournamentParserController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /**
+     * Acepta TODAS las inscripciones pendientes de un torneo
+     */
+    public function acceptAllRegistrations(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return response()->json(['error' => 'No autorizado'], 403);
+
+        $count = DB::table('tournament_registrations')
+            ->where('tournament_id', $id)
+            ->where('payment_status', 'pending')
+            ->count();
+
+        DB::table('tournament_registrations')
+            ->where('tournament_id', $id)
+            ->where('payment_status', 'pending')
+            ->update([
+                'payment_status'        => 'paid',
+                'confirmed_by_admin_id' => auth()->id(),
+                'updated_at'            => now(),
+            ]);
+
+        return response()->json(['success' => true, 'accepted' => $count]);
+    }
+
     // --- SERIACIÓN DE TORNEOS (CLASIFICAR JUGADORES) ---
     public function classifyToNextRound(Request $request, $id)
     {

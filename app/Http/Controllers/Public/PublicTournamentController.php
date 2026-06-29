@@ -51,14 +51,40 @@ class PublicTournamentController extends Controller
             $tournament->banner_image = asset('public/' . $tournament->banner_image);
         }
 
+        $user = auth()->user();
+        $registrationStatus = null; // null = not logged in
+        $hasPaidRegistration = false;
+
+        if ($user) {
+            $reg = DB::table('tournament_registrations')
+                ->where('tournament_id', $tournament->id)
+                ->where('email', $user->email)
+                ->orderByDesc('created_at')
+                ->first();
+
+            $registrationStatus = $reg?->payment_status ?? 'none'; // none, pending, paid, rejected
+            $hasPaidRegistration = ($registrationStatus === 'paid');
+        }
+
+        // Acceso a códigos de partida
+        $sessionKey = "t_access_{$tournament->id}";
+        $hasSessionAccess = (bool) session($sessionKey);
+        $isPrivate = (bool)($tournament->is_private ?? false);
+
+        // Público: códigos visibles solo con inscripción aceptada
+        // Privado: códigos visibles con inscripción aceptada + código de acceso válido
+        $hasCodeAccess = $hasPaidRegistration && (!$isPrivate || $hasSessionAccess);
+
         $attemptsLeft = 3 - (int) session("t_attempts_{$tournament->id}", 0);
 
         return Inertia::render('Public/TournamentLive', [
-            'tournament'   => $tournament,
-            'accessCode'   => $request->query('code'),
-            'isPrivate'    => (bool)($tournament->is_private ?? false),
-            'hasAccess'    => $hasAccess,
-            'attemptsLeft' => max(0, $attemptsLeft),
+            'tournament'         => $tournament,
+            'accessCode'         => $request->query('code'),
+            'isPrivate'          => $isPrivate,
+            'hasAccess'          => $hasCodeAccess,
+            'hasPrivateSession'  => $hasSessionAccess,
+            'registrationStatus' => $registrationStatus, // null, none, pending, paid, rejected
+            'attemptsLeft'       => max(0, $attemptsLeft),
         ]);
     }
 
@@ -124,10 +150,21 @@ class PublicTournamentController extends Controller
             ->whereNotNull('raw_data')
             ->count();
 
-        // 3. Lista de Partidas — ocultar códigos si es torneo privado sin acceso
+        // 3. Determinar si el usuario tiene acceso a los códigos de partida
+        // Público: necesita inscripción aceptada (paid)
+        // Privado: necesita inscripción aceptada + código de acceso en sesión
+        $userObj = auth()->user();
+        $hasPaidReg = false;
+        if ($userObj) {
+            $hasPaidReg = DB::table('tournament_registrations')
+                ->where('tournament_id', $id)
+                ->where('email', $userObj->email)
+                ->where('payment_status', 'paid')
+                ->exists();
+        }
+        $sessionKey = "t_access_{$tournament->id}";
         $isPrivateTournament = (bool)($tournament->is_private ?? false);
-        $sessionKey          = "t_access_{$tournament->id}";
-        $hasAccess           = !$isPrivateTournament || session($sessionKey);
+        $hasAccess = $hasPaidReg && (!$isPrivateTournament || session($sessionKey));
 
         $matchesList = DB::table('tournament_matches')
             ->where('tournament_id', $id)

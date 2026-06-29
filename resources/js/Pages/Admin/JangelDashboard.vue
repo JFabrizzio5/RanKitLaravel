@@ -445,6 +445,18 @@ const updatePayment = async (id: number, status: string) => {
     }
 };
 
+const acceptAllRegistrations = async () => {
+    if (!selectedTournament.value) return;
+    if (!confirm('\u00bfAceptar TODAS las inscripciones pendientes?')) return;
+    try {
+        const res = await axios.post(`/admin/tournaments/${selectedTournament.value.id}/accept-all`);
+        alert(`\u2705 ${res.data.accepted} inscripción(es) aceptadas.`);
+        fetchRegistrations();
+    } catch (e) {
+        alert('Error al aceptar inscripciones.');
+    }
+};
+
 const classifyPlayers = () => {
     if (selectedPlayersForClassification.value.length === 0) {
         alert("Selecciona al menos un jugador.");
@@ -997,7 +1009,12 @@ const copyInviteLink = () => {
           <div v-if="activeTab === 'registrations' && selectedTournament" class="p-4 space-y-4 animate-fade-in">
              <div class="flex justify-between items-center">
                  <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Inscripciones ({{ registrations.length }})</h3>
-                 <button @click="fetchRegistrations" class="text-xs text-[var(--rankit-neon)] hover:underline"><i class="ph-bold ph-arrows-clockwise"></i></button>
+                 <div class="flex items-center gap-2">
+                     <button @click="acceptAllRegistrations" v-if="registrations.some(r => r.payment_status === 'pending')" class="text-[10px] font-bold text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white px-2 py-1 rounded transition">
+                         <i class="ph-bold ph-check-circle"></i> Aceptar Todas
+                     </button>
+                     <button @click="fetchRegistrations" class="text-xs text-[var(--rankit-neon)] hover:underline"><i class="ph-bold ph-arrows-clockwise"></i></button>
+                 </div>
              </div>
              
              <div class="max-h-[300px] overflow-y-auto space-y-2 custom-scrollbar pr-2">

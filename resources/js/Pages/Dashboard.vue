@@ -132,7 +132,7 @@ const filteredTorneos = computed(() => {
                                 <div class="text-[10px] text-[var(--rankit-neon)] font-bold uppercase tracking-widest mb-2">{{ t.is_serialized ? 'Liga Seriada' : 'Torneo Público' }}</div>
                                 <h3 class="text-base font-bold text-white uppercase font-display tracking-wide mb-3 line-clamp-2">{{ t.name }}</h3>
                             </div>
-                            <Link :href="route('tournaments.show', t.slug || t.id)" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest group-hover:text-white transition-colors flex items-center gap-2 mt-4">
+                            <Link :href="`/t/${t.id}`" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest group-hover:text-white transition-colors flex items-center gap-2 mt-4">
                                 Ver Detalles <i class="ph-bold ph-arrow-right"></i>
                             </Link>
                         </div>
@@ -170,7 +170,7 @@ const filteredTorneos = computed(() => {
                                     </div>
                                 </div>
                             </div>
-                            <Link :href="route('tournaments.show', t.slug || t.id)" class="inline-block text-center bg-white text-black font-bold text-xs py-2 px-4 uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all rounded w-full">
+                            <Link :href="`/t/${t.id}`" class="inline-block text-center bg-white text-black font-bold text-xs py-2 px-4 uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all rounded w-full">
                                 Ver Mi Posición
                             </Link>
                         </div>

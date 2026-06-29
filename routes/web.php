@@ -209,6 +209,7 @@ Route::middleware('auth')->group(function () {
         // Inscripciones / Pagos (Admin)
         Route::get('/tournaments/{id}/registrations', [TournamentParserController::class, 'getRegistrations'])->name('jangel.registrations');
         Route::put('/registrations/{id}/payment', [TournamentParserController::class, 'updatePaymentStatus'])->name('jangel.registrations.payment');
+        Route::post('/tournaments/{id}/accept-all', [TournamentParserController::class, 'acceptAllRegistrations'])->name('jangel.registrations.accept_all');
 
         // Seriación / Clasificación
         Route::post('/tournaments/{id}/classify', [TournamentParserController::class, 'classifyToNextRound'])->name('jangel.tournaments.classify');
