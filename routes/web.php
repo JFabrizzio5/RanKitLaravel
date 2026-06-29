@@ -67,9 +67,7 @@ Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
 // --- RUTAS RESTAURADAS ---
 
 // 1. Perfil Rankit
-Route::get('/profile/rankit', function () {
-    return app()->call([ProfilePageController::class, 'show']);
-})->name('rankit.profile');
+Route::get('/profile/rankit', [ProfilePageController::class, 'show'])->name('rankit.profile');
 
 // 2. Copa Bellz
 Route::get('/BellzCup', function () {

@@ -47,7 +47,7 @@ onMounted(async () => {
                 <button @click="navigate('league')" id="nav-league" class="nav-link text-gray-500 transition-colors hover:text-white">RANKIT.PRO LEAGUE</button>
                 <button @click="navigate('others')" id="nav-others" class="nav-link text-gray-500 transition-colors hover:text-white">OTROS TORNEOS</button>
                 <button @click="navigate('simulator')" id="nav-simulator" class="nav-link text-gray-500 transition-colors hover:text-white">PREMIOS</button>
-                <a href="#" @click.prevent="navigate('register')" id="nav-register" class="nav-link text-gray-500 transition-colors hover:text-white">REGISTRO</a>
+                <a href="#" @click.prevent="navigate('register')" id="nav-register" class="nav-link text-gray-500 transition-colors hover:text-white">CLASIFICACIÓN</a>
             </div>
 
             <div>
@@ -66,7 +66,7 @@ onMounted(async () => {
             <button @click="navigate('league')" class="hover:text-white transition-colors"><i class="fa-solid fa-trophy block text-center mb-1 text-base"></i>League</button>
             <button @click="navigate('others')" class="hover:text-white transition-colors"><i class="fa-solid fa-gamepad block text-center mb-1 text-base"></i>Otros</button>
             <button @click="navigate('simulator')" class="hover:text-white transition-colors"><i class="fa-solid fa-coins block text-center mb-1 text-base"></i>Premios</button>
-            <a href="#" @click.prevent="navigate('register')" class="hover:text-white transition-colors text-center"><i class="fa-solid fa-user-plus block text-center mb-1 text-base"></i>Registro</a>
+            <a href="#" @click.prevent="navigate('register')" class="hover:text-white transition-colors text-center"><i class="fa-solid fa-list-ol block text-center mb-1 text-base"></i>Clasific.</a>
         </div>
     </nav>
 
@@ -502,75 +502,62 @@ onMounted(async () => {
             </div>
         </section>
 
-        <!-- ================= PÁGINA 5: REGISTRO ================= -->
+        <!-- ================= PÁGINA 5: CLASIFICACIÓN (ANTES REGISTRO) ================= -->
         <section id="view-register" class="view-section" v-show="activeView === 'register'">
             <div class="text-center mb-16">
                 <h2 class="font-block text-5xl sm:text-7xl uppercase text-white tracking-wide mb-6">
-                    PORTAL <span class="text-gray-500">REGISTRO</span>
+                    TABLA DE <span class="text-[var(--rankit-neon)]">CLASIFICACIÓN</span>
                 </h2>
                 <p class="text-gray-400 text-base max-w-2xl mx-auto leading-relaxed font-light">
-                    Asegura tu slot en la fase actual. Elige competir en el tier Gratuito para buscar la clasificación o haz el Upgrade para ir por el premio en efectivo.
+                    Sigue en tiempo real las posiciones del torneo. Solo los mejores asegurarán su lugar en la Gran Final.
                 </p>
             </div>
 
-            <div class="max-w-2xl mx-auto premium-card p-10">
-                <form id="tournament-form" onsubmit="handleRegistration(event)" class="space-y-8">
-                    
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                        <div>
-                            <label class="block text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-400 mb-3">Epic ID Oficial *</label>
-                            <input type="text" id="reg-epic" required placeholder="Ej: Ninja" class="w-full bg-black/40 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder-gray-700">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-400 mb-3">Número de WhatsApp *</label>
-                            <input type="text" id="reg-whatsapp" required placeholder="Ej: +52 123 456 7890" class="w-full bg-black/40 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder-gray-700">
-                        </div>
-                    </div>
+            <div class="max-w-4xl mx-auto bg-black/40 border border-white/10 p-6 sm:p-10 rounded-xl">
+                <!-- Loading State -->
+                <div v-if="loading" class="flex justify-center items-center py-20">
+                    <div class="w-10 h-10 border-4 border-white/20 border-t-[var(--rankit-neon)] rounded-full animate-spin"></div>
+                </div>
 
-                    <div>
-                        <label class="block text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-400 mb-3">Seleccionar Liga / Evento *</label>
-                        <select id="inp-event" class="w-full bg-black/40 border border-white/10 px-4 py-4 text-sm text-white focus:outline-none focus:border-white appearance-none cursor-pointer">
-                            <optgroup label="Liga Principal (Solos)" class="bg-[#0a0514]">
-                                <option value="liga-w1">Semana 1: Battle Royale Clásico (Clasificatoria)</option>
-                                <option value="liga-w2">Semana 2: Battle Royale Clásico (2da Vuelta)</option>
-                                <option value="liga-w3">Semana 3: Repechaje (2 BR / 2 Recarga)</option>
-                                <option value="liga-w4">Semana 4: Gran Final (Solo Clasificados)</option>
-                            </optgroup>
-                            <optgroup label="Eventos Semanales (Otros)" class="bg-[#0a0514]">
-                                <option value="evento-val">Sábado: Valorant DM FFA - $5 USD</option>
-                                <option value="evento-lol">Martes: LoL 1v1 - $5 USD</option>
-                            </optgroup>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-400 mb-4">Tier de Inscripción *</label>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <!-- Free -->
-                            <div onclick="selectRegTier('free')" id="tier-option-free" class="cursor-pointer bg-white/5 p-6 border border-white/30 flex items-start gap-4 transition-all hover:bg-white/10">
-                                <input type="radio" name="reg-tier" id="radio-free" value="free" checked class="mt-1 accent-white">
-                                <div>
-                                    <h4 class="font-chakra font-bold text-white text-sm uppercase tracking-wide">Pase Estándar (Gratis)</h4>
-                                    <p class="text-gray-500 text-xs mt-2 leading-relaxed">Juega 3 partidas. Posiciona en el Top 15% para avanzar a la final sin costo.</p>
-                                </div>
-                            </div>
-                            <!-- Premium -->
-                            <div onclick="selectRegTier('premium')" id="tier-option-premium" class="cursor-pointer bg-black/40 p-6 border border-white/5 flex items-start gap-4 transition-all hover:bg-white/5">
-                                <input type="radio" name="reg-tier" id="radio-premium" value="premium" class="mt-1 accent-white">
-                                <div>
-                                    <h4 class="font-chakra font-bold text-white text-sm uppercase tracking-wide">Upgrade Premium ($10)</h4>
-                                    <p class="text-gray-500 text-xs mt-2 leading-relaxed">Juega 5 partidas en total. Opta a los premios de efectivo de la semana.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="w-full fn-btn bg-white text-black font-chakra font-bold text-sm py-4 uppercase tracking-widest transition-all hover:bg-gray-200 mt-4">
-                        Confirmar Participación
-                    </button>
-                </form>
-
-                <div id="status-message" class="hidden mt-8 p-6 text-center border font-chakra text-sm uppercase tracking-widest"></div>
+                <!-- Leaderboard Table -->
+                <div v-else class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse min-w-[600px]">
+                        <thead>
+                            <tr class="border-b border-white/10 text-[10px] font-bold text-gray-500 uppercase tracking-widest font-chakra">
+                                <th class="py-4 px-4">#</th>
+                                <th class="py-4 px-4">Jugador</th>
+                                <th class="py-4 px-4 text-center">Partidas Jugadas</th>
+                                <th class="py-4 px-4 text-center">Eliminaciones</th>
+                                <th class="py-4 px-4 text-center text-[var(--rankit-neon)]">Total Pts</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(player, index) in standings" :key="player.id || index" class="border-b border-white/5 hover:bg-white/5 transition-colors group">
+                                <td class="py-4 px-4 text-white font-black font-chakra">
+                                    <span :class="{'text-yellow-400': index === 0, 'text-gray-300': index === 1, 'text-yellow-600': index === 2}">
+                                        {{ index + 1 }}
+                                    </span>
+                                </td>
+                                <td class="py-4 px-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-400">
+                                            {{ player.name ? player.name.charAt(0).toUpperCase() : '?' }}
+                                        </div>
+                                        <span class="text-white font-bold uppercase tracking-wider font-chakra">{{ player.name || 'Desconocido' }}</span>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.matches_played || 0 }}</td>
+                                <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.kills || 0 }}</td>
+                                <td class="py-4 px-4 text-center text-white font-black text-lg font-chakra">{{ player.total_points || 0 }}</td>
+                            </tr>
+                            <tr v-if="!standings || standings.length === 0">
+                                <td colspan="5" class="py-12 text-center text-gray-500 font-bold uppercase tracking-widest text-xs">
+                                    La tabla de clasificación aún no está disponible.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
 
