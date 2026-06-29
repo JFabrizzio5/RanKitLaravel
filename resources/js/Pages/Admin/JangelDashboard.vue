@@ -178,8 +178,45 @@ const formBanner = useForm({
     banner: null as File | null,
 });
 
+// --- CANCHAS (PITCHES) STATE ---
+interface Pitch {
+    id: number;
+    name: string;
+    type: string;
+    price_per_hour: number;
+    description: string;
+}
+
+interface PitchReservation {
+    id: number;
+    pitch_id: number;
+    customer_name: string;
+    customer_phone: string;
+    start_time: string;
+    end_time: string;
+    status: string;
+}
+
+const pitches = ref<Pitch[]>([]);
+const pitchReservations = ref<PitchReservation[]>([]);
+const selectedPitch = ref<Pitch | null>(null);
+
+const formCreatePitch = useForm({
+    name: '',
+    type: 'Futbol 7',
+    price_per_hour: 0,
+    description: ''
+});
+
+const formCreateReservation = useForm({
+    customer_name: '',
+    customer_phone: '',
+    start_time: '',
+    end_time: ''
+});
+
 // Estados UI
-const activeTab = ref<'codes' | 'widget' | 'matches'>('codes');
+const activeTab = ref<'codes' | 'widget' | 'matches' | 'registrations' | 'pitches'>('codes');
 const showMatchModal = ref(false);
 const showAppealModal = ref(false); 
 const showSettingsModal = ref(false);
@@ -221,10 +258,75 @@ onMounted(() => {
     if (selectedTournament.value) {
         fetchLeaderboard(selectedTournament.value);
     }
+    fetchPitches(); // Cargar canchas al iniciar
 });
 
+// --- FUNCIONES DE CANCHAS ---
+const fetchPitches = async () => {
+    try {
+        const res = await axios.get(route('jangel.pitches'));
+        pitches.value = res.data;
+    } catch (e) {
+        console.error("Error cargando canchas", e);
+    }
+};
+
+const createPitch = () => {
+    formCreatePitch.post(route('jangel.pitches.store'), {
+        onSuccess: () => {
+            fetchPitches();
+            formCreatePitch.reset();
+            alert('Cancha creada con éxito');
+        }
+    });
+};
+
+const deletePitch = (id: number) => {
+    if (confirm('¿Seguro que deseas eliminar esta cancha?')) {
+        router.delete(route('jangel.pitches.delete', id), {
+            onSuccess: () => {
+                if (selectedPitch.value?.id === id) selectedPitch.value = null;
+                fetchPitches();
+            }
+        });
+    }
+};
+
+const selectPitch = async (pitch: Pitch) => {
+    selectedPitch.value = pitch;
+    await fetchPitchReservations(pitch.id);
+};
+
+const fetchPitchReservations = async (pitchId: number) => {
+    try {
+        const res = await axios.get(route('jangel.pitches.reservations', pitchId));
+        pitchReservations.value = res.data;
+    } catch (e) {
+        console.error("Error cargando reservas", e);
+    }
+};
+
+const createReservation = () => {
+    if (!selectedPitch.value) return;
+    formCreateReservation.post(route('jangel.pitches.reservations.store', selectedPitch.value.id), {
+        onSuccess: () => {
+            fetchPitchReservations(selectedPitch.value!.id);
+            formCreateReservation.reset();
+            alert('Reserva creada exitosamente');
+        }
+    });
+};
+
+const updateReservationStatus = (id: number, status: string) => {
+    router.put(route('jangel.reservations.status', id), { status }, {
+        onSuccess: () => {
+            if (selectedPitch.value) fetchPitchReservations(selectedPitch.value.id);
+        }
+    });
+};
+
 watch(() => props.tournaments, initSlotInputs, { deep: true });
-watch(selectedTournamentId, () => {
+watch(selectedTournamentId, (newId) => {
     selectedMatchId.value = null;
     searchQuery.value = ''; 
     filterMode.value = 'all'; 
@@ -260,6 +362,55 @@ const fetchLeaderboard = async (tn: Tournament, matchId: number | null = null) =
     } finally {
         loadingLeaderboard.value = false;
     }
+};
+
+// --- INSCRIPCIONES ---
+const registrations = ref<any[]>([]);
+const selectedPlayersForClassification = ref<string[]>([]);
+const targetTournamentId = ref<number | null>(null);
+
+const fetchRegistrations = async () => {
+    if (!selectedTournament.value) return;
+    try {
+        const res = await axios.get(route('jangel.registrations', selectedTournament.value.id));
+        registrations.value = res.data;
+    } catch (e) {
+        console.error("Error fetching registrations:", e);
+    }
+};
+
+watch(activeTab, (newTab) => {
+    if (newTab === 'registrations') fetchRegistrations();
+});
+watch(selectedTournamentId, () => {
+    if (activeTab.value === 'registrations') fetchRegistrations();
+});
+
+const updatePayment = async (id: number, status: string) => {
+    try {
+        await axios.put(route('jangel.registrations.payment', id), { status });
+        fetchRegistrations();
+    } catch (e) {
+        alert("Error al actualizar pago.");
+    }
+};
+
+const classifyPlayers = () => {
+    if (selectedPlayersForClassification.value.length === 0) {
+        alert("Selecciona al menos un jugador.");
+        return;
+    }
+    if (!selectedTournament.value) return;
+    
+    router.post(route('jangel.tournaments.classify', selectedTournament.value.id), {
+        players: selectedPlayersForClassification.value,
+        target_tournament_id: targetTournamentId.value
+    }, {
+        onSuccess: () => {
+            alert("Jugadores clasificados correctamente.");
+            selectedPlayersForClassification.value = [];
+        }
+    });
 };
 
 // --- GESTIÓN DE TORNEO (CONFIGURACIÓN AVANZADA) ---
@@ -633,6 +784,11 @@ const copyInviteLink = () => {
           <i v-else class="text-xl ph-fill ph-moon"></i>
         </button>
 
+        <Link :href="route('game.selector')" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-purple-500 uppercase transition-all border rounded-lg border-purple-500/20 hover:bg-purple-500 hover:text-white hover:border-purple-500">
+            <i class="text-lg ph-bold ph-game-controller"></i>
+            <span class="hidden sm:inline">Juegos</span>
+        </Link>
+
         <Link :href="route('logout')" method="post" as="button" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-500 uppercase transition-all border rounded-lg border-red-500/20 hover:bg-red-500 hover:text-white hover:border-red-500 group">
             <i class="text-lg ph-bold ph-sign-out"></i>
             <span class="hidden sm:inline">Salir</span>
@@ -693,11 +849,11 @@ const copyInviteLink = () => {
           </div>
 
           <!-- Tabs -->
-          <div class="flex border-b border-gray-200 dark:border-white/10">
-            <button v-for="tab in ['codes', 'widget', 'matches']" :key="tab" @click="activeTab = tab as any"
-              class="flex-1 py-3 text-[10px] font-bold uppercase tracking-wider text-center transition"
+          <div class="flex border-b border-gray-200 dark:border-white/10 overflow-x-auto custom-scrollbar">
+            <button v-for="tab in ['codes', 'widget', 'matches', 'registrations', 'pitches']" :key="tab" @click="activeTab = tab as any"
+              class="flex-1 min-w-[80px] py-3 text-[10px] font-bold uppercase tracking-wider text-center transition"
               :class="activeTab === tab ? 'bg-[var(--rankit-neon)] text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'">
-              {{ tab }}
+              {{ tab === 'registrations' ? 'Inscrip.' : tab }}
             </button>
           </div>
 
@@ -785,6 +941,145 @@ const copyInviteLink = () => {
                         <i class="ph ph-trash"></i>
                     </button>
                 </div>
+              </div>
+          </div>
+
+          <!-- TAB: REGISTRATIONS -->
+          <div v-if="activeTab === 'registrations' && selectedTournament" class="p-4 space-y-4 animate-fade-in">
+             <div class="flex justify-between items-center">
+                 <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Inscripciones ({{ registrations.length }})</h3>
+                 <button @click="fetchRegistrations" class="text-xs text-[var(--rankit-neon)] hover:underline"><i class="ph-bold ph-arrows-clockwise"></i></button>
+             </div>
+             
+             <div class="max-h-[300px] overflow-y-auto space-y-2 custom-scrollbar pr-2">
+                 <div v-for="reg in registrations" :key="reg.id" class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 flex flex-col gap-2 text-xs">
+                     <div class="flex justify-between items-start">
+                         <div>
+                             <div class="font-bold text-sm text-black dark:text-white">{{ reg.player_name }}</div>
+                             <div class="text-[10px] text-gray-500">{{ reg.email }}</div>
+                         </div>
+                         <div class="text-right">
+                             <span :class="{'text-yellow-500': reg.payment_status==='pending', 'text-emerald-500': reg.payment_status==='paid', 'text-red-500': reg.payment_status==='rejected'}" class="font-bold uppercase text-[10px]">
+                                 {{ reg.payment_status }}
+                             </span>
+                         </div>
+                     </div>
+                     <div class="flex gap-2 mt-2">
+                         <button v-if="reg.payment_status !== 'paid'" @click="updatePayment(reg.id, 'paid')" class="flex-1 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded transition">Aprobar</button>
+                         <button v-if="reg.payment_status !== 'rejected'" @click="updatePayment(reg.id, 'rejected')" class="flex-1 py-1 bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white rounded transition">Rechazar</button>
+                     </div>
+                 </div>
+                 <div v-if="registrations.length === 0" class="text-center py-6 text-gray-500 text-xs italic">
+                     No hay inscripciones aún.
+                 </div>
+             </div>
+
+             <div class="mt-4 pt-4 border-t border-gray-200 dark:border-white/10 space-y-3">
+                 <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Clasificar Jugadores</h3>
+                 <div class="text-[10px] text-gray-400">Selecciona jugadores de la tabla general o añade nombres manuales:</div>
+                 
+                 <div class="flex gap-2">
+                     <select v-model="selectedPlayersForClassification" multiple class="flex-1 text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none custom-scrollbar">
+                         <option v-for="p in filteredLeaderboard" :key="p.player_name" :value="p.player_name">{{ p.player_name }}</option>
+                     </select>
+                 </div>
+                 
+                 <div class="flex flex-col gap-1">
+                     <label class="text-[10px] font-bold uppercase text-gray-500">ID Torneo Destino (Opcional)</label>
+                     <input v-model="targetTournamentId" type="number" placeholder="Dejar en blanco para clonar torneo actual" class="w-full text-xs font-mono bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 outline-none" />
+                 </div>
+
+                 <button @click="classifyPlayers" :disabled="selectedPlayersForClassification.length === 0" class="w-full py-3 text-xs font-bold uppercase btn-skew disabled:opacity-50">
+                     <span class="btn-content">Clasificar a {{ selectedPlayersForClassification.length }} Jugadores</span>
+                 </button>
+             </div>
+          </div>
+
+          <!-- PITCHES (CANCHAS) TAB -->
+          <div v-if="activeTab === 'pitches'" class="p-4 space-y-4 animate-fade-in">
+              <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Gestión de Canchas</h3>
+              
+              <!-- Formulario Crear Cancha -->
+              <div class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 space-y-2">
+                  <h4 class="text-[10px] font-bold uppercase text-gray-400">Nueva Cancha</h4>
+                  <input v-model="formCreatePitch.name" type="text" placeholder="Nombre (ej. Cancha 1)" class="w-full text-xs p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 focus:border-[var(--rankit-neon)] outline-none" />
+                  <div class="flex gap-2">
+                      <select v-model="formCreatePitch.type" class="flex-1 text-xs p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 focus:border-[var(--rankit-neon)] outline-none">
+                          <option value="Futbol 7">Futbol 7</option>
+                          <option value="Futbol 5">Futbol 5</option>
+                          <option value="Futbol 11">Futbol 11</option>
+                          <option value="Tenis">Tenis</option>
+                          <option value="Padel">Pádel</option>
+                      </select>
+                      <input v-model="formCreatePitch.price_per_hour" type="number" placeholder="Precio/hr" class="w-24 text-xs p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 focus:border-[var(--rankit-neon)] outline-none" />
+                  </div>
+                  <button @click="createPitch" :disabled="formCreatePitch.processing || !formCreatePitch.name" class="w-full py-2 bg-[var(--rankit-neon)] text-white text-xs font-bold uppercase rounded hover:bg-purple-600 transition disabled:opacity-50">
+                      Crear Cancha
+                  </button>
+              </div>
+
+              <!-- Lista de Canchas -->
+              <div class="max-h-[150px] overflow-y-auto space-y-2 custom-scrollbar pr-2 mt-4">
+                  <div v-for="pitch in pitches" :key="pitch.id" 
+                      @click="selectPitch(pitch)"
+                      class="p-2 border rounded flex justify-between items-center cursor-pointer transition"
+                      :class="selectedPitch?.id === pitch.id ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/10' : 'border-gray-200 dark:border-white/10 hover:border-gray-400'"
+                  >
+                      <div>
+                          <div class="text-xs font-bold dark:text-white">{{ pitch.name }}</div>
+                          <div class="text-[10px] text-gray-500">{{ pitch.type }} - ${{ pitch.price_per_hour }}/hr</div>
+                      </div>
+                      <button @click.stop="deletePitch(pitch.id)" class="text-red-500 hover:text-red-700 p-1"><i class="ph-bold ph-trash"></i></button>
+                  </div>
+                  <div v-if="pitches.length === 0" class="text-center py-4 text-gray-500 text-[10px] uppercase">
+                      No hay canchas creadas.
+                  </div>
+              </div>
+
+              <!-- Reservas de Cancha Seleccionada -->
+              <div v-if="selectedPitch" class="mt-4 pt-4 border-t border-gray-200 dark:border-white/10 space-y-3">
+                  <h4 class="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Reservas: {{ selectedPitch.name }}</h4>
+                  
+                  <!-- Formulario Crear Reserva -->
+                  <div class="space-y-2 mb-4">
+                      <input v-model="formCreateReservation.customer_name" type="text" placeholder="Nombre Cliente" class="w-full text-[10px] p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none" />
+                      <div class="flex gap-2">
+                          <div class="flex-1 flex flex-col gap-1">
+                              <label class="text-[9px] uppercase text-gray-500">Inicio</label>
+                              <input v-model="formCreateReservation.start_time" type="datetime-local" class="w-full text-[10px] p-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none" />
+                          </div>
+                          <div class="flex-1 flex flex-col gap-1">
+                              <label class="text-[9px] uppercase text-gray-500">Fin</label>
+                              <input v-model="formCreateReservation.end_time" type="datetime-local" class="w-full text-[10px] p-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none" />
+                          </div>
+                      </div>
+                      <button @click="createReservation" :disabled="formCreateReservation.processing || !formCreateReservation.customer_name || !formCreateReservation.start_time" class="w-full py-1.5 bg-emerald-500 text-white text-[10px] font-bold uppercase rounded hover:bg-emerald-600 transition">
+                          Agregar Reserva
+                      </button>
+                  </div>
+
+                  <!-- Lista de Reservas -->
+                  <div class="max-h-[150px] overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                      <div v-for="res in pitchReservations" :key="res.id" class="p-2 bg-gray-100 dark:bg-white/5 rounded border border-gray-200 dark:border-white/10 text-[10px]">
+                          <div class="flex justify-between items-start mb-1">
+                              <span class="font-bold dark:text-white">{{ res.customer_name }}</span>
+                              <span :class="{'text-yellow-500': res.status==='pending', 'text-emerald-500': res.status==='paid', 'text-red-500': res.status==='cancelled'}" class="font-bold uppercase">{{ res.status }}</span>
+                          </div>
+                          <div class="text-gray-500 flex justify-between items-end">
+                              <div>
+                                  <div>Desde: {{ new Date(res.start_time).toLocaleString() }}</div>
+                                  <div>Hasta: {{ new Date(res.end_time).toLocaleString() }}</div>
+                              </div>
+                              <div class="flex gap-1" v-if="res.status === 'pending'">
+                                  <button @click="updateReservationStatus(res.id, 'paid')" class="text-emerald-500 hover:underline">Pagar</button>
+                                  <button @click="updateReservationStatus(res.id, 'cancelled')" class="text-red-500 hover:underline">Cancelar</button>
+                              </div>
+                          </div>
+                      </div>
+                      <div v-if="pitchReservations.length === 0" class="text-center py-2 text-gray-500 text-[10px]">
+                          Sin reservas.
+                      </div>
+                  </div>
               </div>
           </div>
         </div>

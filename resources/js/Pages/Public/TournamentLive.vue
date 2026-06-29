@@ -65,6 +65,30 @@ const appealForm = useForm({
   replay: null as File | null,
 })
 
+const registrationForm = useForm({
+  player_name: '',
+  email: '',
+  whatsapp: '',
+  discord: '',
+})
+
+const registerMessage = ref('')
+const registerSuccess = ref(false)
+
+function submitRegistration() {
+  const tournamentId = props.tournament?.id || tournamentData.value.id || 7;
+  axios.post(`/api/tournaments/${tournamentId}/register`, registrationForm.data())
+    .then((res) => {
+      registerSuccess.value = true
+      registerMessage.value = '¡Inscripción recibida correctamente! Espera a que el administrador confirme el pago.'
+      registrationForm.reset()
+    })
+    .catch((err) => {
+      registerSuccess.value = false
+      registerMessage.value = err.response?.data?.message || 'Error al procesar la inscripción.'
+    })
+}
+
 function openAppeal() {
   showAppealModal.value = true
   appealForm.reset()
@@ -416,13 +440,14 @@ onUnmounted(() => {
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
         <button
-          v-for="tab in ['resultados', 'comunidad', 'reglas', 'premios']"
+          v-for="tab in ['resultados', 'inscripcion', 'comunidad', 'reglas', 'premios']"
           :key="tab"
           @click="switchTab(tab)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
           :class="activeTab === tab ? 'border-neon text-black dark:text-white' : 'border-transparent text-gray-500 hover:text-black dark:hover:text-gray-300'"
         >
           <i v-if="tab === 'resultados'" class="transition ph ph-list-numbers group-hover:text-neon"></i>
+          <i v-if="tab === 'inscripcion'" class="transition ph ph-ticket group-hover:text-neon"></i>
           <i v-if="tab === 'comunidad'" class="transition ph ph-users group-hover:text-neon"></i>
           <i v-if="tab === 'reglas'" class="transition ph ph-book-open group-hover:text-neon"></i>
           <i v-if="tab === 'premios'" class="transition ph ph-trophy group-hover:text-neon"></i>
@@ -617,6 +642,49 @@ onUnmounted(() => {
              <div class="p-6 font-sans text-sm leading-relaxed prose whitespace-pre-wrap border border-gray-300 border-dashed rounded-lg dark:prose-invert max-w-none bg-gray-50 dark:bg-white/5 dark:border-white/10">
                  {{ tournamentData.prizes || 'Los premios se anunciarán próximamente.' }}
              </div>
+         </div>
+      </div>
+
+      <!-- INSCRIPCIÓN TAB -->
+      <div v-show="activeTab === 'inscripcion'" class="py-8 animate-fade-in">
+          <div class="brutal-card bg-white dark:bg-[#0a0a0a] p-8 max-w-2xl mx-auto">
+             <div class="flex items-center gap-3 mb-6">
+                 <div class="w-12 h-12 flex items-center justify-center bg-[var(--rankit-neon)]/10 text-[var(--rankit-neon)] rounded-full">
+                     <i class="text-2xl ph-duotone ph-ticket"></i>
+                 </div>
+                 <h2 class="text-3xl font-black uppercase font-display">Inscripción al Torneo</h2>
+             </div>
+             
+             <div v-if="registerMessage" :class="registerSuccess ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500' : 'bg-red-500/10 border-red-500/50 text-red-500'" class="p-4 border rounded-lg mb-6 font-bold text-sm">
+                 {{ registerMessage }}
+             </div>
+
+             <form @submit.prevent="submitRegistration" class="space-y-4">
+                 <div>
+                     <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre en el Juego (Epic / Riot ID) *</label>
+                     <input v-model="registrationForm.player_name" type="text" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                 </div>
+                 <div>
+                     <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Correo Electrónico *</label>
+                     <input v-model="registrationForm.email" type="email" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                 </div>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                         <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">WhatsApp (Opcional)</label>
+                         <input v-model="registrationForm.whatsapp" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                     </div>
+                     <div>
+                         <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Discord Tag (Opcional)</label>
+                         <input v-model="registrationForm.discord" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                     </div>
+                 </div>
+                 
+                 <div class="pt-4">
+                     <button type="submit" :disabled="registrationForm.processing" class="w-full py-4 text-sm font-bold uppercase btn-skew disabled:opacity-50">
+                         <span class="btn-content">{{ registrationForm.processing ? 'Enviando...' : 'Completar Inscripción' }}</span>
+                     </button>
+                 </div>
+             </form>
          </div>
       </div>
 

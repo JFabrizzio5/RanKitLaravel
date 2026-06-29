@@ -10,6 +10,7 @@ use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
 use App\Http\Controllers\TournamentController; // Dashboard Viejo
 use App\Http\Controllers\ProfilePageController; // Rankit
 use App\Http\Controllers\LolTournamentController; // LoL / Valorant
+use App\Http\Controllers\FootballController; // Futbol
 
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -25,15 +26,22 @@ Route::get('/', function () {
     ]);
 })->name('Inicio');
 
+// --- RANKIT.PRO LEAGUE LANDING ---
+Route::get('/league', function () {
+    return Inertia::render('RankitLeague');
+})->name('rankit.league');
+
+// --- MUNDIAL 2026 STATS ---
+Route::get('/mundial', function () {
+    return Inertia::render('WorldCup');
+})->name('worldcup.index');
+
 // --- AUTH SOCIAL ---
 Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('google.redirect');
 Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name('google.callback');
 
 // --- DASHBOARD USUARIO ---
 Route::get('/dashboard', function () {
-    if (auth()->user()->isAdmin()) {
-        return redirect()->route('game.selector');
-    }
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
@@ -77,6 +85,10 @@ Route::get('/game-selector', function () {
 })->middleware('auth')->name('game.selector');
 
 // --- LoL / VALORANT TORNEOS ---
+Route::get('/league', function () {
+    return Inertia::render('RankitLeague');
+})->name('league');
+
 Route::middleware('auth')->prefix('lol')->name('lol.')->group(function () {
     Route::get('/',                               [LolTournamentController::class, 'index'])->name('index');
     Route::post('/',                              [LolTournamentController::class, 'store'])->name('store');
@@ -102,6 +114,23 @@ Route::get('/lol/{id}/bracket',     [LolTournamentController::class, 'bracket'])
 Route::get('/lol/{id}/widget-data', [LolTournamentController::class, 'widgetData'])->name('lol.widget.data');
 // Página pública del torneo — SIN autenticación (compartible)
 Route::get('/lol/{id}/ver',         [LolTournamentController::class, 'publicView'])->name('lol.public.view');
+
+// --- FUTBOL TORNEOS ---
+Route::middleware('auth')->prefix('football')->name('football.')->group(function () {
+    Route::get('/',                               [FootballController::class, 'index'])->name('index');
+    Route::post('/',                              [FootballController::class, 'store'])->name('store');
+    Route::get('/{id}',                           [FootballController::class, 'show'])->name('show');
+    Route::delete('/{id}',                        [FootballController::class, 'destroy'])->name('destroy');
+    Route::post('/{id}/teams',                    [FootballController::class, 'addTeam'])->name('team.add');
+    Route::put('/{id}/teams/{teamId}',            [FootballController::class, 'updateTeam'])->name('team.update');
+    Route::delete('/{id}/teams/{teamId}',         [FootballController::class, 'removeTeam'])->name('team.remove');
+    Route::post('/{id}/teams/{teamId}/players',   [FootballController::class, 'addPlayer'])->name('player.add');
+    Route::delete('/{id}/players/{playerId}',     [FootballController::class, 'removePlayer'])->name('player.remove');
+    Route::post('/{id}/generate',                 [FootballController::class, 'generate'])->name('generate');
+    Route::post('/{id}/result',                   [FootballController::class, 'recordResult'])->name('result');
+});
+// Vista pública futbol
+Route::get('/football/{id}/ver',         [FootballController::class, 'publicView'])->name('football.public.view');
 
 
 
@@ -162,10 +191,26 @@ Route::middleware('auth')->group(function () {
 
         // Editar resultado directo de un jugador en una partida
         Route::put('/match/{matchId}/player-result', [TournamentParserController::class, 'updatePlayerResult'])->name('jangel.player.result.update');
+
+        // Inscripciones / Pagos (Admin)
+        Route::get('/tournaments/{id}/registrations', [TournamentParserController::class, 'getRegistrations'])->name('jangel.registrations');
+        Route::put('/registrations/{id}/payment', [TournamentParserController::class, 'updatePaymentStatus'])->name('jangel.registrations.payment');
+
+        // Seriación / Clasificación
+        Route::post('/tournaments/{id}/classify', [TournamentParserController::class, 'classifyToNextRound'])->name('jangel.tournaments.classify');
+        Route::get('/tournaments/{id}/qualifiers', [TournamentParserController::class, 'getQualifiers'])->name('jangel.tournaments.qualifiers');
         
         // API Leaderboard
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
+
+        // --- GESTIÓN DE CANCHAS (PITCHES) ---
+        Route::get('/pitches', [TournamentParserController::class, 'getPitches'])->name('jangel.pitches');
+        Route::post('/pitches', [TournamentParserController::class, 'storePitch'])->name('jangel.pitches.store');
+        Route::delete('/pitches/{id}', [TournamentParserController::class, 'deletePitch'])->name('jangel.pitches.delete');
+        Route::get('/pitches/{id}/reservations', [TournamentParserController::class, 'getPitchReservations'])->name('jangel.pitches.reservations');
+        Route::post('/pitches/{id}/reservations', [TournamentParserController::class, 'storePitchReservation'])->name('jangel.pitches.reservations.store');
+        Route::put('/reservations/{id}/status', [TournamentParserController::class, 'updatePitchReservationStatus'])->name('jangel.reservations.status');
 
         // --- GESTIÓN DE USUARIOS (solo superadmin) ---
         Route::middleware('superadmin')->group(function () {
@@ -177,6 +222,10 @@ Route::middleware('auth')->group(function () {
 });
 Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
     ->name('api.public.data');
+
+// API Public Registration
+Route::post('/api/tournaments/{id}/register', [TournamentParserController::class, 'registerForTournament'])
+    ->name('api.tournaments.register');
 
     //IMPLEMENTACIONES RAPIDAS
 Route::post('/admin/tournaments/{tournament}/adjust-score', [TournamentParserController::class, 'adjustPlayerScore'])
