@@ -584,6 +584,23 @@ onMounted(async () => {
                 <div v-else class="py-16 text-center text-gray-500 font-bold uppercase tracking-widest text-sm border border-white/5 border-dashed rounded-xl">
                     No hay torneos seriados activos en este momento.
                 </div>
+
+                <!-- Botón para ir a inscribirse al torneo seleccionado -->
+                <div v-if="!loading && allSerializedTournaments.length > 0" class="mt-10 text-center">
+                    <div class="text-xs text-gray-500 uppercase font-bold tracking-widest mb-4 font-chakra">
+                        ¿Quieres competir en <span class="text-white">{{ allSerializedTournaments[activeTournamentIndex]?.tournament?.name }}</span>?
+                    </div>
+                    <a
+                        :href="`/t/${allSerializedTournaments[activeTournamentIndex]?.tournament?.id}`"
+                        class="inline-flex items-center gap-3 px-10 py-4 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all font-chakra"
+                        style="clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%)"
+                    >
+                        <i class="ph-bold ph-ticket text-lg"></i>
+                        Inscríbete Aquí
+                        <i class="ph-bold ph-arrow-right text-lg"></i>
+                    </a>
+                    <p class="text-[10px] text-gray-600 uppercase tracking-widest mt-3">Inscripciones y resultados en tiempo real</p>
+                </div>
             </div>
         </section>
 
