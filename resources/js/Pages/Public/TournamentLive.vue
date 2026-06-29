@@ -57,7 +57,44 @@ const props = defineProps<{
   phpVersion?: string;
   canLogin?: boolean;
   canRegister?: boolean;
+  isPrivate?: boolean;
+  hasAccess?: boolean;
+  attemptsLeft?: number;
 }>()
+
+// --- ACCESO PRIVADO ---
+const privateHasAccess = ref(props.hasAccess !== false)
+const privateAttemptsLeft = ref(props.attemptsLeft ?? 3)
+const privateCode = ref('')
+const privateError = ref('')
+const privateBlocked = ref((props.attemptsLeft ?? 3) <= 0)
+const privateLoading = ref(false)
+
+const verifyPrivateCode = async () => {
+  if (privateLoading.value || !privateCode.value.trim()) return
+  privateLoading.value = true
+  privateError.value = ''
+  try {
+    const tournamentId = props.tournament?.id
+    const res = await axios.post(`/t/${tournamentId}/verify-code`, {
+      code: privateCode.value.trim(),
+      _token: (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content
+    })
+    if (res.data.success) {
+      privateHasAccess.value = true
+      // Reload to get real codes from server
+      window.location.reload()
+    }
+  } catch (err: any) {
+    const data = err.response?.data
+    privateError.value = data?.message ?? 'Error al verificar el código.'
+    privateAttemptsLeft.value = data?.attemptsLeft ?? 0
+    privateBlocked.value = data?.blocked ?? false
+    privateCode.value = ''
+  } finally {
+    privateLoading.value = false
+  }
+}
 
 // --- STATE DE APELACIÓN ---
 const showAppealModal = ref(false)
@@ -659,32 +696,39 @@ onUnmounted(() => {
                  {{ registerMessage }}
              </div>
 
-             <form @submit.prevent="submitRegistration" class="space-y-4">
-                 <div>
-                     <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre en el Juego (Epic / Riot ID) *</label>
-                     <input v-model="registrationForm.player_name" type="text" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
-                 </div>
-                 <div>
-                     <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Correo Electrónico *</label>
-                     <input v-model="registrationForm.email" type="email" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
-                 </div>
-                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <div v-if="$page.props.auth?.user">
+                 <form @submit.prevent="submitRegistration" class="space-y-4">
                      <div>
-                         <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">WhatsApp (Opcional)</label>
-                         <input v-model="registrationForm.whatsapp" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                         <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre en el Juego (Epic / Riot ID) *</label>
+                         <input v-model="registrationForm.player_name" type="text" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
                      </div>
-                     <div>
-                         <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Discord Tag (Opcional)</label>
-                         <input v-model="registrationForm.discord" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div>
+                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">WhatsApp (Opcional)</label>
+                             <input v-model="registrationForm.whatsapp" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                         </div>
+                         <div>
+                             <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Discord Tag (Opcional)</label>
+                             <input v-model="registrationForm.discord" type="text" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                         </div>
                      </div>
-                 </div>
-                 
-                 <div class="pt-4">
-                     <button type="submit" :disabled="registrationForm.processing" class="w-full py-4 text-sm font-bold uppercase btn-skew disabled:opacity-50">
-                         <span class="btn-content">{{ registrationForm.processing ? 'Enviando...' : 'Completar Inscripción' }}</span>
-                     </button>
-                 </div>
-             </form>
+                     
+                     <div class="pt-4">
+                         <button type="submit" :disabled="registrationForm.processing" class="w-full py-4 text-sm font-bold uppercase btn-skew disabled:opacity-50">
+                             <span class="btn-content">{{ registrationForm.processing ? 'Enviando...' : 'Completar Inscripción' }}</span>
+                         </button>
+                     </div>
+                 </form>
+             </div>
+             
+             <div v-else class="text-center py-12">
+                 <i class="ph-duotone ph-lock-key text-6xl text-[var(--rankit-neon)] mb-4"></i>
+                 <h3 class="text-2xl font-black uppercase font-display mb-4">Inicia sesión para participar</h3>
+                 <p class="text-gray-400 mb-8 text-sm">Debes tener una cuenta en Rankit para poder inscribirte a este torneo de forma segura.</p>
+                 <a :href="route('login')" class="inline-block px-12 py-4 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest hover:bg-white transition-all transform hover:scale-105 btn-skew">
+                     <span class="btn-content">Iniciar Sesión / Registro</span>
+                 </a>
+             </div>
          </div>
       </div>
 
@@ -789,6 +833,72 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+  <!-- ===== BANNER TORNEO PRIVADO (si no tiene acceso) ===== -->
+  <div v-if="props.isPrivate && !privateHasAccess" class="fixed inset-0 z-[998] pointer-events-none">
+    <!-- Fondo semi-transparente solo en la parte inferior -->
+    <div class="absolute bottom-0 left-0 right-0 pointer-events-auto">
+      <div class="bg-black/95 border-t-2 border-[var(--rankit-neon)] shadow-[0_-10px_60px_rgba(191,0,255,0.3)] p-6">
+        <div class="max-w-2xl mx-auto">
+          
+          <!-- Estado BLOQUEADO (>3 intentos) -->
+          <div v-if="privateBlocked" class="text-center py-4">
+            <div class="flex items-center justify-center gap-3 mb-3">
+              <i class="ph-fill ph-lock-key text-red-500 text-3xl"></i>
+              <h3 class="text-lg font-black uppercase text-white font-display">Acceso Bloqueado</h3>
+            </div>
+            <p class="text-sm text-gray-400 mb-4">Has superado el número máximo de intentos. Para recuperar el acceso, solicita un nuevo código al organizador.</p>
+            <a :href="route('login')" class="inline-block px-8 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all btn-skew">
+              <span class="btn-content">Solicitar Nuevo Acceso</span>
+            </a>
+          </div>
+
+          <!-- Estado NORMAL (tiene intentos disponibles) -->
+          <div v-else>
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-10 h-10 flex items-center justify-center bg-[var(--rankit-neon)]/10 rounded border border-[var(--rankit-neon)]/30">
+                <i class="ph-bold ph-lock-simple-open text-[var(--rankit-neon)] text-xl"></i>
+              </div>
+              <div>
+                <div class="text-xs font-bold text-[var(--rankit-neon)] uppercase tracking-widest">Torneo Privado</div>
+                <div class="text-white font-black uppercase font-display text-sm">Ingresa tu código para ver los códigos de partida</div>
+              </div>
+              <div class="ml-auto text-right">
+                <div class="text-[10px] text-gray-500 uppercase font-bold">Intentos restantes</div>
+                <div class="text-2xl font-black" :class="privateAttemptsLeft <= 1 ? 'text-red-500' : 'text-[var(--rankit-neon)]'">{{ privateAttemptsLeft }}/3</div>
+              </div>
+            </div>
+
+            <p class="text-xs text-gray-500 mb-3">Puedes ver el ranking y las estadísticas libremente. El código solo desbloquea los <strong class="text-white">Custom Matchmaking IDs</strong> de cada partida.</p>
+
+            <div v-if="privateError" class="mb-3 px-4 py-2 bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold rounded">
+              {{ privateError }}
+            </div>
+
+            <form @submit.prevent="verifyPrivateCode" class="flex gap-3">
+              <input
+                v-model="privateCode"
+                type="text"
+                placeholder="Ingresa el código de acceso..."
+                class="flex-1 px-4 py-3 bg-white/5 border border-white/10 text-white font-mono text-sm uppercase tracking-widest focus:border-[var(--rankit-neon)] focus:outline-none rounded"
+                :disabled="privateLoading"
+                autofocus
+              />
+              <button
+                type="submit"
+                :disabled="privateLoading || !privateCode.trim()"
+                class="px-6 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all disabled:opacity-50 btn-skew"
+              >
+                <span class="btn-content">{{ privateLoading ? '...' : 'Acceder' }}</span>
+              </button>
+            </form>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ===== FIN BANNER PRIVADO ===== -->
 
   </div>
 </template>

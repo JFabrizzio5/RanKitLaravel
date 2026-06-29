@@ -336,12 +336,12 @@ onMounted(async () => {
                     Cargando Clasificación...
                 </div>
                 
-                <div v-else-if="standings.length === 0" class="text-center text-gray-500 py-10 font-chakra uppercase tracking-widest font-bold border border-gray-800 border-dashed rounded-xl">
+                <div v-else-if="allSerializedTournaments.length === 0" class="text-center text-gray-500 py-10 font-chakra uppercase tracking-widest font-bold border border-gray-800 border-dashed rounded-xl">
                     Aún no hay tablas de clasificación disponibles.
                 </div>
 
                 <div v-else class="space-y-16">
-                    <div v-for="(league, index) in standings" :key="index" class="premium-card p-6 md:p-10 relative overflow-hidden">
+                    <div v-for="(league, index) in allSerializedTournaments" :key="index" class="premium-card p-6 md:p-10 relative overflow-hidden">
                         <h3 class="font-block text-3xl text-white uppercase italic mb-6 border-b border-white/10 pb-4">
                             {{ league.tournament.name }}
                         </h3>
@@ -365,7 +365,7 @@ onMounted(async () => {
                                         <td class="py-4 px-2 text-center text-white font-bold">{{ player.total_kills || 0 }}</td>
                                         <td class="py-4 px-2 text-center text-gray-400">{{ player.total_damage || 0 }}</td>
                                     </tr>
-                                    <tr v-if="league.standings.length === 0">
+                                    <tr v-if="!league.standings || league.standings.length === 0">
                                         <td colspan="5" class="text-center py-8 text-gray-500 uppercase tracking-widest">Sin registros de partidas</td>
                                     </tr>
                                 </tbody>

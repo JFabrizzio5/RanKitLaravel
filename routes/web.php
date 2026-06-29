@@ -262,5 +262,7 @@ Route::post('/admin/tournaments/{tournament}/adjust-score', [TournamentParserCon
  
  // Esta ruta acepta el parámetro opcional ?code=XYZ
 Route::get('/t/{slug}', [PublicTournamentController::class, 'show'])->name('public.tournament.show');
+// Verificación de código de acceso con rate limiting (máx 3 intentos por sesión)
+Route::post('/t/{id}/verify-code', [PublicTournamentController::class, 'verifyCode'])->name('public.tournament.verify');
 
 require __DIR__.'/auth.php';Route::get('/api/league/standings', [App\Http\Controllers\Admin\TournamentParserController::class, 'getSerializedStandings']);

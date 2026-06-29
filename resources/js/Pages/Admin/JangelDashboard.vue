@@ -802,10 +802,7 @@ const copyInviteLink = () => {
         <span class="text-sm font-bold text-[var(--rankit-neon)] hidden sm:inline">Admin Mode</span>
       </div>
 
-      <a :href="selectedTournament ? route('public.tournament.show', { 
-            slug: selectedTournament.slug || selectedTournament.id, 
-            code: selectedTournament.access_code 
-         }) : '#'" 
+      <a :href="selectedTournament ? `/t/${selectedTournament.id}${selectedTournament.access_code ? '?code=' + selectedTournament.access_code : ''}` : '#'" 
          target="_blank" 
          class="px-4 py-1 text-[10px] font-bold tracking-wider uppercase btn-skew flex items-center gap-2 group decoration-0">
         <span class="flex items-center gap-2 btn-content">

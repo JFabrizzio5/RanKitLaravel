@@ -14,24 +14,27 @@ class PublicTournamentController extends Controller
      */
     public function show(Request $request, $id)
     {
-        // 1. Intentamos buscar por ID primero, si falla, buscamos por Slug (para compatibilidad)
+        // 1. Buscar por ID o Slug
         $tournament = DB::table('tournaments')->where('id', $id)->first();
         if (!$tournament) {
             $tournament = DB::table('tournaments')->where('slug', $id)->first();
         }
-
         if (!$tournament) abort(404);
 
         // --- LÓGICA DE PRIVACIDAD ---
+        $hasAccess = true;
         if (isset($tournament->is_private) && $tournament->is_private) {
-            $providedCode = $request->query('code'); 
-            
-            if ($providedCode !== $tournament->access_code) {
-                return Inertia::render('Public/RestrictedAccess', [
-                    'tournamentName' => $tournament->name,
-                    'slug' => $tournament->slug ?? $tournament->id,
-                    'tournamentId' => $tournament->id
-                ]);
+            $sessionKey  = "t_access_{$tournament->id}";
+            $providedCode = $request->query('code');
+
+            if ($providedCode === $tournament->access_code) {
+                // Guardar acceso en sesión
+                session([$sessionKey => true, "t_attempts_{$tournament->id}" => 0]);
+                $hasAccess = true;
+            } elseif (session($sessionKey)) {
+                $hasAccess = true;
+            } else {
+                $hasAccess = false; // Puede ver la página pero no los códigos
             }
         }
         // -----------------------------
@@ -48,10 +51,57 @@ class PublicTournamentController extends Controller
             $tournament->banner_image = asset('public/' . $tournament->banner_image);
         }
 
+        $attemptsLeft = 3 - (int) session("t_attempts_{$tournament->id}", 0);
+
         return Inertia::render('Public/TournamentLive', [
-            'tournament' => $tournament,
-            'accessCode' => $request->query('code')
+            'tournament'   => $tournament,
+            'accessCode'   => $request->query('code'),
+            'isPrivate'    => (bool)($tournament->is_private ?? false),
+            'hasAccess'    => $hasAccess,
+            'attemptsLeft' => max(0, $attemptsLeft),
         ]);
+    }
+
+    /**
+     * POST /t/{id}/verify-code  — Verifica el código de acceso con rate limiting (máx 3 intentos)
+     */
+    public function verifyCode(Request $request, $id)
+    {
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if (!$tournament || !$tournament->is_private) {
+            return response()->json(['success' => false, 'message' => 'Torneo no encontrado.'], 404);
+        }
+
+        $attemptsKey = "t_attempts_{$tournament->id}";
+        $accessKey   = "t_access_{$tournament->id}";
+        $attempts    = (int) session($attemptsKey, 0);
+
+        if ($attempts >= 3) {
+            return response()->json([
+                'success'      => false,
+                'blocked'      => true,
+                'message'      => 'Has superado el número máximo de intentos. Solicita un nuevo acceso.',
+                'attemptsLeft' => 0,
+            ], 429);
+        }
+
+        $providedCode = trim($request->input('code', ''));
+
+        if ($providedCode === $tournament->access_code) {
+            session([$accessKey => true, $attemptsKey => 0]);
+            return response()->json(['success' => true, 'message' => '¡Acceso concedido!']);
+        }
+
+        $attempts++;
+        session([$attemptsKey => $attempts]);
+        $left = 3 - $attempts;
+
+        return response()->json([
+            'success'      => false,
+            'blocked'      => $left <= 0,
+            'message'      => $left > 0 ? "Código incorrecto. Te quedan {$left} intento(s)." : 'Has superado el número máximo de intentos. Solicita un nuevo acceso.',
+            'attemptsLeft' => max(0, $left),
+        ], 401);
     }
 
     /**
@@ -74,19 +124,24 @@ class PublicTournamentController extends Controller
             ->whereNotNull('raw_data')
             ->count();
 
-        // 3. Lista de Partidas
+        // 3. Lista de Partidas — ocultar códigos si es torneo privado sin acceso
+        $isPrivateTournament = (bool)($tournament->is_private ?? false);
+        $sessionKey          = "t_access_{$tournament->id}";
+        $hasAccess           = !$isPrivateTournament || session($sessionKey);
+
         $matchesList = DB::table('tournament_matches')
             ->where('tournament_id', $id)
             ->orderBy('created_at', 'desc')
             ->select('id', 'game_mode', 'custom_code', 'raw_data', 'created_at')
             ->get()
-            ->map(function($m) {
+            ->values()
+            ->map(function($m, $index) use ($hasAccess) {
                 return [
-                    'id' => $m->id,
-                    'mode' => strtoupper($m->game_mode),
-                    'code' => $m->custom_code ?? '---',
-                    'status' => is_null($m->raw_data) ? 'En Curso' : 'Finalizada',
-                    'is_active' => is_null($m->raw_data),
+                    'id'         => $m->id,
+                    'mode'       => strtoupper($m->game_mode),
+                    'code'       => $hasAccess ? ($m->custom_code ?? '---') : 'Partida ' . ($index + 1),
+                    'status'     => is_null($m->raw_data) ? 'En Curso' : 'Finalizada',
+                    'is_active'  => is_null($m->raw_data),
                     'created_at' => $m->created_at
                 ];
             });

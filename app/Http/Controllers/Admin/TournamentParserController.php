@@ -314,6 +314,57 @@ class TournamentParserController extends Controller
     public function getSerializedStandings()
     {
         $this->ensureDatabaseIsReady();
+
+        // Auto-generar los 4 torneos de la Liga si no existen
+        $existingCount = DB::table('tournaments')->where('is_serialized', true)->count();
+        if ($existingCount === 0) {
+            $admin = DB::table('users')->where('email', '18jangel18@gmail.com')->first();
+            $adminId = $admin?->id ?? 1;
+
+            $leagueTournaments = [
+                [
+                    'name'         => 'Rankit Pro League - Clasificatorio 1',
+                    'slug'         => 'rankit-league-clasificatorio-1',
+                    'is_serialized'=> true,
+                    'is_private'   => false,
+                    'table_name'   => 'league_clasificatorio_1_' . time(),
+                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+                ],
+                [
+                    'name'         => 'Rankit Pro League - Clasificatorio 2',
+                    'slug'         => 'rankit-league-clasificatorio-2',
+                    'is_serialized'=> true,
+                    'is_private'   => false,
+                    'table_name'   => 'league_clasificatorio_2_' . (time()+1),
+                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+                ],
+                [
+                    'name'         => 'Rankit Pro League - Repechaje',
+                    'slug'         => 'rankit-league-repechaje',
+                    'is_serialized'=> true,
+                    'is_private'   => false,
+                    'table_name'   => 'league_repechaje_' . (time()+2),
+                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+                ],
+                [
+                    'name'         => 'Rankit Pro League - Gran Final',
+                    'slug'         => 'rankit-league-gran-final',
+                    'is_serialized'=> true,
+                    'is_private'   => true,
+                    'access_code'  => 'rankit2025final',
+                    'table_name'   => 'league_gran_final_' . (time()+3),
+                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+                ],
+            ];
+
+            foreach ($leagueTournaments as $lt) {
+                DB::table('tournaments')->insert(array_merge($lt, [
+                    'user_id'    => $adminId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]));
+            }
+        }
         
         $tournaments = DB::table('tournaments')
             ->where('is_serialized', true)
@@ -338,7 +389,7 @@ class TournamentParserController extends Controller
                 
             $standings[] = [
                 'tournament' => $t,
-                'standings' => $stats
+                'standings'  => $stats
             ];
         }
         
@@ -1132,13 +1183,17 @@ class TournamentParserController extends Controller
         $this->ensureDatabaseIsReady();
         $request->validate([
             'player_name' => 'required|string|max:255',
-            'email' => 'required|email',
             'whatsapp' => 'nullable|string|max:20',
         ]);
 
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Debes iniciar sesión para registrarte.'], 401);
+        }
+
         $exists = DB::table('tournament_registrations')
             ->where('tournament_id', $id)
-            ->where('email', $request->email)
+            ->where('email', $user->email)
             ->first();
 
         if ($exists) {
@@ -1148,7 +1203,7 @@ class TournamentParserController extends Controller
         DB::table('tournament_registrations')->insert([
             'tournament_id' => $id,
             'player_name' => $request->player_name,
-            'email' => $request->email,
+            'email' => $user->email,
             'whatsapp' => $request->whatsapp,
             'discord' => $request->discord,
             'payment_status' => 'pending',
@@ -1213,7 +1268,7 @@ class TournamentParserController extends Controller
             $targetId = DB::table('tournaments')->insertGetId([
                 'user_id' => $tournament->user_id,
                 'name' => $tournament->name . ' - Fase 2',
-                'slug' => $tournament->slug ? $tournament->slug . '-fase2' : null,
+                'slug' => ($tournament->slug ?? null) ? $tournament->slug . '-fase2' : null,
                 'is_private' => $tournament->is_private,
                 'scoring_format' => $tournament->scoring_format,
                 'table_name' => 'fase2_' . time(),
