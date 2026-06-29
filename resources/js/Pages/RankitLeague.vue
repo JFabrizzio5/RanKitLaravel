@@ -19,7 +19,7 @@ const navigate = (view) => {
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             
             <div class="flex items-center gap-3">
-                <img src="/league/logo.png" alt="Logo Rankit Pro" class="w-10 h-10 sm:w-12 sm:h-12 object-contain">
+                <img src="/public/public/league/logo.png" alt="Logo Rankit Pro" class="w-10 h-10 sm:w-12 sm:h-12 object-contain">
                 <div class="flex flex-col">
                     <span class="font-block text-2xl sm:text-3xl tracking-wide text-white uppercase italic leading-none">
                         RANKIT<span class="text-fnBrightPurple">.PRO</span>
@@ -152,7 +152,7 @@ const navigate = (view) => {
                     <!-- Póster Semana 1 -->
                     <div onclick="selectWeek(1)" id="card-w1" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-100 shadow-glowPurple">
                         <div class="noise-overlay"></div>
-                        <img src="/league/clasificatorio-1.png" alt="Póster de fase clasificatoria de la semana 1 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
+                        <img src="/public/public/league/clasificatorio-1.png" alt="Póster de fase clasificatoria de la semana 1 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
                         
                         <div class="relative z-20 h-full flex flex-col p-8">
@@ -178,7 +178,7 @@ const navigate = (view) => {
                     <!-- Póster Semana 2 -->
                     <div onclick="selectWeek(2)" id="card-w2" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-75 hover:opacity-100">
                         <div class="noise-overlay"></div>
-                        <img src="/league/clasificatorio-2.png" alt="Póster de segunda clasificatoria de la semana 2 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
+                        <img src="/public/league/clasificatorio-2.png" alt="Póster de segunda clasificatoria de la semana 2 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
                         
                         <div class="relative z-20 h-full flex flex-col p-8">
@@ -204,7 +204,7 @@ const navigate = (view) => {
                     <!-- Póster Semana 3 (Repechaje) -->
                     <div onclick="selectWeek(3)" id="card-w3" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-75 hover:opacity-100">
                         <div class="noise-overlay"></div>
-                        <img src="/league/repechaje.png" alt="Póster de repechaje de la semana 3 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
+                        <img src="/public/league/repechaje.png" alt="Póster de repechaje de la semana 3 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
                         
                         <div class="relative z-20 h-full flex flex-col p-8">
@@ -230,7 +230,7 @@ const navigate = (view) => {
                     <!-- Póster Semana 4 (Final) -->
                     <div onclick="selectWeek(4)" id="card-w4" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-75 hover:opacity-100">
                         <div class="noise-overlay"></div>
-                        <img src="/league/gran-final.png" alt="Póster de gran final de la semana 4 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
+                        <img src="/public/league/gran-final.png" alt="Póster de gran final de la semana 4 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
                         
                         <div class="relative z-20 h-full flex flex-col p-8">
@@ -274,7 +274,7 @@ const navigate = (view) => {
                         </p>
                         <div class="pt-4 border-t border-white/10">
                             <span class="text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-500 mb-3 block">Póster de la fase</span>
-                            <img id="panel-poster" src="/league/clasificatorio-1.png" alt="Póster oficial de la fase seleccionada" class="w-full rounded-md border border-white/10 bg-black/30 object-cover">
+                            <img id="panel-poster" src="/public/league/clasificatorio-1.png" alt="Póster oficial de la fase seleccionada" class="w-full rounded-md border border-white/10 bg-black/30 object-cover">
                         </div>
                     </div>
 
@@ -564,7 +564,7 @@ const navigate = (view) => {
                 badge: "Fase Inicial", title: "SEMANA 1", 
                 desc_short: "El inicio de la liga regular. Compite en el primer corte gratuito o aprovecha el tier Premium para asegurar tu cupo.",
                 color: "text-fnBrightPurple", borderColor: "border-fnBrightPurple",
-                poster: "/league/clasificatorio-1.png", posterAlt: "Póster de la semana 1",
+                poster: "/public/league/clasificatorio-1.png", posterAlt: "Póster de la semana 1",
                 desc1: "<p>Las primeras 3 partidas son <strong class='text-white'>GRATIS</strong> para buscar clasificación. Con el Upgrade Premium, juegas <strong class='text-white'>2 partidas extras (5 en total)</strong> y participas por el pozo de dinero semanal.</p><p>El lobby es privado. Prohibido el teaming o griefing intencional. Formato puramente Solos (Sin suplentes).</p>",
                 desc2: "<p>Hay dos cortes de clasificación hacia la Final:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li class='flex items-start gap-2'><i class='fa-solid fa-check text-fnBrightPurple mt-1'></i> <span><strong>Corte Free (Partidas 1-3):</strong> El <strong class='text-white'>Top 10% general</strong> de la jornada avanza.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-crown text-fnGold mt-1'></i> <span><strong>Corte Premium (Partidas 4-5):</strong> El <strong class='text-white'>Top 10% de los usuarios de pago</strong> avanza, sin contar a los ya clasificados.</span></li></ul>" 
             },
@@ -572,7 +572,7 @@ const navigate = (view) => {
                 badge: "Segunda Oportunidad", title: "SEMANA 2", 
                 desc_short: "Misma modalidad, nueva tabla de puntos. Segundo llamado para el Top 10% gratuito y premium.",
                 color: "text-fnEmerald", borderColor: "border-fnEmerald",
-                poster: "/league/clasificatorio-2.png", posterAlt: "Póster de la semana 2",
+                poster: "/public/league/clasificatorio-2.png", posterAlt: "Póster de la semana 2",
                 desc1: "<p>Mantenemos el formato exacto de <strong class='text-white'>Battle Royale Clásico en Solos</strong>. 3 partidas gratis para el primer corte, y 2 adicionales para el corte Premium y la disputa por la bolsa semanal.</p><p>Los jugadores clasificados en la Semana 1 pueden jugar para pelear por el dinero de la semana 2, pero sus cupos de clasificación recorrerán la tabla.</p>",
                 desc2: "<p>Se aplican los mismos dos cortes de clasificación hacia la Final:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li class='flex items-start gap-2'><i class='fa-solid fa-check text-fnEmerald mt-1'></i> <span><strong>Corte Free (Partidas 1-3):</strong> El <strong class='text-white'>Top 10% general</strong> avanza.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-crown text-fnGold mt-1'></i> <span><strong>Corte Premium (Partidas 4-5):</strong> El <strong class='text-white'>Top 10% de los usuarios de pago</strong> avanza, recorriendo a los ya clasificados.</span></li></ul>" 
             },
@@ -580,7 +580,7 @@ const navigate = (view) => {
                 badge: "La Última Vida", title: "SEMANA 3", 
                 desc_short: "El Repechaje Extremo. 4 partidas en total divididas en las dos disciplinas principales de la isla. Solo 8 tickets de clasificación en juego.",
                 color: "text-fnCrimson", borderColor: "border-fnCrimson",
-                poster: "/league/repechaje.png", posterAlt: "Póster de la semana 3",
+                poster: "/public/league/repechaje.png", posterAlt: "Póster de la semana 3",
                 desc1: "<p>Este es el filtro final de versatilidad. Jugaremos <strong class='text-white'>4 partidas exactas: 2 de Battle Royale Clásico y 2 de Recarga (Reload)</strong>.</p><p>Ya no hay clasificación por porcentaje. Los lugares son contados y se otorgan por mérito absoluto o agresividad pura.</p>",
                 desc2: "<p>Los tickets a la Final se reparten de la siguiente manera (8 Pases en total):</p><ul class='space-y-3 mt-2 text-sm text-gray-300'><li class='flex items-start gap-2'><i class='fa-solid fa-trophy text-fnCrimson mt-1'></i> <span><strong>Ganadores (4 pases):</strong> El jugador que gane cada partida.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-chart-line text-fnCrimson mt-1'></i> <span><strong>Constancia (3 pases):</strong> Los 3 jugadores con mayor cantidad de puntos totales en las 4 partidas.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-skull text-fnCrimson mt-1'></i> <span><strong>MVP Kills (1 pase):</strong> El jugador con mayor número de eliminaciones totales que no haya clasificado por los métodos anteriores.</span></li></ul>" 
             },
@@ -588,7 +588,7 @@ const navigate = (view) => {
                 badge: "El Cierre Absoluto", title: "GRAN FINAL", 
                 desc_short: "Solo los mejores. Top 15% de W1 y W2, más los ganadores del Repechaje W3. El nivel más alto de Solos del servidor.",
                 color: "text-fnGold", borderColor: "border-fnGold",
-                poster: "/league/gran-final.png", posterAlt: "Póster de la gran final",
+                poster: "/public/league/gran-final.png", posterAlt: "Póster de la gran final",
                 desc1: "<p>Volvemos al <strong class='text-white'>Battle Royale Clásico</strong>. Lobbies privados apilados (Stacked) con custom matchmaking. 6 partidas consecutivas donde no hay margen de error. No se permiten suplentes, es el jugador registrado o nada.</p>",
                 desc2: "<p>El pago del Mega Pozo. Los puntos de esta serie definen al campeón, que se lleva la gran bolsa.</p><p class='mt-2'>Además, finalizando el torneo, el <strong class='text-white border-b border-fnGold'>20% de toda la recaudación</strong> de la temporada se repartirá en sorteos de V-Bucks o efectivo en vivo para todos los que participaron alguna vez en la liga.</p>" 
             }
