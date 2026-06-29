@@ -33,11 +33,11 @@ const navigate = (view) => {
                 <button @click="navigate('league')" id="nav-league" class="nav-link text-gray-500 transition-colors hover:text-white">RANKIT.PRO LEAGUE</button>
                 <button @click="navigate('others')" id="nav-others" class="nav-link text-gray-500 transition-colors hover:text-white">OTROS TORNEOS</button>
                 <button @click="navigate('simulator')" id="nav-simulator" class="nav-link text-gray-500 transition-colors hover:text-white">PREMIOS</button>
-                <a href="registro.html" id="nav-register" class="nav-link text-gray-500 transition-colors hover:text-white">REGISTRO</a>
+                <a href="#" @click.prevent="navigate('register')" id="nav-register" class="nav-link text-gray-500 transition-colors hover:text-white">REGISTRO</a>
             </div>
 
             <div>
-                <a href="registro.html" class="fn-btn inline-block bg-white text-black px-8 py-2.5 hover:bg-gray-200 transition-colors group relative overflow-hidden">
+                <a href="#" @click.prevent="navigate('register')" class="fn-btn inline-block bg-white text-black px-8 py-2.5 hover:bg-gray-200 transition-colors group relative overflow-hidden">
                     <span class="block font-chakra font-bold text-sm uppercase tracking-widest relative z-10">
                         COMPETIR AHORA
                     </span>
@@ -52,7 +52,7 @@ const navigate = (view) => {
             <button @click="navigate('league')" class="hover:text-white transition-colors"><i class="fa-solid fa-trophy block text-center mb-1 text-base"></i>League</button>
             <button @click="navigate('others')" class="hover:text-white transition-colors"><i class="fa-solid fa-gamepad block text-center mb-1 text-base"></i>Otros</button>
             <button @click="navigate('simulator')" class="hover:text-white transition-colors"><i class="fa-solid fa-coins block text-center mb-1 text-base"></i>Premios</button>
-            <a href="registro.html" class="hover:text-white transition-colors text-center"><i class="fa-solid fa-user-plus block text-center mb-1 text-base"></i>Registro</a>
+            <a href="#" @click.prevent="navigate('register')" class="hover:text-white transition-colors text-center"><i class="fa-solid fa-user-plus block text-center mb-1 text-base"></i>Registro</a>
         </div>
     </nav>
 
@@ -82,7 +82,7 @@ const navigate = (view) => {
                         </p>
                         
                         <div class="flex flex-col sm:flex-row gap-4">
-                            <a href="registro.html" class="fn-btn inline-block bg-fnBrightPurple text-white px-10 py-5 hover:bg-purple-600 transition-all font-chakra font-bold tracking-widest uppercase text-base text-center shadow-glowPurple relative group overflow-hidden">
+                            <a href="#" @click.prevent="navigate('register')" class="fn-btn inline-block bg-fnBrightPurple text-white px-10 py-5 hover:bg-purple-600 transition-all font-chakra font-bold tracking-widest uppercase text-base text-center shadow-glowPurple relative group overflow-hidden">
                                 <span class="relative z-10">¡INSCRIBETE AHORA!</span>
                                 <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]"></div>
                             </a>
@@ -325,7 +325,7 @@ const navigate = (view) => {
                     </div>
                     <div class="pt-4 border-t border-white/10 flex items-center justify-between">
                         <span class="text-xs text-white font-chakra font-bold">$5 USD Entrada</span>
-                        <a href="registro.html?game=valorant-dm" class="text-xs text-red-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
+                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-red-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
                     </div>
                 </div>
 
@@ -338,7 +338,7 @@ const navigate = (view) => {
                     </div>
                     <div class="pt-4 border-t border-white/10 flex items-center justify-between">
                         <span class="text-xs text-white font-chakra font-bold">$5 USD Entrada</span>
-                        <a href="registro.html?game=lol-aram" class="text-xs text-blue-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
+                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-blue-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
                     </div>
                 </div>
 
@@ -351,7 +351,7 @@ const navigate = (view) => {
                     </div>
                     <div class="pt-4 border-t border-white/10 flex items-center justify-between">
                         <span class="text-xs text-white font-chakra font-bold">$10 USD Entrada</span>
-                        <a href="registro.html?game=rocket-hoops" class="text-xs text-cyan-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
+                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-cyan-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
                     </div>
                 </div>
 
@@ -364,7 +364,7 @@ const navigate = (view) => {
                     </div>
                     <div class="pt-4 border-t border-white/10 flex items-center justify-between">
                         <span class="text-xs text-white font-chakra font-bold">$15 USD Entrada</span>
-                        <a href="registro.html?game=overwatch-copa" class="text-xs text-orange-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
+                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-orange-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
                     </div>
                 </div>
 
