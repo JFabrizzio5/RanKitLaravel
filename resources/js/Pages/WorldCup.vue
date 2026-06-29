@@ -117,26 +117,26 @@ const getTeamInfo = (teamIdOrName) => {
                 <div v-if="activeTab === 'matches'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div v-for="m in matches" :key="m.id || Math.random()" class="bg-[#1f0d36] border border-fuchsia-900/30 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
                         <div class="text-[10px] uppercase font-bold text-fuchsia-500 tracking-wider">
-                            {{ m.stage_name || m.group_id || 'Partido' }} <br>
-                            <span class="text-gray-500">{{ new Date(m.date || m.datetime).toLocaleString() }}</span>
+                            {{ m.type === 'group' ? 'Grupo ' + m.group : m.type }} <br>
+                            <span class="text-gray-500">{{ m.local_date }}</span>
                         </div>
                         
                         <div class="flex-1 flex justify-end items-center gap-3 w-full sm:w-auto">
-                            <span class="font-bold text-white text-right text-lg">{{ m.home_team_en || m.home_team?.name || 'TBD' }}</span>
+                            <span class="font-bold text-white text-right text-lg">{{ m.home_team_name_en || 'TBD' }}</span>
                         </div>
                         
                         <div class="px-6 py-2 bg-[#120422] rounded-lg border border-fuchsia-900/30 text-center min-w-[120px]">
-                            <div v-if="m.status === 'completed' || m.status === 'in_progress'" class="text-2xl font-bold font-mono text-white flex justify-center gap-3">
-                                <span :class="m.home_score > m.away_score ? 'text-fuchsia-400' : ''">{{ m.home_score || 0 }}</span>
+                            <div v-if="m.finished === 'TRUE' || (m.time_elapsed && m.time_elapsed !== 'notstarted')" class="text-2xl font-bold font-mono text-white flex justify-center gap-3">
+                                <span :class="Number(m.home_score) > Number(m.away_score) ? 'text-fuchsia-400' : ''">{{ m.home_score || 0 }}</span>
                                 <span class="text-gray-600">-</span>
-                                <span :class="m.away_score > m.home_score ? 'text-fuchsia-400' : ''">{{ m.away_score || 0 }}</span>
+                                <span :class="Number(m.away_score) > Number(m.home_score) ? 'text-fuchsia-400' : ''">{{ m.away_score || 0 }}</span>
                             </div>
                             <div v-else class="text-sm text-gray-500 font-bold uppercase tracking-wider">VS</div>
-                            <div v-if="m.status === 'in_progress'" class="text-[10px] text-red-500 mt-1 uppercase font-bold tracking-widest animate-pulse">EN VIVO</div>
+                            <div v-if="m.finished !== 'TRUE' && m.time_elapsed && m.time_elapsed !== 'notstarted'" class="text-[10px] text-red-500 mt-1 uppercase font-bold tracking-widest animate-pulse">EN VIVO</div>
                         </div>
                         
                         <div class="flex-1 flex justify-start items-center gap-3 w-full sm:w-auto">
-                            <span class="font-bold text-white text-left text-lg">{{ m.away_team_en || m.away_team?.name || 'TBD' }}</span>
+                            <span class="font-bold text-white text-left text-lg">{{ m.away_team_name_en || 'TBD' }}</span>
                         </div>
                     </div>
                     <div v-if="!matches || matches.length === 0" class="col-span-full text-center py-20 text-gray-500 font-bold uppercase tracking-widest">
