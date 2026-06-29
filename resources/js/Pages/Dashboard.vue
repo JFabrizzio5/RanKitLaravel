@@ -16,14 +16,20 @@ const rankitLeagueTournaments = [
 ];
 
 const searchQuery = ref('');
+const filterGame = ref('all');
 
 const filteredTorneos = computed(() => {
     if (!props.torneosPublicos) return [];
-    if (!searchQuery.value) return props.torneosPublicos;
-    return props.torneosPublicos.filter(t => 
-        t.name.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
-        (t.slug && t.slug.toLowerCase().includes(searchQuery.value.toLowerCase()))
-    );
+    
+    return props.torneosPublicos.filter(t => {
+        const matchesSearch = !searchQuery.value || t.name.toLowerCase().includes(searchQuery.value.toLowerCase()) || (t.slug && t.slug.toLowerCase().includes(searchQuery.value.toLowerCase()));
+        
+        const matchesGame = filterGame.value === 'all' || 
+                           (t.name && t.name.toLowerCase().includes(filterGame.value.toLowerCase())) ||
+                           (t.slug && t.slug.toLowerCase().includes(filterGame.value.toLowerCase()));
+                           
+        return matchesSearch && matchesGame;
+    });
 });
 </script>
 
@@ -101,14 +107,23 @@ const filteredTorneos = computed(() => {
                         <div class="flex-1 h-px bg-white/5 ml-4"></div>
                     </div>
                     
-                    <div class="mb-8 relative max-w-2xl">
-                        <input 
-                            v-model="searchQuery" 
-                            type="text" 
-                            placeholder="Buscar torneo por nombre..." 
-                            class="w-full bg-[#111] border border-white/10 px-6 py-4 text-white text-sm uppercase tracking-widest focus:outline-none focus:border-[var(--rankit-neon)] transition-colors placeholder-gray-600 rounded"
-                        >
-                        <i class="ph ph-magnifying-glass absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 text-xl"></i>
+                    <div class="mb-8 flex flex-col sm:flex-row gap-4 relative max-w-3xl">
+                        <div class="relative flex-1">
+                            <input 
+                                v-model="searchQuery" 
+                                type="text" 
+                                placeholder="Buscar torneo por nombre..." 
+                                class="w-full bg-[#111] border border-white/10 px-6 py-4 text-white text-sm uppercase tracking-widest focus:outline-none focus:border-[var(--rankit-neon)] transition-colors placeholder-gray-600 rounded"
+                            >
+                            <i class="ph ph-magnifying-glass absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 text-xl"></i>
+                        </div>
+                        <select v-model="filterGame" class="bg-[#111] border border-white/10 px-6 py-4 text-white text-sm uppercase tracking-widest focus:outline-none focus:border-[var(--rankit-neon)] transition-colors rounded sm:w-48 appearance-none cursor-pointer">
+                            <option value="all">TODOS LOS JUEGOS</option>
+                            <option value="fortnite">FORTNITE</option>
+                            <option value="valorant">VALORANT</option>
+                            <option value="lol">LEAGUE OF LEGENDS</option>
+                            <option value="fc24">EA FC 24</option>
+                        </select>
                     </div>
 
                     <div v-if="filteredTorneos.length > 0" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -143,9 +158,19 @@ const filteredTorneos = computed(() => {
                         <div v-for="t in misTorneos" :key="t.id" class="bg-gradient-to-br from-[#1a0a2e] to-[#0a0414] border border-purple-500/20 p-6 rounded hover:border-purple-500/50 transition-colors flex flex-col justify-between">
                             <div>
                                 <h3 class="text-lg font-bold text-white uppercase font-display italic tracking-wide mb-2">{{ t.name }}</h3>
-                                <p class="text-gray-500 text-xs mb-4">{{ t.rules ? 'Torneo con reglas personalizadas' : 'Torneo Estándar' }}</p>
+                                
+                                <div class="grid grid-cols-2 gap-2 my-4">
+                                    <div class="bg-black/30 p-2 rounded text-center">
+                                        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Partidas</div>
+                                        <div class="text-lg font-black text-white font-chakra">0</div>
+                                    </div>
+                                    <div class="bg-black/30 p-2 rounded text-center">
+                                        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Win Rate</div>
+                                        <div class="text-lg font-black text-white font-chakra">0%</div>
+                                    </div>
+                                </div>
                             </div>
-                            <Link :href="route('tournaments.show', t.slug || t.id)" class="inline-block text-center bg-white text-black font-bold text-xs py-2 px-4 uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all rounded">
+                            <Link :href="route('tournaments.show', t.slug || t.id)" class="inline-block text-center bg-white text-black font-bold text-xs py-2 px-4 uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all rounded w-full">
                                 Ver Mi Posición
                             </Link>
                         </div>

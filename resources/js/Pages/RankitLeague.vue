@@ -4,17 +4,22 @@ import { ref, onMounted } from "vue";
 import axios from "axios";
 
 const activeView = ref("home");
-const standings = ref([]);
+const allSerializedTournaments = ref([]);
+const activeTournamentIndex = ref(0);
 const loading = ref(true);
 
 const navigate = (view) => {
     activeView.value = view;
 };
 
+const selectTournament = (index) => {
+    activeTournamentIndex.value = index;
+};
+
 onMounted(async () => {
     try {
         const res = await axios.get('/api/league/standings');
-        standings.value = res.data;
+        allSerializedTournaments.value = res.data;
     } catch (e) {
         console.error(e);
     } finally {
@@ -513,14 +518,31 @@ onMounted(async () => {
                 </p>
             </div>
 
-            <div class="max-w-4xl mx-auto bg-black/40 border border-white/10 p-6 sm:p-10 rounded-xl">
+            <div class="max-w-5xl mx-auto bg-black/40 border border-white/10 p-6 sm:p-10 rounded-xl">
+                <!-- Selector de Torneos Seriados -->
+                <div v-if="!loading && allSerializedTournaments.length > 0" class="flex flex-wrap justify-center gap-4 mb-8">
+                    <button 
+                        v-for="(item, index) in allSerializedTournaments" 
+                        :key="index"
+                        @click="selectTournament(index)"
+                        :class="[
+                            'px-6 py-2 rounded-full font-chakra font-bold text-[11px] uppercase tracking-widest transition-all',
+                            activeTournamentIndex === index 
+                                ? 'bg-[var(--rankit-neon)] text-black shadow-[0_0_15px_rgba(var(--rankit-neon-rgb),0.5)]' 
+                                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                        ]"
+                    >
+                        {{ item.tournament.name }}
+                    </button>
+                </div>
+
                 <!-- Loading State -->
                 <div v-if="loading" class="flex justify-center items-center py-20">
                     <div class="w-10 h-10 border-4 border-white/20 border-t-[var(--rankit-neon)] rounded-full animate-spin"></div>
                 </div>
 
                 <!-- Leaderboard Table -->
-                <div v-else class="overflow-x-auto custom-scrollbar">
+                <div v-else-if="allSerializedTournaments.length > 0" class="overflow-x-auto custom-scrollbar">
                     <table class="w-full text-left border-collapse min-w-[600px]">
                         <thead>
                             <tr class="border-b border-white/10 text-[10px] font-bold text-gray-500 uppercase tracking-widest font-chakra">
@@ -532,7 +554,7 @@ onMounted(async () => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="(player, index) in standings" :key="player.id || index" class="border-b border-white/5 hover:bg-white/5 transition-colors group">
+                            <tr v-for="(player, index) in allSerializedTournaments[activeTournamentIndex]?.standings" :key="index" class="border-b border-white/5 hover:bg-white/5 transition-colors group">
                                 <td class="py-4 px-4 text-white font-black font-chakra">
                                     <span :class="{'text-yellow-400': index === 0, 'text-gray-300': index === 1, 'text-yellow-600': index === 2}">
                                         {{ index + 1 }}
@@ -541,22 +563,26 @@ onMounted(async () => {
                                 <td class="py-4 px-4">
                                     <div class="flex items-center gap-3">
                                         <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-400">
-                                            {{ player.name ? player.name.charAt(0).toUpperCase() : '?' }}
+                                            {{ player.player_name ? player.player_name.charAt(0).toUpperCase() : '?' }}
                                         </div>
-                                        <span class="text-white font-bold uppercase tracking-wider font-chakra">{{ player.name || 'Desconocido' }}</span>
+                                        <span class="text-white font-bold uppercase tracking-wider font-chakra">{{ player.player_name || 'Desconocido' }}</span>
                                     </div>
                                 </td>
                                 <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.matches_played || 0 }}</td>
-                                <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.kills || 0 }}</td>
-                                <td class="py-4 px-4 text-center text-white font-black text-lg font-chakra">{{ player.total_points || 0 }}</td>
+                                <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.total_kills || 0 }}</td>
+                                <td class="py-4 px-4 text-center text-white font-black text-lg font-chakra">{{ (player.total_kills * 10) || 0 }}</td>
                             </tr>
-                            <tr v-if="!standings || standings.length === 0">
+                            <tr v-if="!allSerializedTournaments[activeTournamentIndex]?.standings || allSerializedTournaments[activeTournamentIndex].standings.length === 0">
                                 <td colspan="5" class="py-12 text-center text-gray-500 font-bold uppercase tracking-widest text-xs">
-                                    La tabla de clasificación aún no está disponible.
+                                    No hay jugadores clasificados para este torneo aún.
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+                
+                <div v-else class="py-16 text-center text-gray-500 font-bold uppercase tracking-widest text-sm border border-white/5 border-dashed rounded-xl">
+                    No hay torneos seriados activos en este momento.
                 </div>
             </div>
         </section>

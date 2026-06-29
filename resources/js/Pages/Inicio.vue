@@ -251,18 +251,17 @@ onMounted(() => {
         <template v-if="props.canLogin">
           <template v-if="$page.props.auth?.user">
             <Link
-              v-if="$page.props.auth.user.email === '18jangel18@gmail.com'"
-              :href="route('jangel.indexdos')"
-              class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
-            >
-              ADMIN EVENTOS
-            </Link>
-            <Link
-              v-else
               :href="route('dashboard')"
               class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
             >
-              {{ t.nav.dashboard }}
+              LOBBY
+            </Link>
+            <Link
+              v-if="$page.props.auth.user.email === '18jangel18@gmail.com'"
+              :href="route('jangel.indexdos')"
+              class="hidden mr-4 text-sm font-bold tracking-wider text-[var(--rankit-neon)] uppercase sm:block hover:text-white"
+            >
+              ADMIN EVENTOS
             </Link>
           </template>
 
@@ -326,18 +325,17 @@ onMounted(() => {
   <!-- Si está logeado: se queda "Organizar Torneo" (como pediste) -->
   <template v-if="$page.props.auth?.user">
     <Link
-      v-if="$page.props.auth.user.email === '18jangel18@gmail.com'"
-      :href="route('jangel.indexdos')"
-      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
-    >
-      <span class="btn-content">ADMIN EVENTOS</span>
-    </Link>
-    <Link
-      v-else
       :href="route('dashboard')"
       class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
     >
-      <span class="btn-content">{{ t.hero.btnOrganize }}</span>
+      <span class="btn-content">LOBBY</span>
+    </Link>
+    <Link
+      v-if="$page.props.auth.user.email === '18jangel18@gmail.com'"
+      :href="route('jangel.indexdos')"
+      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew-ghost"
+    >
+      <span class="btn-content text-[var(--rankit-neon)]">ADMIN EVENTOS</span>
     </Link>
   </template>
 
