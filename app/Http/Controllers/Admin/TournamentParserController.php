@@ -273,7 +273,9 @@ class TournamentParserController extends Controller
             'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
             'table_name' => Str::slug($request->name) . '_' . time(),
             'created_at' => now(), 
-            'updated_at' => now()
+            'updated_at' => now(),
+            'is_serialized' => $request->boolean('is_serialized'),
+            'parent_tournament_id' => $request->parent_tournament_id ?: null,
         ];
 
         // Solo Admin puede crear torneos privados
@@ -339,6 +341,11 @@ class TournamentParserController extends Controller
             'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
             'updated_at' => now(),
         ];
+
+        if (Schema::hasColumn('tournaments', 'is_serialized')) {
+            $data['is_serialized'] = $request->boolean('is_serialized');
+            $data['parent_tournament_id'] = $request->parent_tournament_id ?: null;
+        }
 
         if (Schema::hasColumn('tournaments', 'is_private')) {
             if ($this->isSuperAdmin(auth()->user())) {
@@ -1320,6 +1327,116 @@ class TournamentParserController extends Controller
             'updated_at' => now()
         ]);
 
-        return back()->with('success', 'Estado de reserva actualizado.');
+        return back()->with('success', 'Estado actualizado.');
+    }
+
+    // --- MÉTODOS DE LIGA Y REGISTROS (NUEVOS) ---
+
+    public function getPublicTournaments()
+    {
+        // Devolvemos torneos públicos y seriados para el dropdown
+        $user = auth()->user();
+        
+        $query = DB::table('tournaments')->where('is_private', false);
+        
+        if ($user) {
+            $query->orWhere('user_id', $user->id);
+            if ($this->isSuperAdmin($user)) {
+                $query = DB::table('tournaments'); // SuperAdmin ve todos
+            }
+        }
+        
+        $tournaments = $query->orderBy('created_at', 'desc')->get();
+        return response()->json($tournaments);
+    }
+
+    public function registerPlayer(Request $request)
+    {
+        $this->ensureDatabaseIsReady();
+        $user = auth()->user();
+        
+        $request->validate([
+            'tournament_id' => 'required|exists:tournaments,id',
+            'epic_id' => 'required|string',
+        ]);
+        
+        $tournament = DB::table('tournaments')->where('id', $request->tournament_id)->first();
+        if (!$tournament) {
+            return back()->with('error', 'Torneo no encontrado.');
+        }
+        
+        if ($tournament->is_private && $tournament->access_code !== $request->access_code) {
+            return back()->with('error', 'Código de acceso incorrecto para este torneo privado.');
+        }
+        
+        // Evitar doble registro
+        $exists = DB::table('tournament_registrations')
+            ->where('tournament_id', $request->tournament_id)
+            ->where('email', $user->email)
+            ->exists();
+            
+        if ($exists) {
+            return back()->with('error', 'Ya estás registrado en este torneo.');
+        }
+
+        DB::table('tournament_registrations')->insert([
+            'tournament_id' => $request->tournament_id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'epic_id' => $request->epic_id,
+            'whatsapp' => $request->whatsapp ?? null,
+            'tier' => $request->tier ?? 'free',
+            'payment_status' => 'pending', // Pagos manuales
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        
+        return back()->with('success', 'Registro exitoso (Pendiente de pago).');
+    }
+
+    public function qualifyPlayerManual(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'Sin permisos.');
+        
+        $request->validate([
+            'player_name' => 'required|string',
+            'player_email' => 'required|email'
+        ]);
+
+        // Evitar duplicados
+        $exists = DB::table('tournament_qualifiers')
+            ->where('parent_tournament_id', $id)
+            ->where('player_email', $request->player_email)
+            ->exists();
+
+        if ($exists) {
+            return back()->with('error', 'El jugador ya está clasificado a este evento.');
+        }
+
+        DB::table('tournament_qualifiers')->insert([
+            'parent_tournament_id' => $id,
+            'source_tournament_id' => null, // Manual
+            'player_name' => $request->player_name,
+            'player_email' => $request->player_email,
+            'epic_id' => $request->epic_id ?? null,
+            'kills' => 0,
+            'placement' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Jugador clasificado manualmente.');
+    }
+
+    public function removeQualifierManual($id, $qualifierId)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'Sin permisos.');
+        
+        DB::table('tournament_qualifiers')->where('id', $qualifierId)->delete();
+        return back()->with('success', 'Clasificación removida.');
     }
 }
