@@ -17,20 +17,20 @@ class TournamentsController extends Controller
      */
     public function show(int $id): Response
     {
-        /**
-         * 🔹 MOCK DATA
-         * Luego aquí reemplazas por:
-         * Tournament::with(...)->findOrFail($id)
-         */
+        $dbTournament = \Illuminate\Support\Facades\DB::table('tournaments')->where('id', $id)->first();
+        
+        if (!$dbTournament) {
+            abort(404, 'Torneo no encontrado');
+        }
 
         $tournament = [
-            'id' => $id,
-            'title' => 'BellzCup',
-            'game' => 'Fortnite',
+            'id' => $dbTournament->id,
+            'title' => $dbTournament->name,
+            'game' => $dbTournament->game_id ?? 'Juego Desconocido',
             'status' => 'En Vivo',
-            'hero_image' => 'https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80',
-            'prize_pool' => 2200,
-            'twitch_channel' => 'bellz_z11',
+            'hero_image' => 'https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80', // Placeholder
+            'prize_pool' => 0,
+            'twitch_channel' => $dbTournament->twitch_channel ?? '',
         ];
 
         $bracketRounds = [

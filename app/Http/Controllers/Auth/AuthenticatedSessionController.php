@@ -33,15 +33,7 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        // Lógica especial para el administrador del torneo
-        // Se usa redirect()->route() directo para evitar que 'intended' lo mande al dashboard si venía de ahí
-        if ($request->user()->email === '18jangel18@gmail.com') {
-            return redirect()->route('rankit.profile');
-        }
-
-        if ($request->user()->isAdmin()) {
-            return redirect()->route('game.selector');
-        }
+        // Lógica especial para el administrador del torneo (Eliminada para que vaya al dashboard normal)
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

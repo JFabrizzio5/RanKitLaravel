@@ -1017,6 +1017,9 @@ const copyInviteLink = () => {
                          </div>
                      </div>
                      <div class="flex gap-2 mt-2">
+                         <a v-if="reg.whatsapp" :href="`https://wa.me/${reg.whatsapp.replace(/[^0-9]/g, '')}`" target="_blank" class="flex-1 py-1 text-center bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded transition flex justify-center items-center gap-1 font-bold">
+                             <i class="ph-bold ph-whatsapp-logo"></i> WhatsApp
+                         </a>
                          <button v-if="reg.payment_status !== 'paid'" @click="updatePayment(reg.id, 'paid')" class="flex-1 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded transition">Aprobar</button>
                          <button v-if="reg.payment_status !== 'rejected'" @click="updatePayment(reg.id, 'rejected')" class="flex-1 py-1 bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white rounded transition">Rechazar</button>
                      </div>
