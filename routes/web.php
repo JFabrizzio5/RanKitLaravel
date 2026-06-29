@@ -41,8 +41,31 @@ Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('google.
 Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name('google.callback');
 
 // --- DASHBOARD USUARIO ---
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
+Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
+    if ($request->user()->email === '18jangel18@gmail.com') {
+        return redirect()->route('jangel.dashboard');
+    }
+
+    $email = $request->user()->email;
+    
+    // Obtener torneos donde el usuario está registrado
+    $misTorneosIds = \Illuminate\Support\Facades\DB::table('tournament_registrations')
+        ->where('email', $email)
+        ->pluck('tournament_id');
+        
+    $misTorneos = \Illuminate\Support\Facades\DB::table('tournaments')
+        ->whereIn('id', $misTorneosIds)
+        ->get();
+        
+    // Obtener todos los torneos públicos
+    $torneosPublicos = \Illuminate\Support\Facades\DB::table('tournaments')
+        ->where('is_private', false)
+        ->get();
+
+    return Inertia::render('Dashboard', [
+        'misTorneos' => $misTorneos,
+        'torneosPublicos' => $torneosPublicos
+    ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 // --- RUTAS RESTAURADAS ---
@@ -239,4 +262,4 @@ Route::post('/admin/tournaments/{tournament}/adjust-score', [TournamentParserCon
  // Esta ruta acepta el parámetro opcional ?code=XYZ
 Route::get('/t/{slug}', [PublicTournamentController::class, 'show'])->name('public.tournament.show');
 
-require __DIR__.'/auth.php';
+require __DIR__.'/auth.php';Route::get('/api/league/standings', [App\Http\Controllers\Admin\TournamentParserController::class, 'getSerializedStandings']);

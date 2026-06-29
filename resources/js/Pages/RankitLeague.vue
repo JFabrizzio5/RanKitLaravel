@@ -1,12 +1,26 @@
 <script setup>
 import { Head, Link } from "@inertiajs/vue3";
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import axios from "axios";
 
 const activeView = ref("home");
+const standings = ref([]);
+const loading = ref(true);
 
 const navigate = (view) => {
     activeView.value = view;
 };
+
+onMounted(async () => {
+    try {
+        const res = await axios.get('/api/league/standings');
+        standings.value = res.data;
+    } catch (e) {
+        console.error(e);
+    } finally {
+        loading.value = false;
+    }
+});
 </script>
 
 <template>
@@ -19,7 +33,7 @@ const navigate = (view) => {
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             
             <div class="flex items-center gap-3">
-                <img src="/public/public/league/logo.png" alt="Logo Rankit Pro" class="w-10 h-10 sm:w-12 sm:h-12 object-contain">
+                <img src="/public/league/logo.png" alt="Logo Rankit Pro" class="w-10 h-10 sm:w-12 sm:h-12 object-contain">
                 <div class="flex flex-col">
                     <span class="font-block text-2xl sm:text-3xl tracking-wide text-white uppercase italic leading-none">
                         RANKIT<span class="text-fnBrightPurple">.PRO</span>
@@ -152,7 +166,7 @@ const navigate = (view) => {
                     <!-- Póster Semana 1 -->
                     <div onclick="selectWeek(1)" id="card-w1" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-100 shadow-glowPurple">
                         <div class="noise-overlay"></div>
-                        <img src="/public/public/league/clasificatorio-1.png" alt="Póster de fase clasificatoria de la semana 1 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
+                        <img src="/public/league/clasificatorio-1.png" alt="Póster de fase clasificatoria de la semana 1 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
                         
                         <div class="relative z-20 h-full flex flex-col p-8">
@@ -301,6 +315,61 @@ const navigate = (view) => {
                     </div>
                 </div>
             </div>
+
+            <!-- Tablas Seriadas (Clasificación Actual) -->
+            <div class="mt-20 max-w-6xl mx-auto">
+                <div class="text-center mb-12">
+                    <h2 class="font-block text-4xl sm:text-5xl uppercase text-white tracking-wide mb-4">
+                        CLASIFICACIÓN <span class="text-fnBrightPurple">ACTUAL</span>
+                    </h2>
+                    <p class="text-gray-400 text-sm max-w-2xl mx-auto font-chakra uppercase tracking-widest">
+                        Ranking en vivo de los torneos seriados de la liga.
+                    </p>
+                </div>
+
+                <div v-if="loading" class="text-center text-fnBrightPurple py-10 font-chakra uppercase tracking-widest font-bold animate-pulse">
+                    Cargando Clasificación...
+                </div>
+                
+                <div v-else-if="standings.length === 0" class="text-center text-gray-500 py-10 font-chakra uppercase tracking-widest font-bold border border-gray-800 border-dashed rounded-xl">
+                    Aún no hay tablas de clasificación disponibles.
+                </div>
+
+                <div v-else class="space-y-16">
+                    <div v-for="(league, index) in standings" :key="index" class="premium-card p-6 md:p-10 relative overflow-hidden">
+                        <h3 class="font-block text-3xl text-white uppercase italic mb-6 border-b border-white/10 pb-4">
+                            {{ league.tournament.name }}
+                        </h3>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left font-chakra text-sm">
+                                <thead class="text-xs uppercase text-gray-500 border-b border-white/10">
+                                    <tr>
+                                        <th class="py-4 px-2">Pos</th>
+                                        <th class="py-4 px-2">Jugador</th>
+                                        <th class="py-4 px-2 text-center">Partidas</th>
+                                        <th class="py-4 px-2 text-center">Kills</th>
+                                        <th class="py-4 px-2 text-center">Daño</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(player, pIdx) in league.standings" :key="player.player_name" class="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                        <td class="py-4 px-2 font-bold" :class="pIdx < 3 ? 'text-fnBrightPurple' : 'text-gray-400'">#{{ pIdx + 1 }}</td>
+                                        <td class="py-4 px-2 font-bold text-white uppercase">{{ player.player_name }}</td>
+                                        <td class="py-4 px-2 text-center text-gray-400">{{ player.matches_played }}</td>
+                                        <td class="py-4 px-2 text-center text-white font-bold">{{ player.total_kills || 0 }}</td>
+                                        <td class="py-4 px-2 text-center text-gray-400">{{ player.total_damage || 0 }}</td>
+                                    </tr>
+                                    <tr v-if="league.standings.length === 0">
+                                        <td colspan="5" class="text-center py-8 text-gray-500 uppercase tracking-widest">Sin registros de partidas</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </section>
 
         <!-- ================= PÁGINA 3: OTROS TORNEOS ================= -->

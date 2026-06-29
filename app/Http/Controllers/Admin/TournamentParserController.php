@@ -37,6 +37,8 @@ class TournamentParserController extends Controller
                 $table->string('slug')->nullable();
                 $table->string('twitch_channel')->nullable();
                 $table->boolean('is_private')->default(false);
+                $table->boolean('is_serialized')->default(false);
+                $table->unsignedBigInteger('parent_tournament_id')->nullable();
                 $table->string('access_code')->nullable();
                 $table->longText('rules')->nullable(); // Reglas
                 $table->longText('prizes')->nullable(); // Premios
@@ -53,6 +55,8 @@ class TournamentParserController extends Controller
                 }
                 if (!Schema::hasColumn('tournaments', 'twitch_channel')) $table->string('twitch_channel')->nullable();
                 if (!Schema::hasColumn('tournaments', 'is_private')) $table->boolean('is_private')->default(false);
+                if (!Schema::hasColumn('tournaments', 'is_serialized')) $table->boolean('is_serialized')->default(false);
+                if (!Schema::hasColumn('tournaments', 'parent_tournament_id')) $table->unsignedBigInteger('parent_tournament_id')->nullable();
                 if (!Schema::hasColumn('tournaments', 'access_code')) $table->string('access_code')->nullable();
                 if (!Schema::hasColumn('tournaments', 'rules')) $table->longText('rules')->nullable();
                 if (!Schema::hasColumn('tournaments', 'prizes')) $table->longText('prizes')->nullable();
@@ -286,7 +290,41 @@ class TournamentParserController extends Controller
         }
 
         DB::table('tournaments')->insert($data);
-        return back()->with('success', 'Torneo creado.');
+        return redirect()->route('jangel.indexdos')->with('success', 'Torneo creado con éxito');
+    }
+
+    public function getSerializedStandings()
+    {
+        $this->ensureDatabaseIsReady();
+        
+        $tournaments = DB::table('tournaments')
+            ->where('is_serialized', true)
+            ->get();
+            
+        $standings = [];
+        
+        foreach ($tournaments as $t) {
+            $stats = DB::table('player_match_stats')
+                ->join('tournament_matches', 'player_match_stats.tournament_match_id', '=', 'tournament_matches.id')
+                ->where('tournament_matches.tournament_id', $t->id)
+                ->select(
+                    'player_match_stats.player_name',
+                    DB::raw('SUM(kills) as total_kills'),
+                    DB::raw('SUM(damage_done) as total_damage'),
+                    DB::raw('COUNT(tournament_match_id) as matches_played'),
+                    DB::raw('MAX(placement) as best_placement')
+                )
+                ->groupBy('player_name')
+                ->orderByDesc('total_kills')
+                ->get();
+                
+            $standings[] = [
+                'tournament' => $t,
+                'standings' => $stats
+            ];
+        }
+        
+        return response()->json($standings);
     }
     
     public function update(Request $request, $id) {
