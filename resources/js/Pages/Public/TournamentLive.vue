@@ -525,6 +525,40 @@ onUnmounted(() => {
 
             <div>
                 <h3 class="mb-4 text-xs font-bold tracking-widest text-gray-500 uppercase">Historial de Partidas</h3>
+                
+                <!-- Tarjeta integrada para pedir registro/código si no tiene acceso -->
+                <div v-if="!localHasAccess" class="p-4 mb-4 border border-dashed rounded bg-yellow-500/5 border-yellow-500/30 text-xs space-y-3">
+                    <div class="flex items-start gap-2 text-yellow-500">
+                        <i class="text-lg ph-bold ph-lock-key mt-0.5"></i>
+                        <div>
+                            <div class="font-bold uppercase tracking-wider">Códigos de Lobbies Ocultos</div>
+                            <p class="text-[10px] text-gray-400 mt-1 leading-normal">
+                                Debes estar inscrito y tener tu <strong class="text-white">inscripción aceptada</strong> en este torneo para visualizar los códigos de Custom Matchmaking.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Si es torneo privado y ya está inscrito (paid) pero no tiene el código de acceso, mostrar input de código directamente aquí -->
+                    <div v-if="localRegistrationStatus === 'paid' && props.isPrivate && !privateHasAccess" class="pt-2 border-t border-yellow-500/10 space-y-2">
+                        <div class="text-[10px] text-yellow-500 font-bold uppercase tracking-wider">Torneo Privado - Se requiere clave de acceso:</div>
+                        <div v-if="privateError" class="text-[10px] text-red-500 font-bold">{{ privateError }}</div>
+                        <form @submit.prevent="verifyPrivateCode" class="flex gap-2">
+                            <input v-model="privateCode" type="text" placeholder="Código..." class="flex-1 px-3 py-1.5 bg-black/40 border border-white/10 text-white font-mono text-xs uppercase tracking-widest rounded" :disabled="privateLoading" />
+                            <button type="submit" :disabled="privateLoading || !privateCode.trim()" class="px-3 py-1.5 bg-yellow-500 text-black font-black uppercase text-[10px] rounded hover:bg-white transition-all">
+                                {{ privateLoading ? '...' : 'Entrar' }}
+                            </button>
+                        </form>
+                        <div class="text-[9px] text-gray-500 uppercase font-bold text-right">Intentos: {{ privateAttemptsLeft }}/3</div>
+                    </div>
+
+                    <!-- Botón rápido para ir a inscribirse si no tiene estado o es 'none' -->
+                    <div v-else-if="!localRegistrationStatus || localRegistrationStatus === 'none'" class="pt-1">
+                        <button @click.prevent="switchTab('inscripcion')" class="w-full py-2 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 hover:bg-yellow-500 hover:text-black rounded text-[10px] font-bold uppercase tracking-widest transition-all">
+                            Ir a Inscripción
+                        </button>
+                    </div>
+                </div>
+
                 <div @click="toggleMatchFilter(null)" 
                     class="flex items-center justify-between p-4 mb-3 transition cursor-pointer brutal-card hover:bg-gray-50 dark:hover:bg-white/5"
                     :class="!selectedMatchId ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/5' : ''">
@@ -711,7 +745,35 @@ onUnmounted(() => {
              </div>
 
              <div v-if="$page.props.auth?.user">
-                 <form @submit.prevent="submitRegistration" class="space-y-4">
+                 <!-- Estado: Ya inscrito/pendiente/rechazado -->
+                 <div v-if="localRegistrationStatus && localRegistrationStatus !== 'none'" class="text-center py-6 space-y-4">
+                     <div v-if="localRegistrationStatus === 'pending'" class="space-y-2">
+                         <div class="w-16 h-16 mx-auto flex items-center justify-center bg-yellow-500/10 text-yellow-500 rounded-full border border-yellow-500/20">
+                             <i class="text-3xl ph-fill ph-hourglass"></i>
+                         </div>
+                         <h3 class="text-xl font-black uppercase text-white font-display">Inscripción Pendiente</h3>
+                         <p class="text-gray-400 text-sm max-w-md mx-auto">Tu inscripción ha sido recibida y está en espera de aprobación por el administrador.</p>
+                     </div>
+
+                     <div v-else-if="localRegistrationStatus === 'paid'" class="space-y-2">
+                         <div class="w-16 h-16 mx-auto flex items-center justify-center bg-emerald-500/10 text-emerald-500 rounded-full border border-emerald-500/20 animate-pulse">
+                             <i class="text-3xl ph-fill ph-check-circle"></i>
+                         </div>
+                         <h3 class="text-xl font-black uppercase text-white font-display">Inscripción Aceptada</h3>
+                         <p class="text-gray-400 text-sm max-w-md mx-auto">¡Ya estás formalmente inscrito en este torneo! Revisa los resultados y códigos de partida en la pestaña de resultados.</p>
+                     </div>
+
+                     <div v-else-if="localRegistrationStatus === 'rejected'" class="space-y-2">
+                         <div class="w-16 h-16 mx-auto flex items-center justify-center bg-red-500/10 text-red-500 rounded-full border border-red-500/20">
+                             <i class="text-3xl ph-fill ph-x-circle"></i>
+                         </div>
+                         <h3 class="text-xl font-black uppercase text-white font-display">Inscripción Rechazada</h3>
+                         <p class="text-gray-400 text-sm max-w-md mx-auto">Tu solicitud de inscripción ha sido rechazada. Contacta a los administradores para más detalles.</p>
+                     </div>
+                 </div>
+
+                 <!-- Estado: No inscrito (none) -->
+                 <form v-else @submit.prevent="submitRegistration" class="space-y-4">
                      <div>
                          <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre en el Juego (Epic / Riot ID) *</label>
                          <input v-model="registrationForm.player_name" type="text" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
@@ -847,116 +909,6 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
-  <!-- ===== BANNER DE ACCESO (para todos los torneos si no se tienen los códigos) ===== -->
-  <div v-if="!localHasAccess && !hideAccessBanner" class="fixed inset-0 z-[998] pointer-events-none">
-    <div class="absolute bottom-0 left-0 right-0 pointer-events-auto">
-      <div class="bg-black/97 border-t-2 border-[var(--rankit-neon)] shadow-[0_-10px_60px_rgba(191,0,255,0.3)] p-6">
-        <div class="max-w-2xl mx-auto relative">
-          
-          <!-- Botón de cerrar / solo ver estadísticas -->
-          <button @click="hideAccessBanner = true" class="absolute -top-2 right-0 text-gray-500 hover:text-white font-bold text-xs uppercase tracking-widest flex items-center gap-1">
-            Solo ver estadísticas <i class="ph-bold ph-x"></i>
-          </button>
-
-          <!-- ESTADO: No logueado (localRegistrationStatus === null) -->
-          <div v-if="localRegistrationStatus === null || localRegistrationStatus === undefined" class="text-center py-2">
-            <div class="flex items-center justify-center gap-3 mb-3">
-              <i class="ph-fill ph-lock-key text-[var(--rankit-neon)] text-3xl"></i>
-              <h3 class="text-lg font-black uppercase text-white font-display">Inicia sesión para participar</h3>
-            </div>
-            <p class="text-sm text-gray-400 mb-5">Puedes ver el ranking libremente. <strong class="text-white">Inicia sesión</strong> para inscribirte y ver los códigos de partida.</p>
-            <div class="flex justify-center gap-3">
-              <a :href="route('login')" class="inline-block px-8 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all btn-skew">
-                <span class="btn-content">Iniciar Sesión</span>
-              </a>
-              <a :href="route('register')" class="inline-block px-8 py-3 bg-white/10 border border-white/20 text-white font-black uppercase tracking-widest text-sm hover:bg-white hover:text-black transition-all btn-skew">
-                <span class="btn-content">Crear Cuenta</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- ESTADO: Logueado pero no registrado (none) -->
-          <div v-else-if="localRegistrationStatus === 'none'" class="text-center py-2">
-            <div class="flex items-center justify-center gap-3 mb-3">
-              <i class="ph-bold ph-ticket text-[var(--rankit-neon)] text-3xl"></i>
-              <h3 class="text-lg font-black uppercase text-white font-display">Inscripción requerida</h3>
-            </div>
-            <p class="text-sm text-gray-400 mb-5">Necesitas inscribirte a este torneo para acceder a los códigos de partida.</p>
-            <button @click.prevent="switchTab('inscripcion')" class="inline-block px-8 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all btn-skew">
-              <span class="btn-content">Ir a Inscripción ↓</span>
-            </button>
-          </div>
-
-          <!-- ESTADO: Inscripción pendiente de aprobación -->
-          <div v-else-if="localRegistrationStatus === 'pending'" class="flex items-center gap-4 py-2">
-            <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-yellow-500/10 rounded border border-yellow-500/30">
-              <i class="ph-bold ph-hourglass text-yellow-400 text-2xl animate-pulse"></i>
-            </div>
-            <div class="flex-1">
-              <div class="text-xs font-bold text-yellow-400 uppercase tracking-widest mb-1">Inscripción Pendiente</div>
-              <div class="text-white font-bold text-sm">Tu registro está siendo revisado por el organizador.</div>
-              <div class="text-gray-500 text-xs mt-1">Una vez aceptado, podrás ver los códigos de Custom Matchmaking de cada partida.</div>
-            </div>
-          </div>
-
-          <!-- ESTADO: Inscripción rechazada -->
-          <div v-else-if="localRegistrationStatus === 'rejected'" class="flex items-center gap-4 py-2">
-            <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-red-500/10 rounded border border-red-500/30">
-              <i class="ph-bold ph-x-circle text-red-400 text-2xl"></i>
-            </div>
-            <div class="flex-1">
-              <div class="text-xs font-bold text-red-400 uppercase tracking-widest mb-1">Inscripción Rechazada</div>
-              <div class="text-white font-bold text-sm">Tu inscripción no fue aprobada.</div>
-              <div class="text-gray-500 text-xs mt-1">Contacta al organizador por WhatsApp para más información.</div>
-            </div>
-          </div>
-
-          <!-- ESTADO: Inscripción aceptada (paid) pero torneo privado sin código en sesión -->
-          <div v-else-if="localRegistrationStatus === 'paid' && props.isPrivate && !privateHasAccess">
-
-            <!-- Bloqueado por exceso de intentos -->
-            <div v-if="privateBlocked" class="text-center py-2">
-              <div class="flex items-center justify-center gap-3 mb-3">
-                <i class="ph-fill ph-lock-key text-red-500 text-3xl"></i>
-                <h3 class="text-lg font-black uppercase text-white font-display">Acceso Bloqueado</h3>
-              </div>
-              <p class="text-sm text-gray-400 mb-4">Has superado el número máximo de intentos. Contacta al organizador para obtener un nuevo código.</p>
-            </div>
-
-            <!-- Input de código -->
-            <div v-else>
-              <div class="flex items-center gap-3 mb-4">
-                <div class="w-10 h-10 flex items-center justify-center bg-[var(--rankit-neon)]/10 rounded border border-[var(--rankit-neon)]/30">
-                  <i class="ph-bold ph-lock-simple-open text-[var(--rankit-neon)] text-xl"></i>
-                </div>
-                <div>
-                  <div class="text-xs font-bold text-[var(--rankit-neon)] uppercase tracking-widest">Torneo Privado</div>
-                  <div class="text-white font-black uppercase font-display text-sm">Ingresa el código para ver los Custom Matchmaking IDs</div>
-                </div>
-                <div class="ml-auto text-right">
-                  <div class="text-[10px] text-gray-500 uppercase font-bold">Intentos restantes</div>
-                  <div class="text-2xl font-black" :class="privateAttemptsLeft <= 1 ? 'text-red-500' : 'text-[var(--rankit-neon)]'">{{ privateAttemptsLeft }}/3</div>
-                </div>
-              </div>
-              <div v-if="privateError" class="mb-3 px-4 py-2 bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold rounded">
-                {{ privateError }}
-              </div>
-              <form @submit.prevent="verifyPrivateCode" class="flex gap-3">
-                <input v-model="privateCode" type="text" placeholder="Código de acceso..." class="flex-1 px-4 py-3 bg-white/5 border border-white/10 text-white font-mono text-sm uppercase tracking-widest focus:border-[var(--rankit-neon)] focus:outline-none rounded" :disabled="privateLoading" autofocus />
-                <button type="submit" :disabled="privateLoading || !privateCode.trim()" class="px-6 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all disabled:opacity-50 btn-skew">
-                  <span class="btn-content">{{ privateLoading ? '...' : 'Acceder' }}</span>
-                </button>
-              </form>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  </div>
-  <!-- ===== FIN BANNER ===== -->
-
   </div>
 </template>
 
