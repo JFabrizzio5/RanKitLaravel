@@ -453,8 +453,8 @@ const navigate = (view) => {
                             <input type="text" id="reg-epic" required placeholder="Ej: Ninja" class="w-full bg-black/40 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder-gray-700">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-400 mb-3">Usuario Discord *</label>
-                            <input type="text" id="reg-discord" required placeholder="Ej: user#1234" class="w-full bg-black/40 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder-gray-700">
+                            <label class="block text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-400 mb-3">Número de WhatsApp *</label>
+                            <input type="text" id="reg-whatsapp" required placeholder="Ej: +52 123 456 7890" class="w-full bg-black/40 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder-gray-700">
                         </div>
                     </div>
 
@@ -686,7 +686,7 @@ const navigate = (view) => {
         function handleRegistration(e) {
             e.preventDefault();
             const epic = document.getElementById('reg-epic').value;
-            const discord = document.getElementById('reg-discord').value;
+            const whatsapp = document.getElementById('reg-whatsapp').value;
             const selectedEvent = document.getElementById('inp-event').options[document.getElementById('inp-event').selectedIndex].text;
             const plan = document.querySelector('input[name="reg-tier"]:checked').value === 'free' ? 'ESTÁNDAR (GRATIS)' : 'UPGRADE PREMIUM';
             
