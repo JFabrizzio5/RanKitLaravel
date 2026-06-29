@@ -21,6 +21,8 @@ interface Tournament {
     slug?: string;
     twitch_channel?: string;
     is_private?: boolean;
+    is_serialized?: boolean;
+    parent_tournament_id?: number | null;
     access_code?: string;
     banner_image?: string;
     // Nuevos campos
@@ -147,6 +149,8 @@ const formSettings = useForm({
     access_code: '',
     rules: '',
     prizes: '',
+    is_serialized: false,
+    parent_tournament_id: null as number | null,
     scoring_format: {
         kill_points: 1,
         placement: [] as { from: number; to: number; points: number }[]
@@ -171,7 +175,9 @@ const formCreateTournament = useForm({
     name: '',
     twitch_channel: '',
     is_private: false,
-    access_code: ''
+    access_code: '',
+    is_serialized: false,
+    parent_tournament_id: null as number | null
 });
 
 const formBanner = useForm({
@@ -216,7 +222,7 @@ const formCreateReservation = useForm({
 });
 
 // Estados UI
-const activeTab = ref<'codes' | 'widget' | 'matches' | 'registrations' | 'pitches'>('codes');
+const activeTab = ref<'codes' | 'widget' | 'matches' | 'registrations' | 'qualifiers'>('codes');
 const showMatchModal = ref(false);
 const showAppealModal = ref(false); 
 const showSettingsModal = ref(false);
@@ -375,15 +381,59 @@ const fetchRegistrations = async () => {
         const res = await axios.get(route('jangel.registrations', selectedTournament.value.id));
         registrations.value = res.data;
     } catch (e) {
-        console.error("Error fetching registrations:", e);
+        console.error(e);
+    }
+};
+
+const qualifiers = ref<any[]>([]);
+const formManualQualify = useForm({
+    player_name: '',
+    player_email: '',
+    epic_id: ''
+});
+
+const fetchQualifiers = async () => {
+    if (!selectedTournament.value) return;
+    try {
+        const res = await axios.get(route('jangel.tournaments.qualifiers', selectedTournament.value.id));
+        qualifiers.value = res.data;
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+const qualifyManual = () => {
+    if (!selectedTournament.value) return;
+    formManualQualify.post(route('jangel.tournaments.qualify-manual', selectedTournament.value.id), {
+        onSuccess: () => {
+            fetchQualifiers();
+            formManualQualify.reset();
+        }
+    });
+};
+
+const removeQualifier = (qualifierId: number) => {
+    if (!selectedTournament.value) return;
+    if (confirm('¿Remover jugador clasificado?')) {
+        router.delete(route('jangel.tournaments.unqualify-manual', {
+            id: selectedTournament.value.id,
+            qualifierId: qualifierId
+        }), {
+            onSuccess: () => fetchQualifiers()
+        });
     }
 };
 
 watch(activeTab, (newTab) => {
-    if (newTab === 'registrations') fetchRegistrations();
+    if (newTab === 'registrations') {
+        fetchRegistrations();
+    } else if (newTab === 'qualifiers') {
+        fetchQualifiers();
+    }
 });
 watch(selectedTournamentId, () => {
     if (activeTab.value === 'registrations') fetchRegistrations();
+    if (activeTab.value === 'qualifiers') fetchQualifiers();
 });
 
 const updatePayment = async (id: number, status: string) => {
@@ -435,6 +485,8 @@ const openSettingsModal = () => {
     formSettings.access_code = t.access_code || '';
     formSettings.rules = t.rules || '';
     formSettings.prizes = t.prizes || '';
+    formSettings.is_serialized = !!t.is_serialized;
+    formSettings.parent_tournament_id = t.parent_tournament_id || null;
     
     // Deep copy del JSON de puntuación o inicializar default
     if (t.scoring_format) {
@@ -850,10 +902,10 @@ const copyInviteLink = () => {
 
           <!-- Tabs -->
           <div class="flex border-b border-gray-200 dark:border-white/10 overflow-x-auto custom-scrollbar">
-            <button v-for="tab in ['codes', 'widget', 'matches', 'registrations', 'pitches']" :key="tab" @click="activeTab = tab as any"
+            <button v-for="tab in ['codes', 'widget', 'matches', 'registrations', 'qualifiers']" :key="tab" @click="activeTab = tab as any"
               class="flex-1 min-w-[80px] py-3 text-[10px] font-bold uppercase tracking-wider text-center transition"
               :class="activeTab === tab ? 'bg-[var(--rankit-neon)] text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'">
-              {{ tab === 'registrations' ? 'Inscrip.' : tab }}
+              {{ tab === 'registrations' ? 'Inscrip.' : (tab === 'qualifiers' ? 'Clasificados' : tab) }}
             </button>
           </div>
 
@@ -995,92 +1047,37 @@ const copyInviteLink = () => {
              </div>
           </div>
 
-          <!-- PITCHES (CANCHAS) TAB -->
-          <div v-if="activeTab === 'pitches'" class="p-4 space-y-4 animate-fade-in">
-              <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Gestión de Canchas</h3>
-              
-              <!-- Formulario Crear Cancha -->
-              <div class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 space-y-2">
-                  <h4 class="text-[10px] font-bold uppercase text-gray-400">Nueva Cancha</h4>
-                  <input v-model="formCreatePitch.name" type="text" placeholder="Nombre (ej. Cancha 1)" class="w-full text-xs p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 focus:border-[var(--rankit-neon)] outline-none" />
-                  <div class="flex gap-2">
-                      <select v-model="formCreatePitch.type" class="flex-1 text-xs p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 focus:border-[var(--rankit-neon)] outline-none">
-                          <option value="Futbol 7">Futbol 7</option>
-                          <option value="Futbol 5">Futbol 5</option>
-                          <option value="Futbol 11">Futbol 11</option>
-                          <option value="Tenis">Tenis</option>
-                          <option value="Padel">Pádel</option>
-                      </select>
-                      <input v-model="formCreatePitch.price_per_hour" type="number" placeholder="Precio/hr" class="w-24 text-xs p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 focus:border-[var(--rankit-neon)] outline-none" />
-                  </div>
-                  <button @click="createPitch" :disabled="formCreatePitch.processing || !formCreatePitch.name" class="w-full py-2 bg-[var(--rankit-neon)] text-white text-xs font-bold uppercase rounded hover:bg-purple-600 transition disabled:opacity-50">
-                      Crear Cancha
-                  </button>
-              </div>
+          <!-- TAB: CLASIFICADOS -->
+          <div v-if="activeTab === 'qualifiers' && selectedTournament" class="p-4 space-y-4 animate-fade-in">
+             <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Clasificados ({{ qualifiers.length }})</h3>
+                 <button @click="fetchQualifiers" class="text-xs text-[var(--rankit-neon)] hover:underline"><i class="ph-bold ph-arrows-clockwise"></i></button>
+             </div>
 
-              <!-- Lista de Canchas -->
-              <div class="max-h-[150px] overflow-y-auto space-y-2 custom-scrollbar pr-2 mt-4">
-                  <div v-for="pitch in pitches" :key="pitch.id" 
-                      @click="selectPitch(pitch)"
-                      class="p-2 border rounded flex justify-between items-center cursor-pointer transition"
-                      :class="selectedPitch?.id === pitch.id ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)]/10' : 'border-gray-200 dark:border-white/10 hover:border-gray-400'"
-                  >
-                      <div>
-                          <div class="text-xs font-bold dark:text-white">{{ pitch.name }}</div>
-                          <div class="text-[10px] text-gray-500">{{ pitch.type }} - ${{ pitch.price_per_hour }}/hr</div>
-                      </div>
-                      <button @click.stop="deletePitch(pitch.id)" class="text-red-500 hover:text-red-700 p-1"><i class="ph-bold ph-trash"></i></button>
-                  </div>
-                  <div v-if="pitches.length === 0" class="text-center py-4 text-gray-500 text-[10px] uppercase">
-                      No hay canchas creadas.
-                  </div>
-              </div>
+             <!-- Lista de clasificados -->
+             <div class="max-h-[250px] overflow-y-auto space-y-2 custom-scrollbar pr-2 mb-4">
+                 <div v-for="q in qualifiers" :key="q.id" class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 flex justify-between items-center text-xs">
+                     <div>
+                         <div class="font-bold text-sm text-black dark:text-white">{{ q.player_name }}</div>
+                         <div class="text-[10px] text-gray-500">{{ q.player_email || 'Manual' }}</div>
+                     </div>
+                     <button @click="removeQualifier(q.id)" class="text-red-500 hover:text-red-700 p-1"><i class="ph-bold ph-trash"></i></button>
+                 </div>
+                 <div v-if="qualifiers.length === 0" class="text-center py-6 text-gray-500 text-xs italic">
+                     No hay clasificados.
+                 </div>
+             </div>
 
-              <!-- Reservas de Cancha Seleccionada -->
-              <div v-if="selectedPitch" class="mt-4 pt-4 border-t border-gray-200 dark:border-white/10 space-y-3">
-                  <h4 class="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Reservas: {{ selectedPitch.name }}</h4>
-                  
-                  <!-- Formulario Crear Reserva -->
-                  <div class="space-y-2 mb-4">
-                      <input v-model="formCreateReservation.customer_name" type="text" placeholder="Nombre Cliente" class="w-full text-[10px] p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none" />
-                      <div class="flex gap-2">
-                          <div class="flex-1 flex flex-col gap-1">
-                              <label class="text-[9px] uppercase text-gray-500">Inicio</label>
-                              <input v-model="formCreateReservation.start_time" type="datetime-local" class="w-full text-[10px] p-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none" />
-                          </div>
-                          <div class="flex-1 flex flex-col gap-1">
-                              <label class="text-[9px] uppercase text-gray-500">Fin</label>
-                              <input v-model="formCreateReservation.end_time" type="datetime-local" class="w-full text-[10px] p-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none" />
-                          </div>
-                      </div>
-                      <button @click="createReservation" :disabled="formCreateReservation.processing || !formCreateReservation.customer_name || !formCreateReservation.start_time" class="w-full py-1.5 bg-emerald-500 text-white text-[10px] font-bold uppercase rounded hover:bg-emerald-600 transition">
-                          Agregar Reserva
-                      </button>
-                  </div>
-
-                  <!-- Lista de Reservas -->
-                  <div class="max-h-[150px] overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                      <div v-for="res in pitchReservations" :key="res.id" class="p-2 bg-gray-100 dark:bg-white/5 rounded border border-gray-200 dark:border-white/10 text-[10px]">
-                          <div class="flex justify-between items-start mb-1">
-                              <span class="font-bold dark:text-white">{{ res.customer_name }}</span>
-                              <span :class="{'text-yellow-500': res.status==='pending', 'text-emerald-500': res.status==='paid', 'text-red-500': res.status==='cancelled'}" class="font-bold uppercase">{{ res.status }}</span>
-                          </div>
-                          <div class="text-gray-500 flex justify-between items-end">
-                              <div>
-                                  <div>Desde: {{ new Date(res.start_time).toLocaleString() }}</div>
-                                  <div>Hasta: {{ new Date(res.end_time).toLocaleString() }}</div>
-                              </div>
-                              <div class="flex gap-1" v-if="res.status === 'pending'">
-                                  <button @click="updateReservationStatus(res.id, 'paid')" class="text-emerald-500 hover:underline">Pagar</button>
-                                  <button @click="updateReservationStatus(res.id, 'cancelled')" class="text-red-500 hover:underline">Cancelar</button>
-                              </div>
-                          </div>
-                      </div>
-                      <div v-if="pitchReservations.length === 0" class="text-center py-2 text-gray-500 text-[10px]">
-                          Sin reservas.
-                      </div>
-                  </div>
-              </div>
+             <div class="pt-4 border-t border-gray-200 dark:border-white/10 space-y-3">
+                 <h4 class="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Clasificación Manual</h4>
+                 <div class="flex gap-2 mb-2">
+                     <input v-model="formManualQualify.player_name" type="text" placeholder="Nombre en juego" class="flex-1 text-[10px] p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none focus:border-[var(--rankit-neon)]" />
+                     <input v-model="formManualQualify.player_email" type="email" placeholder="Correo Rankit.Pro" class="flex-1 text-[10px] p-2 rounded bg-white dark:bg-black border border-gray-200 dark:border-white/10 outline-none focus:border-[var(--rankit-neon)]" />
+                 </div>
+                 <button @click="qualifyManual" :disabled="formManualQualify.processing || !formManualQualify.player_name || !formManualQualify.player_email" class="w-full py-2 bg-[var(--rankit-neon)] text-white text-xs font-bold uppercase rounded hover:opacity-90 transition disabled:opacity-50">
+                     Añadir Clasificado
+                 </button>
+             </div>
           </div>
         </div>
       </aside>
@@ -1221,13 +1218,28 @@ const copyInviteLink = () => {
                     </div>
                 </div>
 
-                <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
-                    <label class="flex items-center gap-2 mb-2 cursor-pointer">
-                        <input type="checkbox" v-model="formCreateTournament.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
-                        <span class="text-xs font-bold uppercase">Torneo Privado</span>
-                    </label>
-                    <div v-if="formCreateTournament.is_private">
-                        <input v-model="formCreateTournament.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5 space-y-3">
+                    <div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" v-model="formCreateTournament.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                            <span class="text-xs font-bold uppercase">Torneo Privado</span>
+                        </label>
+                        <div v-if="formCreateTournament.is_private" class="mt-2">
+                            <input v-model="formCreateTournament.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" v-model="formCreateTournament.is_serialized" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                            <span class="text-xs font-bold uppercase">Torneo Seriado</span>
+                        </label>
+                        <div v-if="formCreateTournament.is_serialized" class="mt-2">
+                            <select v-model="formCreateTournament.parent_tournament_id" class="w-full p-2 text-xs font-bold uppercase border rounded outline-none border-blue-500/30 bg-blue-500/10 focus:border-blue-500 text-black dark:text-white custom-scrollbar">
+                                <option :value="null">Ninguno (Este es Torneo Matriz)</option>
+                                <option v-for="t in props.tournaments" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -1262,12 +1274,12 @@ const copyInviteLink = () => {
                 <!-- GENERAL TAB -->
                 <div v-if="settingsTab === 'general'" class="space-y-4">
                     <div>
-                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre del Torneo</label>
+                        <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Nombre Torneo</label>
                         <input v-model="formSettings.name" type="text" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
                     </div>
                     <div>
                         <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Canal de Twitch</label>
-                        <input v-model="formSettings.twitch_channel" type="text" placeholder="Ej: Bellz_z11" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
+                        <input v-model="formSettings.twitch_channel" type="text" class="w-full bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 text-sm outline-none" />
                     </div>
 
                     <!-- BANNER IMAGE -->
@@ -1286,13 +1298,28 @@ const copyInviteLink = () => {
                         <p class="text-[9px] text-gray-400 mt-1">JPG, PNG, GIF o WebP · Máx. 5 MB</p>
                     </div>
 
-                    <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5">
-                        <label class="flex items-center gap-2 mb-2 cursor-pointer">
-                            <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
-                            <span class="text-xs font-bold uppercase">Torneo Privado</span>
-                        </label>
-                        <div v-if="formSettings.is_private">
-                            <input v-model="formSettings.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                    <div v-if="isJangel" class="p-3 border border-[var(--rankit-neon)]/30 rounded bg-[var(--rankit-neon)]/5 space-y-3">
+                        <div>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" v-model="formSettings.is_private" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                                <span class="text-xs font-bold uppercase">Torneo Privado</span>
+                            </label>
+                            <div v-if="formSettings.is_private" class="mt-2">
+                                <input v-model="formSettings.access_code" type="text" placeholder="CÓDIGO DE ACCESO" class="w-full p-2 text-xs font-bold text-center uppercase border rounded outline-none border-red-500/30 bg-red-500/10 focus:border-red-500" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" v-model="formSettings.is_serialized" class="rounded border-gray-600 text-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)] bg-black/20" />
+                                <span class="text-xs font-bold uppercase">Torneo Seriado</span>
+                            </label>
+                            <div v-if="formSettings.is_serialized" class="mt-2">
+                                <select v-model="formSettings.parent_tournament_id" class="w-full p-2 text-xs font-bold uppercase border rounded outline-none border-blue-500/30 bg-blue-500/10 focus:border-blue-500 text-black dark:text-white custom-scrollbar">
+                                    <option :value="null">Ninguno (Este es Torneo Matriz)</option>
+                                    <option v-for="t in props.tournaments" :key="t.id" :value="t.id">{{ t.name }}</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
