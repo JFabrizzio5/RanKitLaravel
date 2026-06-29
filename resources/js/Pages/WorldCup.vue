@@ -1,12 +1,23 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 
 const groups = ref([]);
 const matches = ref([]);
 const teams = ref([]);
 const loading = ref(true);
 const activeTab = ref('groups');
+
+const groupedMatches = computed(() => {
+    const grouped = {};
+    matches.value.forEach(m => {
+        let type = m.type || 'Otros';
+        if (type === 'group') type = 'Fase de Grupos';
+        if (!grouped[type]) grouped[type] = [];
+        grouped[type].push(m);
+    });
+    return grouped;
+});
 
 onMounted(async () => {
     try {
@@ -77,10 +88,10 @@ const getTeamInfo = (teamIdOrName) => {
 
                 <!-- Grupos -->
                 <div v-if="activeTab === 'groups'" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    <div v-for="g in groups" :key="g.letter" class="bg-[#1f0d36] border border-fuchsia-900/30 rounded-2xl p-5 shadow-xl relative overflow-hidden group">
+                    <div v-for="g in groups" :key="g.name || g.letter" class="bg-[#1f0d36] border border-fuchsia-900/30 rounded-2xl p-5 shadow-xl relative overflow-hidden group">
                         <div class="absolute -right-10 -top-10 w-32 h-32 bg-fuchsia-500/10 rounded-full blur-2xl group-hover:bg-fuchsia-500/20 transition-all"></div>
                         <h3 class="text-2xl font-black text-white mb-4 flex items-center gap-2 relative z-10 font-mono">
-                            GRUPO <span class="text-fuchsia-500">{{ g.letter }}</span>
+                            GRUPO <span class="text-fuchsia-500">{{ g.name || g.letter }}</span>
                         </h3>
                         
                         <div class="overflow-x-auto relative z-10">
@@ -96,12 +107,15 @@ const getTeamInfo = (teamIdOrName) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="(team, index) in g.teams" :key="team.name" class="border-b border-gray-800/30 hover:bg-[#2a134a] transition-colors">
+                                    <tr v-for="(team, index) in g.teams" :key="team.team_id || team.name" class="border-b border-gray-800/30 hover:bg-[#2a134a] transition-colors">
                                         <td class="py-2.5 font-bold" :class="index < 2 ? 'text-fuchsia-400' : 'text-gray-500'">{{ index + 1 }}</td>
-                                        <td class="py-2.5 font-bold text-gray-200">{{ team.name_en || team.name }}</td>
-                                        <td class="py-2.5 text-center text-gray-400">{{ team.games_played || 0 }}</td>
-                                        <td class="py-2.5 text-center text-gray-400">{{ team.goals_for || 0 }}</td>
-                                        <td class="py-2.5 text-center text-gray-400">{{ team.goals_against || 0 }}</td>
+                                        <td class="py-2.5 font-bold text-gray-200 flex items-center gap-2">
+                                            <img v-if="getTeamInfo(team.team_id).flag" :src="getTeamInfo(team.team_id).flag" class="w-5 h-5 rounded-full object-cover">
+                                            <span>{{ getTeamInfo(team.team_id).name_en || getTeamInfo(team.team_id).name || 'TBD' }}</span>
+                                        </td>
+                                        <td class="py-2.5 text-center text-gray-400">{{ team.mp || team.games_played || 0 }}</td>
+                                        <td class="py-2.5 text-center text-gray-400">{{ team.gf || team.goals_for || 0 }}</td>
+                                        <td class="py-2.5 text-center text-gray-400">{{ team.ga || team.goals_against || 0 }}</td>
                                         <td class="py-2.5 text-center font-bold text-fuchsia-400">{{ team.pts || team.points || 0 }}</td>
                                     </tr>
                                 </tbody>
@@ -114,29 +128,39 @@ const getTeamInfo = (teamIdOrName) => {
                 </div>
 
                 <!-- Partidos -->
-                <div v-if="activeTab === 'matches'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div v-for="m in matches" :key="m.id || Math.random()" class="bg-[#1f0d36] border border-fuchsia-900/30 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
-                        <div class="text-[10px] uppercase font-bold text-fuchsia-500 tracking-wider">
-                            {{ m.type === 'group' ? 'Grupo ' + m.group : m.type }} <br>
-                            <span class="text-gray-500">{{ m.local_date }}</span>
+                <div v-if="activeTab === 'matches'" class="space-y-12">
+                    <div v-for="(stageMatches, stageName) in groupedMatches" :key="stageName">
+                        <div class="flex items-center gap-4 mb-6">
+                            <h4 class="text-xl font-bold text-white uppercase tracking-widest font-mono">{{ stageName }}</h4>
+                            <div class="flex-1 h-px bg-gray-800"></div>
                         </div>
-                        
-                        <div class="flex-1 flex justify-end items-center gap-3 w-full sm:w-auto">
-                            <span class="font-bold text-white text-right text-lg">{{ m.home_team_name_en || 'TBD' }}</span>
-                        </div>
-                        
-                        <div class="px-6 py-2 bg-[#120422] rounded-lg border border-fuchsia-900/30 text-center min-w-[120px]">
-                            <div v-if="m.finished === 'TRUE' || (m.time_elapsed && m.time_elapsed !== 'notstarted')" class="text-2xl font-bold font-mono text-white flex justify-center gap-3">
-                                <span :class="Number(m.home_score) > Number(m.away_score) ? 'text-fuchsia-400' : ''">{{ m.home_score || 0 }}</span>
-                                <span class="text-gray-600">-</span>
-                                <span :class="Number(m.away_score) > Number(m.home_score) ? 'text-fuchsia-400' : ''">{{ m.away_score || 0 }}</span>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div v-for="m in stageMatches" :key="m.id || Math.random()" class="bg-[#1f0d36] border border-fuchsia-900/30 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+                                <div class="text-[10px] uppercase font-bold text-fuchsia-500 tracking-wider">
+                                    {{ m.type === 'group' ? 'Grupo ' + m.group : m.type }} <br>
+                                    <span class="text-gray-500">{{ m.local_date }}</span>
+                                </div>
+                                
+                                <div class="flex-1 flex justify-end items-center gap-3 w-full sm:w-auto">
+                                    <span class="font-bold text-white text-right text-lg">{{ m.home_team_name_en || 'TBD' }}</span>
+                                    <img v-if="getTeamInfo(m.home_team_id).flag" :src="getTeamInfo(m.home_team_id).flag" class="w-6 h-6 rounded-full object-cover">
+                                </div>
+                                
+                                <div class="px-6 py-2 bg-[#120422] rounded-lg border border-fuchsia-900/30 text-center min-w-[120px]">
+                                    <div v-if="m.finished === 'TRUE' || (m.time_elapsed && m.time_elapsed !== 'notstarted')" class="text-2xl font-bold font-mono text-white flex justify-center gap-3">
+                                        <span :class="Number(m.home_score) > Number(m.away_score) ? 'text-fuchsia-400' : ''">{{ m.home_score || 0 }}</span>
+                                        <span class="text-gray-600">-</span>
+                                        <span :class="Number(m.away_score) > Number(m.home_score) ? 'text-fuchsia-400' : ''">{{ m.away_score || 0 }}</span>
+                                    </div>
+                                    <div v-else class="text-sm text-gray-500 font-bold uppercase tracking-wider">VS</div>
+                                    <div v-if="m.finished !== 'TRUE' && m.time_elapsed && m.time_elapsed !== 'notstarted'" class="text-[10px] text-red-500 mt-1 uppercase font-bold tracking-widest animate-pulse">EN VIVO - {{ m.time_elapsed }}</div>
+                                </div>
+                                
+                                <div class="flex-1 flex justify-start items-center gap-3 w-full sm:w-auto">
+                                    <img v-if="getTeamInfo(m.away_team_id).flag" :src="getTeamInfo(m.away_team_id).flag" class="w-6 h-6 rounded-full object-cover">
+                                    <span class="font-bold text-white text-left text-lg">{{ m.away_team_name_en || 'TBD' }}</span>
+                                </div>
                             </div>
-                            <div v-else class="text-sm text-gray-500 font-bold uppercase tracking-wider">VS</div>
-                            <div v-if="m.finished !== 'TRUE' && m.time_elapsed && m.time_elapsed !== 'notstarted'" class="text-[10px] text-red-500 mt-1 uppercase font-bold tracking-widest animate-pulse">EN VIVO</div>
-                        </div>
-                        
-                        <div class="flex-1 flex justify-start items-center gap-3 w-full sm:w-auto">
-                            <span class="font-bold text-white text-left text-lg">{{ m.away_team_name_en || 'TBD' }}</span>
                         </div>
                     </div>
                     <div v-if="!matches || matches.length === 0" class="col-span-full text-center py-20 text-gray-500 font-bold uppercase tracking-widest">
