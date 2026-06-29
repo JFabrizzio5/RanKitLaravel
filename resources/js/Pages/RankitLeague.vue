@@ -1,22 +1,104 @@
 <script setup>
 import { Head, Link } from "@inertiajs/vue3";
-import { ref, onMounted } from "vue";
+import { ref, onMounted, nextTick } from "vue";
 import axios from "axios";
 
+// ---- SPA Navigation ----
 const activeView = ref("home");
-const allSerializedTournaments = ref([]);
-const activeTournamentIndex = ref(0);
-const loading = ref(true);
 
 const navigate = (view) => {
     activeView.value = view;
+    nextTick(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
 };
+
+// ---- League Standings ----
+const allSerializedTournaments = ref([]);
+const activeTournamentIndex = ref(0);
+const loading = ref(true);
 
 const selectTournament = (index) => {
     activeTournamentIndex.value = index;
 };
 
+// ---- Carousel ----
+const selectedWeek = ref(1);
+
+const scrollCarousel = (direction) => {
+    const carousel = document.getElementById('league-carousel');
+    if (carousel) carousel.scrollBy({ left: direction * 360, behavior: 'smooth' });
+};
+
+const leagueData = {
+    1: {
+        badge: "Fase Inicial", title: "SEMANA 1",
+        desc_short: "El inicio de la liga regular. Compite en el primer corte gratuito o aprovecha el tier Premium para asegurar tu cupo.",
+        color: "text-fnBrightPurple", borderColor: "border-fnBrightPurple",
+        poster: "/public/league/clasificatorio-1.png",
+        desc1: "<p>Las primeras 3 partidas son <strong class='text-white'>GRATIS</strong> para buscar clasificación. Con el Upgrade Premium, juegas <strong class='text-white'>2 partidas extras (5 en total)</strong> y participas por el pozo de dinero semanal.</p><p>El lobby es privado. Prohibido el teaming. Formato Solos.</p>",
+        desc2: "<p>Hay dos cortes de clasificación:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li>✔ <strong>Corte Free (1-3):</strong> Top 10% general avanza.</li><li>👑 <strong>Corte Premium (4-5):</strong> Top 10% de pago avanza.</li></ul>"
+    },
+    2: {
+        badge: "Segunda Oportunidad", title: "SEMANA 2",
+        desc_short: "Misma modalidad, nueva tabla de puntos. Segundo llamado para el Top 10%.",
+        color: "text-fnEmerald", borderColor: "border-fnEmerald",
+        poster: "/public/league/clasificatorio-2.png",
+        desc1: "<p>Mismo formato de Battle Royale Clásico en Solos. 3 partidas gratis + 2 Premium.</p>",
+        desc2: "<ul class='space-y-2 mt-2 text-sm text-gray-300'><li>✔ <strong>Corte Free (1-3):</strong> Top 10% avanza.</li><li>👑 <strong>Corte Premium (4-5):</strong> Top 10% de pago avanza.</li></ul>"
+    },
+    3: {
+        badge: "La Última Vida", title: "REPECHAJE",
+        desc_short: "4 partidas: 2 BR Clásico + 2 Reload. Solo 8 tickets de clasificación en juego.",
+        color: "text-fnCrimson", borderColor: "border-fnCrimson",
+        poster: "/public/league/repechaje.png",
+        desc1: "<p>Filtro final de versatilidad: <strong class='text-white'>4 partidas exactas</strong> (2 BR + 2 Reload).</p>",
+        desc2: "<p>8 pases a la final:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li>🏆 Ganadores de cada partida (4)</li><li>📈 Top 3 pts totales (3)</li><li>💀 MVP Kills (1)</li></ul>"
+    },
+    4: {
+        badge: "El Cierre Absoluto", title: "GRAN FINAL",
+        desc_short: "Solo los mejores. Top 15% de W1/W2 + ganadores del Repechaje.",
+        color: "text-fnGold", borderColor: "border-fnGold",
+        poster: "/public/league/gran-final.png",
+        desc1: "<p>Battle Royale Clásico. Lobbies privados stacked. 6 partidas. No hay suplentes.</p>",
+        desc2: "<p>El Mega Pozo se paga aquí. Además, el <strong class='text-white'>20% de toda la recaudación</strong> se sortea entre todos los participantes.</p>"
+    }
+};
+
+const currentWeekData = ref(leagueData[1]);
+
+const selectWeek = (weekNum) => {
+    selectedWeek.value = weekNum;
+    currentWeekData.value = leagueData[weekNum];
+    // Scroll carousel card into view on mobile
+    nextTick(() => {
+        const card = document.getElementById(`card-w${weekNum}`);
+        if (card && window.innerWidth < 768) {
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    });
+};
+
+// ---- Prize Pool Calculator ----
+const inputPlayers = ref(50);
+const inputPrice = ref(10);
+
+const prizeTotal = ref(0);
+const prizeWeekly = ref(0);
+const prizeFinal = ref(0);
+const prizeGiveaways = ref(0);
+
+const updatePrize = () => {
+    const total = inputPlayers.value * inputPrice.value;
+    prizeTotal.value = total;
+    prizeWeekly.value = Math.round(total * 0.40);
+    prizeFinal.value = Math.round(total * 0.40);
+    prizeGiveaways.value = Math.round(total * 0.20);
+};
+
+// ---- Registration Tier ----
+const selectedTier = ref('free');
+
 onMounted(async () => {
+    updatePrize();
     try {
         const res = await axios.get('/api/league/standings');
         allSerializedTournaments.value = res.data;
@@ -159,17 +241,17 @@ onMounted(async () => {
 
             <!-- Carrusel Épico de Pósters -->
             <div class="relative w-full mb-16 group">
-                <button onclick="scrollCarousel(-1)" class="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 z-30 bg-black/80 border border-white/20 text-white w-14 h-14 flex items-center justify-center rounded-full hover:bg-white hover:text-black transition-all hidden md:flex opacity-0 group-hover:opacity-100 backdrop-blur-md">
+                <button @click="scrollCarousel(-1)" class="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 z-30 bg-black/80 border border-white/20 text-white w-14 h-14 flex items-center justify-center rounded-full hover:bg-white hover:text-black transition-all hidden md:flex opacity-0 group-hover:opacity-100 backdrop-blur-md">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
-                <button onclick="scrollCarousel(1)" class="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 z-30 bg-black/80 border border-white/20 text-white w-14 h-14 flex items-center justify-center rounded-full hover:bg-white hover:text-black transition-all hidden md:flex opacity-0 group-hover:opacity-100 backdrop-blur-md">
+                <button @click="scrollCarousel(1)" class="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 z-30 bg-black/80 border border-white/20 text-white w-14 h-14 flex items-center justify-center rounded-full hover:bg-white hover:text-black transition-all hidden md:flex opacity-0 group-hover:opacity-100 backdrop-blur-md">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
 
                 <div id="league-carousel" class="flex gap-6 overflow-x-auto snap-x snap-mandatory hide-scrollbar py-8 px-4 items-center scroll-smooth">
                     
                     <!-- Póster Semana 1 -->
-                    <div onclick="selectWeek(1)" id="card-w1" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-100 shadow-glowPurple">
+                    <div @click="selectWeek(1)" id="card-w1" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 1 ? 'opacity-100 shadow-glowPurple' : 'opacity-75 hover:opacity-100']">
                         <div class="noise-overlay"></div>
                         <img src="/public/league/clasificatorio-1.png" alt="Póster de fase clasificatoria de la semana 1 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
@@ -191,11 +273,11 @@ onMounted(async () => {
                                 </div>
                             </div>
                         </div>
-                        <div id="sel-w1" class="absolute inset-0 border border-fnBrightPurple opacity-100 transition-opacity duration-300 pointer-events-none z-30"></div>
+                        <div id="sel-w1" :class="['absolute inset-0 border border-fnBrightPurple transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 1 ? 'opacity-100' : 'opacity-0']"></div>
                     </div>
 
                     <!-- Póster Semana 2 -->
-                    <div onclick="selectWeek(2)" id="card-w2" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-75 hover:opacity-100">
+                    <div @click="selectWeek(2)" id="card-w2" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 2 ? 'opacity-100 shadow-glowEmerald' : 'opacity-75 hover:opacity-100']">
                         <div class="noise-overlay"></div>
                         <img src="/public/league/clasificatorio-2.png" alt="Póster de segunda clasificatoria de la semana 2 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
@@ -217,11 +299,11 @@ onMounted(async () => {
                                 </div>
                             </div>
                         </div>
-                        <div id="sel-w2" class="absolute inset-0 border border-fnEmerald opacity-0 transition-opacity duration-300 pointer-events-none z-30"></div>
+                        <div id="sel-w2" :class="['absolute inset-0 border border-fnEmerald transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 2 ? 'opacity-100' : 'opacity-0']"></div>
                     </div>
 
                     <!-- Póster Semana 3 (Repechaje) -->
-                    <div onclick="selectWeek(3)" id="card-w3" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-75 hover:opacity-100">
+                    <div @click="selectWeek(3)" id="card-w3" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 3 ? 'opacity-100 shadow-glowCrimson' : 'opacity-75 hover:opacity-100']">
                         <div class="noise-overlay"></div>
                         <img src="/public/league/repechaje.png" alt="Póster de repechaje de la semana 3 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
@@ -243,11 +325,11 @@ onMounted(async () => {
                                 </div>
                             </div>
                         </div>
-                        <div id="sel-w3" class="absolute inset-0 border border-fnCrimson opacity-0 transition-opacity duration-300 pointer-events-none z-30"></div>
+                        <div id="sel-w3" :class="['absolute inset-0 border border-fnCrimson transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 3 ? 'opacity-100' : 'opacity-0']"></div>
                     </div>
 
                     <!-- Póster Semana 4 (Final) -->
-                    <div onclick="selectWeek(4)" id="card-w4" class="shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden opacity-75 hover:opacity-100">
+                    <div @click="selectWeek(4)" id="card-w4" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 4 ? 'opacity-100 shadow-glowGold' : 'opacity-75 hover:opacity-100']">
                         <div class="noise-overlay"></div>
                         <img src="/public/league/gran-final.png" alt="Póster de gran final de la semana 4 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
@@ -275,7 +357,7 @@ onMounted(async () => {
                                 </div>
                             </div>
                         </div>
-                        <div id="sel-w4" class="absolute inset-0 border border-fnGold opacity-0 transition-opacity duration-300 pointer-events-none z-30"></div>
+                        <div id="sel-w4" :class="['absolute inset-0 border border-fnGold transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 4 ? 'opacity-100' : 'opacity-0']"></div>
                     </div>
 
                 </div>
@@ -286,35 +368,27 @@ onMounted(async () => {
                 <div class="flex flex-col md:flex-row gap-12 relative z-10">
                     
                     <div class="md:w-1/3 border-r border-white/10 pr-8">
-                        <span id="panel-badge" class="text-fnBrightPurple font-chakra font-bold text-xs uppercase tracking-widest mb-4 block">Fase Inicial</span>
-                        <h3 id="panel-title" class="font-block text-4xl text-white uppercase leading-none mb-6">SEMANA 1</h3>
-                        <p id="panel-desc-short" class="text-gray-400 text-sm leading-relaxed mb-6">
-                            El inicio de la liga regular. Sobrevive, acumula puntos y asegura tu lugar en el Top 15% para saltarte el repechaje.
+                        <span :class="[currentWeekData.color, 'font-chakra font-bold text-xs uppercase tracking-widest mb-4 block']">{{ currentWeekData.badge }}</span>
+                        <h3 class="font-block text-4xl text-white uppercase leading-none mb-6">{{ currentWeekData.title }}</h3>
+                        <p class="text-gray-400 text-sm leading-relaxed mb-6">
+                            {{ currentWeekData.desc_short }}
                         </p>
                         <div class="pt-4 border-t border-white/10">
                             <span class="text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-500 mb-3 block">Póster de la fase</span>
-                            <img id="panel-poster" src="/public/league/clasificatorio-1.png" alt="Póster oficial de la fase seleccionada" class="w-full rounded-md border border-white/10 bg-black/30 object-cover">
+                            <img :src="currentWeekData.poster" alt="Póster oficial de la fase seleccionada" class="w-full rounded-md border border-white/10 bg-black/30 object-cover">
                         </div>
                     </div>
 
                     <div class="md:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-8">
                         <div>
                             <h4 class="text-xs font-chakra font-bold uppercase tracking-widest text-gray-500 mb-4 border-b border-white/10 pb-2">Reglas de Emparejamiento</h4>
-                            <div id="panel-desc1" class="text-gray-300 text-sm leading-relaxed space-y-3">
-                                <p>Las primeras 3 partidas son <strong class="text-white">GRATIS</strong> para buscar clasificación. Con el Upgrade Premium, juegas <strong class="text-white">5 partidas</strong> y participas por el pozo de dinero semanal.</p>
-                                <p>El lobby es privado. Prohibido el teaming o griefing intencional. Formato puramente Solos (Sin suplentes).</p>
+                            <div class="text-gray-300 text-sm leading-relaxed space-y-3" v-html="currentWeekData.desc1">
                             </div>
                         </div>
                         
                         <div>
                             <h4 class="text-xs font-chakra font-bold uppercase tracking-widest text-gray-500 mb-4 border-b border-white/10 pb-2">Sistema de Clasificación</h4>
-                            <div id="panel-desc2" class="text-gray-300 text-sm leading-relaxed space-y-3">
-                                <p>El <strong class="text-white border-b border-fnBrightPurple">Top 15%</strong> de los jugadores con mayor puntuación de la jornada avanzan directo a la Gran Final.</p>
-                                <ul class="space-y-1 mt-2 text-xs font-mono text-gray-400">
-                                    <li class="flex justify-between"><span>Victoria Royale</span> <strong class="text-white">+100 Pts</strong></li>
-                                    <li class="flex justify-between"><span>Top 2-5</span> <strong class="text-white">+75 a +50 Pts</strong></li>
-                                    <li class="flex justify-between"><span>Eliminación</span> <strong class="text-white">+5 Pts</strong></li>
-                                </ul>
+                            <div class="text-gray-300 text-sm leading-relaxed space-y-3" v-html="currentWeekData.desc2">
                             </div>
                         </div>
                     </div>
@@ -463,17 +537,17 @@ onMounted(async () => {
                         <div>
                             <div class="flex justify-between items-center font-chakra font-bold uppercase text-white mb-4 text-xs tracking-widest">
                                 <span>Usuarios Premium</span>
-                                <span id="player-count-label" class="text-white text-lg font-block">150</span>
+                                <span class="text-white text-lg font-block">{{ inputPlayers }}</span>
                             </div>
-                            <input type="range" id="input-players" min="20" max="500" value="150" class="w-full h-1 bg-white/20 appearance-none cursor-pointer accent-white">
+                            <input type="range" v-model.number="inputPlayers" @input="updatePrize" min="20" max="500" class="w-full h-1 bg-white/20 appearance-none cursor-pointer accent-white">
                         </div>
 
                         <div>
                             <div class="flex justify-between items-center font-chakra font-bold uppercase text-white mb-4 text-xs tracking-widest">
                                 <span>Costo Pase Upgrade</span>
-                                <span id="price-label" class="text-white text-lg font-block">$10</span>
+                                <span class="text-white text-lg font-block">${{ inputPrice }}</span>
                             </div>
-                            <input type="range" id="input-price" min="5" max="30" value="10" step="5" class="w-full h-1 bg-white/20 appearance-none cursor-pointer accent-white">
+                            <input type="range" v-model.number="inputPrice" @input="updatePrize" min="5" max="30" step="5" class="w-full h-1 bg-white/20 appearance-none cursor-pointer accent-white">
                         </div>
 
                         <div class="border-l border-white/20 pl-6 text-sm text-gray-400 space-y-4 font-light">
@@ -485,20 +559,20 @@ onMounted(async () => {
 
                     <div class="border border-white/10 bg-black/40 p-10 text-center relative flex flex-col justify-center h-full">
                         <span class="text-[10px] text-gray-500 font-chakra font-bold uppercase tracking-widest block mb-2">Recaudación Estimada</span>
-                        <span id="output-total-weekly" class="font-block text-6xl text-white tracking-tight block mb-12">$1,500</span>
+                        <span class="font-block text-6xl text-white tracking-tight block mb-12">${{ prizeTotal.toLocaleString() }}</span>
                         
                         <div class="grid grid-cols-3 gap-2">
                             <div class="text-center">
                                 <span class="text-[9px] text-gray-500 font-chakra uppercase block mb-1">Semanales</span>
-                                <strong id="output-weekly-prizes" class="text-sm font-block text-white">$600</strong>
+                                <strong class="text-sm font-block text-white">${{ prizeWeekly.toLocaleString() }}</strong>
                             </div>
                             <div class="text-center border-x border-white/10">
                                 <span class="text-[9px] text-gray-500 font-chakra uppercase block mb-1">Bolsa Final</span>
-                                <strong id="output-final-pool" class="text-sm font-block text-white">$600</strong>
+                                <strong class="text-sm font-block text-white">${{ prizeFinal.toLocaleString() }}</strong>
                             </div>
                             <div class="text-center">
                                 <span class="text-[9px] text-gray-500 font-chakra uppercase block mb-1">Sorteos</span>
-                                <strong id="output-giveaways" class="text-sm font-block text-white">$300</strong>
+                                <strong class="text-sm font-block text-white">${{ prizeGiveaways.toLocaleString() }}</strong>
                             </div>
                         </div>
                     </div>
@@ -620,194 +694,7 @@ onMounted(async () => {
         </p>
     </footer>
 
-    <script>
-        // --- NAVEGACIÓN SPA ---
-        function navigate(viewId) {
-            document.querySelectorAll('.view-section').forEach(section => {
-                section.classList.remove('active');
-            });
-            document.querySelectorAll('.nav-link').forEach(link => {
-                link.classList.remove('text-white');
-                link.classList.add('text-gray-500');
-            });
 
-            const activeSection = document.getElementById(`view-${viewId}`);
-            if (activeSection) {
-                // Forzar re-flow para reiniciar la animación
-                activeSection.style.animation = 'none';
-                activeSection.offsetHeight; 
-                activeSection.style.animation = null;
-                activeSection.classList.add('active');
-            }
-
-            const activeLink = document.getElementById(`nav-${viewId}`);
-            if (activeLink) {
-                activeLink.classList.remove('text-gray-500');
-                activeLink.classList.add('text-white');
-            }
-
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        // --- CARRUSEL SCROLL ---
-        function scrollCarousel(direction) {
-            const carousel = document.getElementById('league-carousel');
-            // Ancho tarjeta aprox + gap
-            const scrollAmount = 360; 
-            carousel.scrollBy({ left: direction * scrollAmount, behavior: 'smooth' });
-        }
-
-        // --- DATOS LIGA (NUEVAS REGLAS) ---
-        const leagueData = {
-            1: { 
-                badge: "Fase Inicial", title: "SEMANA 1", 
-                desc_short: "El inicio de la liga regular. Compite en el primer corte gratuito o aprovecha el tier Premium para asegurar tu cupo.",
-                color: "text-fnBrightPurple", borderColor: "border-fnBrightPurple",
-                poster: "/public/league/clasificatorio-1.png", posterAlt: "Póster de la semana 1",
-                desc1: "<p>Las primeras 3 partidas son <strong class='text-white'>GRATIS</strong> para buscar clasificación. Con el Upgrade Premium, juegas <strong class='text-white'>2 partidas extras (5 en total)</strong> y participas por el pozo de dinero semanal.</p><p>El lobby es privado. Prohibido el teaming o griefing intencional. Formato puramente Solos (Sin suplentes).</p>",
-                desc2: "<p>Hay dos cortes de clasificación hacia la Final:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li class='flex items-start gap-2'><i class='fa-solid fa-check text-fnBrightPurple mt-1'></i> <span><strong>Corte Free (Partidas 1-3):</strong> El <strong class='text-white'>Top 10% general</strong> de la jornada avanza.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-crown text-fnGold mt-1'></i> <span><strong>Corte Premium (Partidas 4-5):</strong> El <strong class='text-white'>Top 10% de los usuarios de pago</strong> avanza, sin contar a los ya clasificados.</span></li></ul>" 
-            },
-            2: { 
-                badge: "Segunda Oportunidad", title: "SEMANA 2", 
-                desc_short: "Misma modalidad, nueva tabla de puntos. Segundo llamado para el Top 10% gratuito y premium.",
-                color: "text-fnEmerald", borderColor: "border-fnEmerald",
-                poster: "/public/league/clasificatorio-2.png", posterAlt: "Póster de la semana 2",
-                desc1: "<p>Mantenemos el formato exacto de <strong class='text-white'>Battle Royale Clásico en Solos</strong>. 3 partidas gratis para el primer corte, y 2 adicionales para el corte Premium y la disputa por la bolsa semanal.</p><p>Los jugadores clasificados en la Semana 1 pueden jugar para pelear por el dinero de la semana 2, pero sus cupos de clasificación recorrerán la tabla.</p>",
-                desc2: "<p>Se aplican los mismos dos cortes de clasificación hacia la Final:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li class='flex items-start gap-2'><i class='fa-solid fa-check text-fnEmerald mt-1'></i> <span><strong>Corte Free (Partidas 1-3):</strong> El <strong class='text-white'>Top 10% general</strong> avanza.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-crown text-fnGold mt-1'></i> <span><strong>Corte Premium (Partidas 4-5):</strong> El <strong class='text-white'>Top 10% de los usuarios de pago</strong> avanza, recorriendo a los ya clasificados.</span></li></ul>" 
-            },
-            3: { 
-                badge: "La Última Vida", title: "SEMANA 3", 
-                desc_short: "El Repechaje Extremo. 4 partidas en total divididas en las dos disciplinas principales de la isla. Solo 8 tickets de clasificación en juego.",
-                color: "text-fnCrimson", borderColor: "border-fnCrimson",
-                poster: "/public/league/repechaje.png", posterAlt: "Póster de la semana 3",
-                desc1: "<p>Este es el filtro final de versatilidad. Jugaremos <strong class='text-white'>4 partidas exactas: 2 de Battle Royale Clásico y 2 de Recarga (Reload)</strong>.</p><p>Ya no hay clasificación por porcentaje. Los lugares son contados y se otorgan por mérito absoluto o agresividad pura.</p>",
-                desc2: "<p>Los tickets a la Final se reparten de la siguiente manera (8 Pases en total):</p><ul class='space-y-3 mt-2 text-sm text-gray-300'><li class='flex items-start gap-2'><i class='fa-solid fa-trophy text-fnCrimson mt-1'></i> <span><strong>Ganadores (4 pases):</strong> El jugador que gane cada partida.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-chart-line text-fnCrimson mt-1'></i> <span><strong>Constancia (3 pases):</strong> Los 3 jugadores con mayor cantidad de puntos totales en las 4 partidas.</span></li><li class='flex items-start gap-2'><i class='fa-solid fa-skull text-fnCrimson mt-1'></i> <span><strong>MVP Kills (1 pase):</strong> El jugador con mayor número de eliminaciones totales que no haya clasificado por los métodos anteriores.</span></li></ul>" 
-            },
-            4: { 
-                badge: "El Cierre Absoluto", title: "GRAN FINAL", 
-                desc_short: "Solo los mejores. Top 15% de W1 y W2, más los ganadores del Repechaje W3. El nivel más alto de Solos del servidor.",
-                color: "text-fnGold", borderColor: "border-fnGold",
-                poster: "/public/league/gran-final.png", posterAlt: "Póster de la gran final",
-                desc1: "<p>Volvemos al <strong class='text-white'>Battle Royale Clásico</strong>. Lobbies privados apilados (Stacked) con custom matchmaking. 6 partidas consecutivas donde no hay margen de error. No se permiten suplentes, es el jugador registrado o nada.</p>",
-                desc2: "<p>El pago del Mega Pozo. Los puntos de esta serie definen al campeón, que se lleva la gran bolsa.</p><p class='mt-2'>Además, finalizando el torneo, el <strong class='text-white border-b border-fnGold'>20% de toda la recaudación</strong> de la temporada se repartirá en sorteos de V-Bucks o efectivo en vivo para todos los que participaron alguna vez en la liga.</p>" 
-            }
-        };
-
-        function selectWeek(weekNum) {
-            // Estilos Carrusel
-            for (let i = 1; i <= 4; i++) {
-                const card = document.getElementById(`card-w${i}`);
-                const sel = document.getElementById(`sel-w${i}`);
-                if (card) {
-                    card.classList.remove('opacity-100', 'shadow-glowPurple', 'shadow-glowEmerald', 'shadow-glowCrimson', 'shadow-glowGold');
-                    card.classList.add('opacity-75');
-                    sel.classList.remove('opacity-100');
-                    sel.classList.add('opacity-0');
-                }
-            }
-
-            const activeCard = document.getElementById(`card-w${weekNum}`);
-            const activeSel = document.getElementById(`sel-w${weekNum}`);
-            
-            if (activeCard && activeSel) {
-                activeCard.classList.remove('opacity-75');
-                activeCard.classList.add('opacity-100');
-                activeSel.classList.remove('opacity-0');
-                activeSel.classList.add('opacity-100');
-
-                if (weekNum === 1) activeCard.classList.add('shadow-glowPurple');
-                if (weekNum === 2) activeCard.classList.add('shadow-glowEmerald');
-                if (weekNum === 3) activeCard.classList.add('shadow-glowCrimson');
-                if (weekNum === 4) activeCard.classList.add('shadow-glowGold');
-                
-                // Centrar en móviles
-                if (window.innerWidth < 768) {
-                    activeCard.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-                }
-            }
-
-            // Actualizar Panel
-            const data = leagueData[weekNum];
-            document.getElementById('panel-badge').innerText = data.badge;
-            document.getElementById('panel-badge').className = `${data.color} font-chakra font-bold text-xs uppercase tracking-widest mb-4 block`;
-            
-            document.getElementById('panel-title').innerText = data.title;
-            document.getElementById('panel-desc-short').innerText = data.desc_short;
-            document.getElementById('panel-poster').src = data.poster;
-            document.getElementById('panel-poster').alt = data.posterAlt;
-            
-            document.getElementById('panel-desc1').innerHTML = data.desc1;
-            document.getElementById('panel-desc2').innerHTML = data.desc2;
-        }
-
-        // --- REGISTRO & SIMULADOR ---
-        function selectRegTier(tier) {
-            const freeBox = document.getElementById('tier-option-free');
-            const premiumBox = document.getElementById('tier-option-premium');
-            const rFree = document.getElementById('radio-free');
-            const rPremium = document.getElementById('radio-premium');
-
-            if (tier === 'free') {
-                rFree.checked = true;
-                freeBox.className = "cursor-pointer bg-white/5 p-6 border border-white/30 flex items-start gap-4 transition-all";
-                premiumBox.className = "cursor-pointer bg-black/40 p-6 border border-white/5 flex items-start gap-4 transition-all hover:bg-white/5";
-            } else {
-                rPremium.checked = true;
-                premiumBox.className = "cursor-pointer bg-white/5 p-6 border border-white/30 flex items-start gap-4 transition-all";
-                freeBox.className = "cursor-pointer bg-black/40 p-6 border border-white/5 flex items-start gap-4 transition-all hover:bg-white/5";
-            }
-        }
-
-        const inputPlayers = document.getElementById('input-players');
-        const inputPrice = document.getElementById('input-price');
-
-        function updatePrizePoolCalculations() {
-            const players = parseInt(inputPlayers.value);
-            const price = parseInt(inputPrice.value);
-
-            const total = players * price;
-            const weeklyPrizes = Math.round(total * 0.40);
-            const finalPool = Math.round(total * 0.40);
-            const giveaways = Math.round(total * 0.20);
-
-            document.getElementById('player-count-label').innerText = players;
-            document.getElementById('price-label').innerText = `$${price}`;
-
-            document.getElementById('output-total-weekly').innerText = `$${total.toLocaleString()}`;
-            document.getElementById('output-weekly-prizes').innerText = `$${weeklyPrizes.toLocaleString()}`;
-            document.getElementById('output-final-pool').innerText = `$${finalPool.toLocaleString()}`;
-            document.getElementById('output-giveaways').innerText = `$${giveaways.toLocaleString()}`;
-        }
-
-        inputPlayers.addEventListener('input', updatePrizePoolCalculations);
-        inputPrice.addEventListener('input', updatePrizePoolCalculations);
-
-        function handleRegistration(e) {
-            e.preventDefault();
-            const epic = document.getElementById('reg-epic').value;
-            const whatsapp = document.getElementById('reg-whatsapp').value;
-            const selectedEvent = document.getElementById('inp-event').options[document.getElementById('inp-event').selectedIndex].text;
-            const plan = document.querySelector('input[name="reg-tier"]:checked').value === 'free' ? 'ESTÁNDAR (GRATIS)' : 'UPGRADE PREMIUM';
-            
-            const msgArea = document.getElementById('status-message');
-            msgArea.classList.remove('hidden', 'border-white', 'border-fnGold', 'text-white', 'text-fnGold');
-
-            if (plan.includes('GRATIS')) {
-                msgArea.classList.add('border-white', 'text-white');
-                msgArea.innerHTML = `✓ REGISTRO CONFIRMADO: ${epic} <br><span class="text-xs text-gray-500 font-normal mt-2 block tracking-normal normal-case">Plan: ${plan} | Evento: ${selectedEvent}</span>`;
-            } else {
-                msgArea.classList.add('border-fnGold', 'text-fnGold');
-                msgArea.innerHTML = `⚡ UPGRADE RESERVADO: ${epic} <br><span class="text-xs text-gray-500 font-normal mt-2 block tracking-normal normal-case">Sigue las instrucciones en Discord para validar el pago. Evento: ${selectedEvent}</span>`;
-            }
-            msgArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-
-        window.onload = function() {
-            updatePrizePoolCalculations();
-            selectRegTier('free');
-            selectWeek(1); // Auto-seleccionar W1
-        };
-    </script>
 
     </div>
 </template>

@@ -71,6 +71,9 @@ const privateCode = ref('')
 const privateError = ref('')
 const privateBlocked = ref((props.attemptsLeft ?? 3) <= 0)
 const privateLoading = ref(false)
+const hideAccessBanner = ref(false)
+const localRegistrationStatus = ref(props.registrationStatus)
+const localHasAccess = ref(props.hasAccess)
 
 const verifyPrivateCode = async () => {
   if (privateLoading.value || !privateCode.value.trim()) return
@@ -84,6 +87,7 @@ const verifyPrivateCode = async () => {
     })
     if (res.data.success) {
       privateHasAccess.value = true
+      localHasAccess.value = true
       // Reload to get real codes from server
       window.location.reload()
     }
@@ -218,6 +222,14 @@ const loadData = async (showSpinner = false) => {
       // Merge para no perder datos previos si la API no devuelve todo
       tournamentData.value = { ...tournamentData.value, ...res.data.tournament }
       progressText.value = res.data.tournament.progress || ''
+    }
+
+    // Consultar estado de inscripción en vivo para actualizar el banner
+    const statusRes = await axios.get(`/api/tournaments/${id}/registration-status`)
+    if (statusRes.data) {
+      localRegistrationStatus.value = statusRes.data.status
+      localHasAccess.value = statusRes.data.has_access
+      privateHasAccess.value = statusRes.data.has_private_access
     }
     
   } catch (e) { 
@@ -837,13 +849,18 @@ onUnmounted(() => {
     </div>
 
   <!-- ===== BANNER DE ACCESO (para todos los torneos si no se tienen los códigos) ===== -->
-  <div v-if="!props.hasAccess" class="fixed inset-0 z-[998] pointer-events-none">
+  <div v-if="!localHasAccess && !hideAccessBanner" class="fixed inset-0 z-[998] pointer-events-none">
     <div class="absolute bottom-0 left-0 right-0 pointer-events-auto">
       <div class="bg-black/97 border-t-2 border-[var(--rankit-neon)] shadow-[0_-10px_60px_rgba(191,0,255,0.3)] p-6">
-        <div class="max-w-2xl mx-auto">
+        <div class="max-w-2xl mx-auto relative">
+          
+          <!-- Botón de cerrar / solo ver estadísticas -->
+          <button @click="hideAccessBanner = true" class="absolute -top-2 right-0 text-gray-500 hover:text-white font-bold text-xs uppercase tracking-widest flex items-center gap-1">
+            Solo ver estadísticas <i class="ph-bold ph-x"></i>
+          </button>
 
-          <!-- ESTADO: No logueado (registrationStatus === null) -->
-          <div v-if="props.registrationStatus === null || props.registrationStatus === undefined" class="text-center py-2">
+          <!-- ESTADO: No logueado (localRegistrationStatus === null) -->
+          <div v-if="localRegistrationStatus === null || localRegistrationStatus === undefined" class="text-center py-2">
             <div class="flex items-center justify-center gap-3 mb-3">
               <i class="ph-fill ph-lock-key text-[var(--rankit-neon)] text-3xl"></i>
               <h3 class="text-lg font-black uppercase text-white font-display">Inicia sesión para participar</h3>
@@ -860,19 +877,19 @@ onUnmounted(() => {
           </div>
 
           <!-- ESTADO: Logueado pero no registrado (none) -->
-          <div v-else-if="props.registrationStatus === 'none'" class="text-center py-2">
+          <div v-else-if="localRegistrationStatus === 'none'" class="text-center py-2">
             <div class="flex items-center justify-center gap-3 mb-3">
               <i class="ph-bold ph-ticket text-[var(--rankit-neon)] text-3xl"></i>
               <h3 class="text-lg font-black uppercase text-white font-display">Inscripción requerida</h3>
             </div>
             <p class="text-sm text-gray-400 mb-5">Necesitas inscribirte a este torneo para acceder a los códigos de partida.</p>
-            <a href="#inscripcion" @click.prevent="$emit('navigate-tab', 'inscripcion')" class="inline-block px-8 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all btn-skew">
+            <button @click.prevent="switchTab('inscripcion')" class="inline-block px-8 py-3 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all btn-skew">
               <span class="btn-content">Ir a Inscripción ↓</span>
-            </a>
+            </button>
           </div>
 
           <!-- ESTADO: Inscripción pendiente de aprobación -->
-          <div v-else-if="props.registrationStatus === 'pending'" class="flex items-center gap-4 py-2">
+          <div v-else-if="localRegistrationStatus === 'pending'" class="flex items-center gap-4 py-2">
             <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-yellow-500/10 rounded border border-yellow-500/30">
               <i class="ph-bold ph-hourglass text-yellow-400 text-2xl animate-pulse"></i>
             </div>
@@ -884,7 +901,7 @@ onUnmounted(() => {
           </div>
 
           <!-- ESTADO: Inscripción rechazada -->
-          <div v-else-if="props.registrationStatus === 'rejected'" class="flex items-center gap-4 py-2">
+          <div v-else-if="localRegistrationStatus === 'rejected'" class="flex items-center gap-4 py-2">
             <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-red-500/10 rounded border border-red-500/30">
               <i class="ph-bold ph-x-circle text-red-400 text-2xl"></i>
             </div>
@@ -896,7 +913,7 @@ onUnmounted(() => {
           </div>
 
           <!-- ESTADO: Inscripción aceptada (paid) pero torneo privado sin código en sesión -->
-          <div v-else-if="props.registrationStatus === 'paid' && props.isPrivate && !props.hasPrivateSession">
+          <div v-else-if="localRegistrationStatus === 'paid' && props.isPrivate && !privateHasAccess">
 
             <!-- Bloqueado por exceso de intentos -->
             <div v-if="privateBlocked" class="text-center py-2">

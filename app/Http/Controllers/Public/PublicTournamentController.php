@@ -202,6 +202,42 @@ class PublicTournamentController extends Controller
         ]);
     }
 
+    /**
+     * API JSON para obtener el estado de registro y accesos del usuario en vivo
+     */
+    public function getRegistrationStatus(Request $request, $id)
+    {
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if (!$tournament) return response()->json(['error' => 'Not found'], 404);
+
+        $user = auth()->user();
+        $registrationStatus = null;
+        $hasPaidRegistration = false;
+
+        if ($user) {
+            $reg = DB::table('tournament_registrations')
+                ->where('tournament_id', $tournament->id)
+                ->where('email', $user->email)
+                ->orderByDesc('created_at')
+                ->first();
+
+            $registrationStatus = $reg?->payment_status ?? 'none';
+            $hasPaidRegistration = ($registrationStatus === 'paid');
+        }
+
+        $sessionKey = "t_access_{$tournament->id}";
+        $hasSessionAccess = (bool) session($sessionKey);
+        $isPrivate = (bool)($tournament->is_private ?? false);
+
+        $hasCodeAccess = $hasPaidRegistration && (!$isPrivate || $hasSessionAccess);
+
+        return response()->json([
+            'status'             => $registrationStatus,
+            'has_access'         => $hasCodeAccess,
+            'has_private_access' => $hasSessionAccess,
+        ]);
+    }
+
     // --- MÉTODOS WIDGETS ---
 
     public function widgetGlobal($id)
