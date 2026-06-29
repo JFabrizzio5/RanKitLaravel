@@ -249,13 +249,22 @@ onMounted(() => {
 
         <!-- AUTH LINKS (Conservando Lógica Vue/Inertia) -->
         <template v-if="props.canLogin">
-          <Link
-            v-if="$page.props.auth?.user"
-            :href="route('dashboard')"
-            class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
-          >
-            {{ t.nav.dashboard }}
-          </Link>
+          <template v-if="$page.props.auth?.user">
+            <Link
+              v-if="$page.props.auth.user.role === 'admin' || $page.props.auth.user.role === 'superadmin' || $page.props.auth.user.email === '18jangel18@gmail.com'"
+              :href="route('jangel.indexdos')"
+              class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
+            >
+              ADMIN EVENTOS
+            </Link>
+            <Link
+              v-else
+              :href="route('dashboard')"
+              class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
+            >
+              {{ t.nav.dashboard }}
+            </Link>
+          </template>
 
           <template v-else>
             <Link
@@ -315,13 +324,22 @@ onMounted(() => {
 
           <div class="flex flex-col gap-4 sm:flex-row">
   <!-- Si está logeado: se queda "Organizar Torneo" (como pediste) -->
-  <Link
-    v-if="$page.props.auth?.user"
-    :href="route('dashboard')"
-    class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
-  >
-    <span class="btn-content">{{ t.hero.btnOrganize }}</span>
-  </Link>
+  <template v-if="$page.props.auth?.user">
+    <Link
+      v-if="$page.props.auth.user.role === 'admin' || $page.props.auth.user.role === 'superadmin' || $page.props.auth.user.email === '18jangel18@gmail.com'"
+      :href="route('jangel.indexdos')"
+      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
+    >
+      <span class="btn-content">ADMIN EVENTOS</span>
+    </Link>
+    <Link
+      v-else
+      :href="route('dashboard')"
+      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
+    >
+      <span class="btn-content">{{ t.hero.btnOrganize }}</span>
+    </Link>
+  </template>
 
   <!-- Si NO está logeado: Ingresar + Crear cuenta -->
   <template v-else>

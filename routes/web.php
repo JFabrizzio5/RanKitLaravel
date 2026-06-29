@@ -225,6 +225,13 @@ Route::middleware('auth')->group(function () {
         
         // API Leaderboard
         Route::get('/api/leaderboard/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('api.leaderboard');
+        
+        // Clasificados Manuales y Registro
+        Route::get('/api/league/tournaments/public', [TournamentParserController::class, 'getPublicTournaments'])->name('api.league.tournaments.public');
+        
+        Route::post('/tournaments/{id}/qualify-manual', [TournamentParserController::class, 'qualifyPlayerManual'])->name('jangel.tournaments.qualify-manual');
+        Route::delete('/tournaments/{id}/qualify-manual/{qualifierId}', [TournamentParserController::class, 'removeQualifierManual'])->name('jangel.tournaments.unqualify-manual');
+
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
 
         // --- GESTIÓN DE CANCHAS (PITCHES) ---
@@ -240,11 +247,14 @@ Route::middleware('auth')->group(function () {
             Route::get('/users', [AdminUserController::class, 'index'])->name('admin.users.index');
             Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
             Route::put('/users/{user}/role', [AdminUserController::class, 'updateRole'])->name('admin.users.role');
+            Route::delete('/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
         });
     });
 });
-Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublicData'])
-    ->name('api.public.data');
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/league/register', [TournamentParserController::class, 'registerPlayer'])->name('league.register');
+});
 
 // API Public Registration
 Route::post('/api/tournaments/{id}/register', [TournamentParserController::class, 'registerForTournament'])
@@ -256,7 +266,7 @@ Route::post('/admin/tournaments/{tournament}/adjust-score', [TournamentParserCon
     ->name('jangel.score.adjust');
  Route::post('/admin/tournaments/{id}/appeal', [TournamentParserController::class, 'appealReplay'])
     ->middleware(['auth', 'superadmin'])
-    ->name('tournament.appeal');
+    ->name('jangel.match.appeal');
     
  
  // Esta ruta acepta el parámetro opcional ?code=XYZ
