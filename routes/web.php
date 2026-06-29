@@ -210,6 +210,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/tournaments/{id}/registrations', [TournamentParserController::class, 'getRegistrations'])->name('jangel.registrations');
         Route::put('/registrations/{id}/payment', [TournamentParserController::class, 'updatePaymentStatus'])->name('jangel.registrations.payment');
         Route::post('/tournaments/{id}/accept-all', [TournamentParserController::class, 'acceptAllRegistrations'])->name('jangel.registrations.accept_all');
+        Route::post('/tournaments/initialize-league', [TournamentParserController::class, 'initializeLeague'])->name('jangel.tournaments.initialize_league');
 
         // Seriación / Clasificación
         Route::post('/tournaments/{id}/classify', [TournamentParserController::class, 'classifyToNextRound'])->name('jangel.tournaments.classify');

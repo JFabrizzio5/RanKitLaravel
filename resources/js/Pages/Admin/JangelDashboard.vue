@@ -450,10 +450,21 @@ const acceptAllRegistrations = async () => {
     if (!confirm('\u00bfAceptar TODAS las inscripciones pendientes?')) return;
     try {
         const res = await axios.post(`/admin/tournaments/${selectedTournament.value.id}/accept-all`);
-        alert(`\u2705 ${res.data.accepted} inscripción(es) aceptadas.`);
+        alert(`\u2705 ${res.data.accepted} inscripci\u00f3n(es) aceptadas.`);
         fetchRegistrations();
     } catch (e) {
         alert('Error al aceptar inscripciones.');
+    }
+};
+
+const initializeLeague = async () => {
+    if (!confirm('\u00bfDeseas autogenerar los 4 torneos oficiales de la Rankit Pro League? Solo se crear\u00e1n los que no existan.')) return;
+    try {
+        const res = await axios.post('/admin/tournaments/initialize-league');
+        alert(`\u2705 Torneos de liga inicializados correctamente. Creados: ${res.data.created}`);
+        window.location.reload();
+    } catch (e) {
+        alert('Error al inicializar los torneos de la liga.');
     }
 };
 
@@ -1054,13 +1065,18 @@ const copyInviteLink = () => {
                  </div>
                  
                  <div class="flex flex-col gap-1">
-                     <label class="text-[10px] font-bold uppercase text-gray-500">ID Torneo Destino (Opcional)</label>
-                     <input v-model="targetTournamentId" type="number" placeholder="Dejar en blanco para clonar torneo actual" class="w-full text-xs font-mono bg-gray-100 dark:bg-white/5 border-transparent focus:border-[var(--rankit-neon)] rounded p-2 outline-none" />
-                 </div>
+                      <label class="text-[10px] font-bold uppercase text-gray-500">Torneo Destino de Clasificación</label>
+                      <select v-model="targetTournamentId" class="w-full text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none">
+                          <option :value="null">-- Seleccionar Torneo --</option>
+                          <option v-for="t in props.tournaments" :key="t.id" :value="t.id">
+                              {{ t.name }} (ID: {{ t.id }})
+                          </option>
+                      </select>
+                  </div>
 
-                 <button @click="classifyPlayers" :disabled="selectedPlayersForClassification.length === 0" class="w-full py-3 text-xs font-bold uppercase btn-skew disabled:opacity-50">
-                     <span class="btn-content">Clasificar a {{ selectedPlayersForClassification.length }} Jugadores</span>
-                 </button>
+                  <button @click="classifyPlayers" :disabled="selectedPlayersForClassification.length === 0 || !targetTournamentId" class="w-full py-3 text-xs font-bold uppercase btn-skew disabled:opacity-50">
+                      <span class="btn-content">Clasificar a {{ selectedPlayersForClassification.length }} Jugadores</span>
+                  </button>
              </div>
           </div>
 

@@ -1274,6 +1274,68 @@ class TournamentParserController extends Controller
         return response()->json(['success' => true, 'accepted' => $count]);
     }
 
+    /**
+     * Fuerza la creación de los 4 torneos oficiales de la liga
+     */
+    public function initializeLeague(Request $request)
+    {
+        $this->ensureDatabaseIsReady();
+        $admin = DB::table('users')->where('email', '18jangel18@gmail.com')->first();
+        $adminId = $admin?->id ?? 1;
+
+        $leagueTournaments = [
+            [
+                'name'         => 'Rankit Pro League - Clasificatorio 1',
+                'slug'         => 'rankit-league-clasificatorio-1',
+                'is_serialized'=> true,
+                'is_private'   => false,
+                'table_name'   => 'league_clasificatorio_1_' . time(),
+                'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+            ],
+            [
+                'name'         => 'Rankit Pro League - Clasificatorio 2',
+                'slug'         => 'rankit-league-clasificatorio-2',
+                'is_serialized'=> true,
+                'is_private'   => false,
+                'table_name'   => 'league_clasificatorio_2_' . (time()+1),
+                'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+            ],
+            [
+                'name'         => 'Rankit Pro League - Repechaje',
+                'slug'         => 'rankit-league-repechaje',
+                'is_serialized'=> true,
+                'is_private'   => false,
+                'table_name'   => 'league_repechaje_' . (time()+2),
+                'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+            ],
+            [
+                'name'         => 'Rankit Pro League - Gran Final',
+                'slug'         => 'rankit-league-gran-final',
+                'is_serialized'=> true,
+                'is_private'   => true,
+                'access_code'  => 'rankit2025final',
+                'table_name'   => 'league_gran_final_' . (time()+3),
+                'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
+            ],
+        ];
+
+        $created = 0;
+        foreach ($leagueTournaments as $lt) {
+            // Si ya existe por slug, omitirlo
+            $exists = DB::table('tournaments')->where('slug', $lt['slug'])->exists();
+            if (!$exists) {
+                DB::table('tournaments')->insert(array_merge($lt, [
+                    'user_id'    => $adminId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]));
+                $created++;
+            }
+        }
+
+        return response()->json(['success' => true, 'created' => $created]);
+    }
+
     // --- SERIACIÓN DE TORNEOS (CLASIFICAR JUGADORES) ---
     public function classifyToNextRound(Request $request, $id)
     {
