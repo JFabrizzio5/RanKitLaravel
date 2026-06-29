@@ -229,6 +229,8 @@ onMounted(() => {
         <a href="#pricing" class="text-black transition hover:text-neon dark:text-white">{{ t.nav.pricing }}</a>
         <a href="#contacto" class="transition hover:text-neon">{{ t.nav.custom }}</a>
         <a href="#partners" class="transition hover:text-neon text-neon">{{ t.nav.partners }}</a>
+        <Link href="/league" class="transition hover:text-neon">League</Link>
+        <Link href="/mundial" class="transition hover:text-neon">Mundial</Link>
       </div>
 
       <!-- Actions -->
