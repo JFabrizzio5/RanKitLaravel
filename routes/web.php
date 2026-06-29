@@ -42,8 +42,8 @@ Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name
 
 // --- DASHBOARD USUARIO ---
 Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
-    if ($request->user()->email === '18jangel18@gmail.com') {
-        return redirect()->route('jangel.dashboard');
+    if ($request->user()->isAdmin()) {
+        return redirect()->route('jangel.indexdos');
     }
 
     $email = $request->user()->email;
@@ -72,7 +72,7 @@ Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
 
 // 1. Perfil Rankit
 Route::get('/profile/rankit', function () {
-    if (auth()->check() && auth()->user()->email === '18jangel18@gmail.com') {
+    if (auth()->check() && auth()->user()->isAdmin()) {
         return redirect()->route('jangel.indexdos');
     }
     return app()->call([ProfilePageController::class, 'show']);

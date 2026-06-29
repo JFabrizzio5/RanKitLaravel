@@ -161,12 +161,28 @@ class TournamentParserController extends Controller
         if (!Schema::hasTable('tournament_qualifiers')) {
             Schema::create('tournament_qualifiers', function (Blueprint $table) {
                 $table->id();
-                $table->unsignedBigInteger('tournament_from_id');
-                $table->unsignedBigInteger('tournament_to_id')->nullable();
+                $table->unsignedBigInteger('parent_tournament_id');
+                $table->unsignedBigInteger('source_tournament_id')->nullable();
                 $table->string('player_name');
+                $table->string('player_email')->nullable();
+                $table->string('epic_id')->nullable();
+                $table->integer('kills')->default(0);
+                $table->integer('placement')->default(0);
                 $table->string('status')->default('qualified');
                 $table->timestamps();
             });
+        } else {
+            // Añadir columnas si falta alguna
+            if (!Schema::hasColumn('tournament_qualifiers', 'parent_tournament_id')) {
+                Schema::table('tournament_qualifiers', function (Blueprint $table) {
+                    $table->unsignedBigInteger('parent_tournament_id')->default(0);
+                    $table->unsignedBigInteger('source_tournament_id')->nullable();
+                    $table->string('player_email')->nullable();
+                    $table->string('epic_id')->nullable();
+                    $table->integer('kills')->default(0);
+                    $table->integer('placement')->default(0);
+                });
+            }
         }
 
         // 8. Tabla de Canchas (Pitches)
@@ -1215,16 +1231,17 @@ class TournamentParserController extends Controller
         foreach ($request->players as $p) {
             // Check if already qualified
             $exists = DB::table('tournament_qualifiers')
-                ->where('tournament_from_id', $id)
-                ->where('tournament_to_id', $targetId)
+                ->where('parent_tournament_id', $targetId)
+                ->where('source_tournament_id', $id)
                 ->where('player_name', $p)
                 ->exists();
                 
             if (!$exists) {
                 $inserts[] = [
-                    'tournament_from_id' => $id,
-                    'tournament_to_id' => $targetId,
+                    'parent_tournament_id' => $targetId,
+                    'source_tournament_id' => $id,
                     'player_name' => $p,
+                    'player_email' => null, // Dejamos null porque se saca solo por nombre de momento
                     'status' => 'qualified',
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -1243,7 +1260,7 @@ class TournamentParserController extends Controller
     {
         $this->ensureDatabaseIsReady();
         $qualifiers = DB::table('tournament_qualifiers')
-            ->where('tournament_from_id', $id)
+            ->where('parent_tournament_id', $id)
             ->get();
             
         return response()->json($qualifiers);
