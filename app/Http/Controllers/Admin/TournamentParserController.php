@@ -53,6 +53,7 @@ class TournamentParserController extends Controller
                     // Si ya existía, añadimos el campo permitiendo nulos temporalmente
                     $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
                 }
+                if (!Schema::hasColumn('tournaments', 'slug')) $table->string('slug')->nullable();
                 if (!Schema::hasColumn('tournaments', 'twitch_channel')) $table->string('twitch_channel')->nullable();
                 if (!Schema::hasColumn('tournaments', 'is_private')) $table->boolean('is_private')->default(false);
                 if (!Schema::hasColumn('tournaments', 'is_serialized')) $table->boolean('is_serialized')->default(false);
@@ -1275,8 +1276,13 @@ class TournamentParserController extends Controller
 
         $created = 0;
         foreach ($leagueTournaments as $lt) {
-            // Si ya existe por slug, omitirlo
-            $exists = DB::table('tournaments')->where('slug', $lt['slug'])->exists();
+            // Verificar si existe por nombre o por slug de forma segura
+            $query = DB::table('tournaments')->where('name', $lt['name']);
+            if (Schema::hasColumn('tournaments', 'slug')) {
+                $query->orWhere('slug', $lt['slug']);
+            }
+            $exists = $query->exists();
+
             if (!$exists) {
                 DB::table('tournaments')->insert(array_merge($lt, [
                     'user_id'    => $adminId,
