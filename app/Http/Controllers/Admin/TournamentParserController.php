@@ -136,6 +136,62 @@ class TournamentParserController extends Controller
                 $table->timestamps();
             });
         }
+
+        // 6. Inscripciones y Pagos
+        if (!Schema::hasTable('tournament_registrations')) {
+            Schema::create('tournament_registrations', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('tournament_id');
+                $table->string('player_name');
+                $table->string('email');
+                $table->string('whatsapp')->nullable();
+                $table->string('discord')->nullable();
+                $table->string('payment_status')->default('pending'); // pending, paid, rejected
+                $table->text('payment_notes')->nullable();
+                $table->unsignedBigInteger('confirmed_by_admin_id')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // 7. Seriación de Torneos (Clasificados)
+        if (!Schema::hasTable('tournament_qualifiers')) {
+            Schema::create('tournament_qualifiers', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('tournament_from_id');
+                $table->unsignedBigInteger('tournament_to_id')->nullable();
+                $table->string('player_name');
+                $table->string('status')->default('qualified');
+                $table->timestamps();
+            });
+        }
+
+        // 8. Tabla de Canchas (Pitches)
+        if (!Schema::hasTable('pitches')) {
+            Schema::create('pitches', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('type')->default('Futbol 7'); // Ej: Futbol 7, Futbol 5, etc.
+                $table->decimal('price_per_hour', 8, 2)->default(0);
+                $table->text('description')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // 9. Tabla de Reservas de Canchas (Pitch Reservations)
+        if (!Schema::hasTable('pitch_reservations')) {
+            Schema::create('pitch_reservations', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('pitch_id');
+                $table->string('customer_name');
+                $table->string('customer_phone')->nullable();
+                $table->dateTime('start_time');
+                $table->dateTime('end_time');
+                $table->string('status')->default('pending'); // pending, paid, cancelled
+                $table->timestamps();
+
+                $table->foreign('pitch_id')->references('id')->on('pitches')->onDelete('cascade');
+            });
+        }
     }
 
     /**
@@ -1007,5 +1063,225 @@ class TournamentParserController extends Controller
     
     public function getPublicData(Request $request, $id) {
          return response()->json([]);
+    }
+
+    // --- INSCRIPCIONES Y PAGOS ---
+    public function registerForTournament(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $request->validate([
+            'player_name' => 'required|string|max:255',
+            'email' => 'required|email',
+            'whatsapp' => 'nullable|string|max:20',
+        ]);
+
+        $exists = DB::table('tournament_registrations')
+            ->where('tournament_id', $id)
+            ->where('email', $request->email)
+            ->first();
+
+        if ($exists) {
+            return response()->json(['success' => false, 'message' => 'Ya existe un registro con este correo para este torneo.'], 400);
+        }
+
+        DB::table('tournament_registrations')->insert([
+            'tournament_id' => $id,
+            'player_name' => $request->player_name,
+            'email' => $request->email,
+            'whatsapp' => $request->whatsapp,
+            'discord' => $request->discord,
+            'payment_status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Registro recibido correctamente.']);
+    }
+
+    public function getRegistrations($id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return response()->json(['error' => 'No autorizado'], 403);
+
+        $registrations = DB::table('tournament_registrations')
+            ->where('tournament_id', $id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json($registrations);
+    }
+
+    public function updatePaymentStatus(Request $request, $registrationId)
+    {
+        $this->ensureDatabaseIsReady();
+        $request->validate(['status' => 'required|in:pending,paid,rejected']);
+
+        $reg = DB::table('tournament_registrations')->where('id', $registrationId)->first();
+        if (!$reg) return response()->json(['error' => 'Registro no encontrado'], 404);
+
+        $tournament = $this->getTournamentIfOwner($reg->tournament_id);
+        if (!$tournament) return response()->json(['error' => 'No autorizado'], 403);
+
+        DB::table('tournament_registrations')->where('id', $registrationId)->update([
+            'payment_status' => $request->status,
+            'confirmed_by_admin_id' => auth()->id(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['success' => true]);
+    }
+
+    // --- SERIACIÓN DE TORNEOS (CLASIFICAR JUGADORES) ---
+    public function classifyToNextRound(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'No autorizado');
+
+        $request->validate([
+            'players' => 'required|array',
+            'players.*' => 'string',
+            'target_tournament_id' => 'nullable|integer',
+        ]);
+
+        $targetId = $request->target_tournament_id;
+
+        // Si no hay target_tournament, clonamos el torneo actual
+        if (!$targetId) {
+            $targetId = DB::table('tournaments')->insertGetId([
+                'user_id' => $tournament->user_id,
+                'name' => $tournament->name . ' - Fase 2',
+                'slug' => $tournament->slug ? $tournament->slug . '-fase2' : null,
+                'is_private' => $tournament->is_private,
+                'scoring_format' => $tournament->scoring_format,
+                'table_name' => 'fase2_' . time(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } else {
+            $target = DB::table('tournaments')->where('id', $targetId)->first();
+            if (!$target || (!$this->isSuperAdmin(auth()->user()) && $target->user_id !== auth()->id())) {
+                return back()->with('error', 'El torneo destino no es válido.');
+            }
+        }
+
+        $inserts = [];
+        foreach ($request->players as $p) {
+            // Check if already qualified
+            $exists = DB::table('tournament_qualifiers')
+                ->where('tournament_from_id', $id)
+                ->where('tournament_to_id', $targetId)
+                ->where('player_name', $p)
+                ->exists();
+                
+            if (!$exists) {
+                $inserts[] = [
+                    'tournament_from_id' => $id,
+                    'tournament_to_id' => $targetId,
+                    'player_name' => $p,
+                    'status' => 'qualified',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+        }
+
+        if (count($inserts) > 0) {
+            DB::table('tournament_qualifiers')->insert($inserts);
+        }
+
+        return back()->with('success', count($inserts) . ' jugadores clasificados correctamente.');
+    }
+
+    public function getQualifiers($id)
+    {
+        $this->ensureDatabaseIsReady();
+        $qualifiers = DB::table('tournament_qualifiers')
+            ->where('tournament_from_id', $id)
+            ->get();
+            
+        return response()->json($qualifiers);
+    }
+
+    // --- MÓDULO DE CANCHAS (PITCHES) ---
+
+    public function getPitches()
+    {
+        $this->ensureDatabaseIsReady();
+        $pitches = DB::table('pitches')->get();
+        return response()->json($pitches);
+    }
+
+    public function storePitch(Request $request)
+    {
+        $this->ensureDatabaseIsReady();
+        
+        $request->validate([
+            'name' => 'required|string',
+            'type' => 'required|string',
+            'price_per_hour' => 'numeric',
+            'description' => 'nullable|string'
+        ]);
+
+        DB::table('pitches')->insert([
+            'name' => $request->name,
+            'type' => $request->type,
+            'price_per_hour' => $request->price_per_hour ?? 0,
+            'description' => $request->description,
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Cancha creada correctamente.');
+    }
+
+    public function deletePitch($id)
+    {
+        DB::table('pitches')->where('id', $id)->delete();
+        return back()->with('success', 'Cancha eliminada.');
+    }
+
+    public function getPitchReservations($id)
+    {
+        $reservations = DB::table('pitch_reservations')
+            ->where('pitch_id', $id)
+            ->orderBy('start_time', 'asc')
+            ->get();
+        return response()->json($reservations);
+    }
+
+    public function storePitchReservation(Request $request, $id)
+    {
+        $request->validate([
+            'customer_name' => 'required|string',
+            'start_time' => 'required|date',
+            'end_time' => 'required|date|after:start_time',
+        ]);
+
+        DB::table('pitch_reservations')->insert([
+            'pitch_id' => $id,
+            'customer_name' => $request->customer_name,
+            'customer_phone' => $request->customer_phone,
+            'start_time' => $request->start_time,
+            'end_time' => $request->end_time,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Reserva creada.');
+    }
+
+    public function updatePitchReservationStatus(Request $request, $id)
+    {
+        $request->validate(['status' => 'required|string']);
+        
+        DB::table('pitch_reservations')->where('id', $id)->update([
+            'status' => $request->status,
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Estado de reserva actualizado.');
     }
 }

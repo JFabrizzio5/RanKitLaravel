@@ -51,6 +51,22 @@ const games = [
     href: null,
     action: 'valorant',
   },
+  {
+    id: 'football',
+    name: 'Fútbol',
+    subtitle: 'Torneos • Ligas',
+    description: 'Organiza torneos de eliminación directa o ligas de fútbol. Controla equipos, goleadores y tarjetas.',
+    color: '#10b981',
+    gradient: 'from-emerald-950 via-teal-950 to-emerald-950',
+    borderColor: 'border-emerald-500',
+    glowColor: 'shadow-emerald-500/40',
+    neon: '#10b981',
+    icon: '⚽',
+    tag: 'NUEVO',
+    tagColor: 'bg-emerald-600',
+    href: null,
+    action: 'football',
+  },
 ]
 
 
@@ -61,6 +77,8 @@ function navigate(game: typeof games[0]) {
   loading.value = game.id
   if (game.action === 'fortnite') {
     window.location.href = '/admin/jangel'
+  } else if (game.action === 'football') {
+    window.location.href = '/football'
   } else {
     window.location.href = `/lol?game=${game.action}`
   }
@@ -116,8 +134,62 @@ function navigate(game: typeof games[0]) {
         <p class="text-gray-400 text-sm max-w-md mx-auto">Selecciona el juego para gestionar tus torneos</p>
       </div>
 
+      <!-- Banner Rankit League -->
+      <div class="w-full max-w-6xl mb-12">
+        <div @click="router.visit('/league')" class="relative overflow-hidden rounded-3xl cursor-pointer group border border-purple-500/30 hover:border-purple-500/80 transition-all duration-500" style="background: #030108;">
+            <div class="absolute inset-0 bg-[url('https://s2.elespanol.com/2022/02/17/invertia/disruptores/ecosistema-startup/startups/650945168_221956806_1706x1280.jpg')] bg-cover bg-center opacity-30 group-hover:opacity-40 transition-opacity duration-700 blur-[2px] group-hover:blur-0"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-[#030108] via-[#030108]/80 to-transparent"></div>
+            <div class="relative z-10 p-8 md:p-12 flex flex-col md:flex-row items-center justify-between gap-8">
+                <div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="bg-purple-600 text-white text-[10px] font-black uppercase px-3 py-1 rounded-full tracking-widest animate-pulse shadow-[0_0_15px_#9b30ff]">OFICIAL</span>
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-widest" style="font-family: 'Chakra Petch', sans-serif">Circuito Competitivo</span>
+                    </div>
+                    <h2 class="text-4xl md:text-6xl font-black uppercase italic tracking-tighter mb-2" style="font-family: 'Black Ops One', impact, sans-serif;">
+                        RANKIT<span class="text-[#9b30ff]">.PRO</span> <span class="text-white">LEAGUE</span>
+                    </h2>
+                    <p class="text-sm md:text-base text-gray-300 max-w-xl font-light">
+                        El ecosistema competitivo oficial de Fortnite en solitario. Descubre el formato, las reglas y regístrate para la próxima temporada.
+                    </p>
+                </div>
+                <div class="shrink-0">
+                    <button class="px-8 py-4 bg-[#9b30ff] text-white font-black uppercase tracking-widest text-sm rounded transition-all duration-300 transform group-hover:scale-105 group-hover:shadow-[0_0_30px_-5px_#9b30ff] flex items-center gap-2" style="transform: skewX(-10deg);">
+                        <span style="transform: skewX(10deg);" class="flex items-center gap-2">Explorar Liga <span class="group-hover:translate-x-2 transition-transform">→</span></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- Banner Mundial 2026 -->
+      <div class="w-full max-w-6xl mb-12">
+        <div @click="router.visit('/mundial')" class="relative overflow-hidden rounded-3xl cursor-pointer group border border-emerald-500/30 hover:border-emerald-500/80 transition-all duration-500 bg-[#001f11]">
+            <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1518605368461-1ee7c532066d?auto=format&fit=crop&q=80')] bg-cover bg-center opacity-20 group-hover:opacity-30 transition-opacity duration-700 blur-[1px]"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-[#001f11] via-[#001f11]/80 to-transparent"></div>
+            <div class="relative z-10 p-6 md:p-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div>
+                    <div class="flex items-center gap-3 mb-3">
+                        <span class="bg-emerald-600 text-white text-[10px] font-black uppercase px-3 py-1 rounded-full tracking-widest animate-pulse shadow-[0_0_15px_#10b981]">EN VIVO</span>
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-widest" style="font-family: 'Chakra Petch', sans-serif">Fútbol Global</span>
+                    </div>
+                    <h2 class="text-3xl md:text-5xl font-black uppercase italic tracking-tighter mb-2" style="font-family: 'Black Ops One', impact, sans-serif;">
+                        COPA <span class="text-[#10b981]">MUNDIAL</span> <span class="text-white">2026</span>
+                    </h2>
+                    <p class="text-sm md:text-base text-gray-300 max-w-xl font-light">
+                        Sigue todas las estadísticas, tablas de grupos y resultados del mundial en tiempo real impulsado por API Oficial.
+                    </p>
+                </div>
+                <div class="shrink-0">
+                    <button class="px-6 py-3 bg-[#10b981] text-white font-black uppercase tracking-widest text-sm rounded transition-all duration-300 transform group-hover:scale-105 group-hover:shadow-[0_0_30px_-5px_#10b981] flex items-center gap-2" style="transform: skewX(-10deg);">
+                        <span style="transform: skewX(10deg);" class="flex items-center gap-2">Ver Estadísticas <span class="group-hover:translate-x-2 transition-transform">→</span></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+      </div>
+
       <!-- Game cards grid -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-6xl">
         <button v-for="game in games" :key="game.id" @click="navigate(game)" @mouseenter="hoveredGame = game.id"
           @mouseleave="hoveredGame = null" :disabled="loading !== null"
           class="relative group text-left overflow-hidden rounded-2xl border transition-all duration-300 cursor-pointer focus:outline-none"
