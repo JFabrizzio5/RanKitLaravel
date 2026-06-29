@@ -315,59 +315,10 @@ class TournamentParserController extends Controller
     {
         $this->ensureDatabaseIsReady();
 
-        // Auto-generar los 4 torneos de la Liga si no existen
-        $existingCount = DB::table('tournaments')->where('is_serialized', true)->count();
-        if ($existingCount === 0) {
-            $admin = DB::table('users')->where('email', '18jangel18@gmail.com')->first();
-            $adminId = $admin?->id ?? 1;
-
-            $leagueTournaments = [
-                [
-                    'name'         => 'Rankit Pro League - Clasificatorio 1',
-                    'slug'         => 'rankit-league-clasificatorio-1',
-                    'is_serialized'=> true,
-                    'is_private'   => false,
-                    'table_name'   => 'league_clasificatorio_1_' . time(),
-                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
-                ],
-                [
-                    'name'         => 'Rankit Pro League - Clasificatorio 2',
-                    'slug'         => 'rankit-league-clasificatorio-2',
-                    'is_serialized'=> true,
-                    'is_private'   => false,
-                    'table_name'   => 'league_clasificatorio_2_' . (time()+1),
-                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
-                ],
-                [
-                    'name'         => 'Rankit Pro League - Repechaje',
-                    'slug'         => 'rankit-league-repechaje',
-                    'is_serialized'=> true,
-                    'is_private'   => false,
-                    'table_name'   => 'league_repechaje_' . (time()+2),
-                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
-                ],
-                [
-                    'name'         => 'Rankit Pro League - Gran Final',
-                    'slug'         => 'rankit-league-gran-final',
-                    'is_serialized'=> true,
-                    'is_private'   => true,
-                    'access_code'  => 'rankit2025final',
-                    'table_name'   => 'league_gran_final_' . (time()+3),
-                    'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
-                ],
-            ];
-
-            foreach ($leagueTournaments as $lt) {
-                DB::table('tournaments')->insert(array_merge($lt, [
-                    'user_id'    => $adminId,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]));
-            }
-        }
-        
+        // Buscaremos solo los torneos que pertenezcan a la versión activa 'v0.1' de la liga
         $tournaments = DB::table('tournaments')
             ->where('is_serialized', true)
+            ->where('slug', 'like', 'v0.1-rankit-league-%')
             ->get();
             
         $standings = [];
@@ -1283,34 +1234,37 @@ class TournamentParserController extends Controller
         $admin = DB::table('users')->where('email', '18jangel18@gmail.com')->first();
         $adminId = $admin?->id ?? 1;
 
+        // Versión actual parametrizada por query string o por defecto v0.1
+        $version = $request->query('version', 'v0.1');
+
         $leagueTournaments = [
             [
-                'name'         => 'Rankit Pro League - Clasificatorio 1',
-                'slug'         => 'rankit-league-clasificatorio-1',
+                'name'         => "Rankit Pro League - Clasificatorio 1 ({$version})",
+                'slug'         => "{$version}-rankit-league-clasificatorio-1",
                 'is_serialized'=> true,
                 'is_private'   => false,
                 'table_name'   => 'league_clasificatorio_1_' . time(),
                 'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
             ],
             [
-                'name'         => 'Rankit Pro League - Clasificatorio 2',
-                'slug'         => 'rankit-league-clasificatorio-2',
+                'name'         => "Rankit Pro League - Clasificatorio 2 ({$version})",
+                'slug'         => "{$version}-rankit-league-clasificatorio-2",
                 'is_serialized'=> true,
                 'is_private'   => false,
                 'table_name'   => 'league_clasificatorio_2_' . (time()+1),
                 'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
             ],
             [
-                'name'         => 'Rankit Pro League - Repechaje',
-                'slug'         => 'rankit-league-repechaje',
+                'name'         => "Rankit Pro League - Repechaje ({$version})",
+                'slug'         => "{$version}-rankit-league-repechaje",
                 'is_serialized'=> true,
                 'is_private'   => false,
                 'table_name'   => 'league_repechaje_' . (time()+2),
                 'scoring_format'=> json_encode(['kill_points' => 10, 'placement' => []]),
             ],
             [
-                'name'         => 'Rankit Pro League - Gran Final',
-                'slug'         => 'rankit-league-gran-final',
+                'name'         => "Rankit Pro League - Gran Final ({$version})",
+                'slug'         => "{$version}-rankit-league-gran-final",
                 'is_serialized'=> true,
                 'is_private'   => true,
                 'access_code'  => 'rankit2025final',
@@ -1333,7 +1287,11 @@ class TournamentParserController extends Controller
             }
         }
 
-        return response()->json(['success' => true, 'created' => $created]);
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'created' => $created, 'version' => $version]);
+        }
+
+        return "<h1>✅ Liga oficial inicializada ({$version}) exitosamente!</h1><p>Creados: {$created} torneos.</p><p><a href='/admin/jangel'>Ir al Dashboard Admin</a></p>";
     }
 
     // --- SERIACIÓN DE TORNEOS (CLASIFICAR JUGADORES) ---
