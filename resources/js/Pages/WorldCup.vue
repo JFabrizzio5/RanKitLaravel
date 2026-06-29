@@ -147,8 +147,9 @@ const getTeamInfo = (teamIdOrName) => {
                 <!-- Equipos -->
                 <div v-if="activeTab === 'teams'" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                     <div v-for="team in teams" :key="team.id || team.name" class="bg-[#1f0d36] border border-gray-800 rounded-xl p-4 text-center hover:border-fuchsia-500/50 transition-colors">
-                        <div class="w-12 h-12 rounded-full bg-[#2a134a] mx-auto mb-3 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(217,70,239,0.2)]">
-                            {{ team.flag || '🏳️' }}
+                        <div class="w-12 h-12 rounded-full bg-[#2a134a] mx-auto mb-3 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.2)] overflow-hidden">
+                            <img v-if="team.flag" :src="team.flag" :alt="team.name_en || team.name" class="w-full h-full object-cover">
+                            <span v-else class="text-xl">🏳️</span>
                         </div>
                         <div class="text-sm font-bold text-white truncate">{{ team.name_en || team.name }}</div>
                         <div class="text-[10px] text-gray-500 uppercase mt-1">{{ team.fifa_code || 'FIFA' }}</div>
