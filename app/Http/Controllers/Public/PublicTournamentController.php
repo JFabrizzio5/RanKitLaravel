@@ -71,9 +71,12 @@ class PublicTournamentController extends Controller
         $hasSessionAccess = (bool) session($sessionKey);
         $isPrivate = (bool)($tournament->is_private ?? false);
 
-        // Público: códigos visibles solo con inscripción aceptada
-        // Privado: códigos visibles con inscripción aceptada + código de acceso válido
-        $hasCodeAccess = $hasPaidRegistration && (!$isPrivate || $hasSessionAccess);
+        // Público: códigos visibles solo con inscripción aceptada (a menos que no requiera inscripción)
+        // Privado: códigos visibles con inscripción aceptada + código de acceso válido (o sin inscripción + código)
+        $registrationStatusSetting = $tournament->registration_status ?? 'disabled';
+        
+        $hasRegistrationMet = ($registrationStatusSetting === 'disabled') || $hasPaidRegistration;
+        $hasCodeAccess = $hasRegistrationMet && (!$isPrivate || $hasSessionAccess);
 
         $attemptsLeft = 3 - (int) session("t_attempts_{$tournament->id}", 0);
 
@@ -229,7 +232,9 @@ class PublicTournamentController extends Controller
         $hasSessionAccess = (bool) session($sessionKey);
         $isPrivate = (bool)($tournament->is_private ?? false);
 
-        $hasCodeAccess = $hasPaidRegistration && (!$isPrivate || $hasSessionAccess);
+        $registrationStatusSetting = $tournament->registration_status ?? 'disabled';
+        $hasRegistrationMet = ($registrationStatusSetting === 'disabled') || $hasPaidRegistration;
+        $hasCodeAccess = $hasRegistrationMet && (!$isPrivate || $hasSessionAccess);
 
         return response()->json([
             'status'             => $registrationStatus,

@@ -38,6 +38,8 @@ interface TournamentInfo {
   game?: string;
   // Nuevos campos
   rules?: string;
+  registration_status?: string;
+  ticket_price?: string;
   prizes?: string;
   scoring_format?: any; // Puede ser string JSON u objeto
 }
@@ -491,7 +493,7 @@ onUnmounted(() => {
     <div class="sticky top-20 z-40 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
       <div class="flex gap-8 px-6 mx-auto overflow-x-auto max-w-7xl lg:px-8 no-scrollbar">
         <button
-          v-for="tab in ['resultados', 'inscripcion', 'comunidad', 'reglas', 'premios']"
+          v-for="tab in ['resultados', 'inscripcion', 'comunidad', 'reglas', 'premios'].filter(t => t !== 'inscripcion' || (tournamentData?.registration_status || tournament?.registration_status) !== 'disabled')"
           :key="tab"
           @click="switchTab(tab)"
           class="flex items-center gap-2 py-5 text-xs font-bold tracking-widest uppercase transition duration-300 border-b-2 whitespace-nowrap group"
@@ -552,7 +554,7 @@ onUnmounted(() => {
                     </div>
 
                     <!-- Botón rápido para ir a inscribirse si no tiene estado o es 'none' -->
-                    <div v-else-if="!localRegistrationStatus || localRegistrationStatus === 'none'" class="pt-1">
+                    <div v-else-if="(!localRegistrationStatus || localRegistrationStatus === 'none') && (tournamentData?.registration_status || tournament?.registration_status) !== 'disabled'" class="pt-1">
                         <button @click.prevent="switchTab('inscripcion')" class="w-full py-2 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 hover:bg-yellow-500 hover:text-black rounded text-[10px] font-bold uppercase tracking-widest transition-all">
                             Ir a Inscripción
                         </button>
@@ -744,7 +746,14 @@ onUnmounted(() => {
                  {{ registerMessage }}
              </div>
 
-             <div v-if="$page.props.auth?.user">
+             <div v-if="(tournamentData?.registration_status || tournament?.registration_status) === 'open'">
+                 <!-- Mostrar el precio si existe -->
+                 <div v-if="tournamentData?.ticket_price || tournament?.ticket_price" class="mb-6 p-4 bg-[var(--rankit-neon)]/10 border border-[var(--rankit-neon)]/30 rounded-lg text-center">
+                     <p class="text-sm font-bold uppercase tracking-widest text-[var(--rankit-neon)] mb-1">Precio de Inscripción</p>
+                     <p class="text-2xl font-black text-white">{{ tournamentData?.ticket_price || tournament?.ticket_price }}</p>
+                     <p class="text-[10px] text-gray-400 mt-2 italic">Actualmente el pago se realiza exclusivamente vía WhatsApp con el administrador.</p>
+                 </div>
+
                  <!-- Estado: Ya inscrito/pendiente/rechazado -->
                  <div v-if="localRegistrationStatus && localRegistrationStatus !== 'none'" class="text-center py-6 space-y-4">
                      <div v-if="localRegistrationStatus === 'pending'" class="space-y-2">
@@ -774,6 +783,10 @@ onUnmounted(() => {
 
                  <!-- Estado: No inscrito (none) -->
                  <form v-else @submit.prevent="submitRegistration" class="space-y-4">
+                     <div v-if="!$page.props.auth?.user">
+                         <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Correo Electrónico (Opcional)</label>
+                         <input v-model="registrationForm.email" type="email" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
+                     </div>
                      <div>
                          <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre en el Juego (Epic / Riot ID) *</label>
                          <input v-model="registrationForm.player_name" type="text" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">
@@ -799,11 +812,8 @@ onUnmounted(() => {
              
              <div v-else class="text-center py-12">
                  <i class="ph-duotone ph-lock-key text-6xl text-[var(--rankit-neon)] mb-4"></i>
-                 <h3 class="text-2xl font-black uppercase font-display mb-4">Inicia sesión para participar</h3>
-                 <p class="text-gray-400 mb-8 text-sm">Debes tener una cuenta en Rankit para poder inscribirte a este torneo de forma segura.</p>
-                 <a :href="route('login')" class="inline-block px-12 py-4 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest hover:bg-white transition-all transform hover:scale-105 btn-skew">
-                     <span class="btn-content">Iniciar Sesión / Registro</span>
-                 </a>
+                 <h3 class="text-2xl font-black uppercase font-display mb-4">Inscripciones Cerradas</h3>
+                 <p class="text-gray-400 mb-8 text-sm">Este torneo actualmente no está aceptando nuevas inscripciones.</p>
              </div>
          </div>
       </div>

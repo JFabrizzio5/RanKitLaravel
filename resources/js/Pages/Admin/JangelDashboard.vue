@@ -28,6 +28,8 @@ interface Tournament {
     // Nuevos campos
     rules?: string;
     prizes?: string;
+    registration_status?: 'open' | 'closed' | 'disabled';
+    ticket_price?: string;
     scoring_format?: {
         kill_points: number;
         placement: { from: number; to: number; points: number }[];
@@ -151,6 +153,8 @@ const formSettings = useForm({
     prizes: '',
     is_serialized: false,
     parent_tournament_id: null as number | null,
+    registration_status: 'disabled' as 'open' | 'closed' | 'disabled',
+    ticket_price: '',
     scoring_format: {
         kill_points: 1,
         placement: [] as { from: number; to: number; points: number }[]
@@ -230,6 +234,8 @@ const showEditMatchModal = ref(false);
 const showCreateModal = ref(false); 
 const showManualAdjustModal = ref(false);
 const showEditResultModal = ref(false);
+const showRegisteredUsersModal = ref(false);
+const showPendingRequestsModal = ref(false);
 const uploadProgress = ref(0);
 
 // --- INICIALIZACIÓN ---
@@ -510,6 +516,8 @@ const openSettingsModal = () => {
     formSettings.prizes = t.prizes || '';
     formSettings.is_serialized = !!t.is_serialized;
     formSettings.parent_tournament_id = t.parent_tournament_id || null;
+    formSettings.registration_status = (t.registration_status as any) || 'disabled';
+    formSettings.ticket_price = t.ticket_price || '';
     
     // Deep copy del JSON de puntuación o inicializar default
     if (t.scoring_format) {
@@ -1017,66 +1025,17 @@ const copyInviteLink = () => {
           </div>
 
           <!-- TAB: REGISTRATIONS -->
-          <div v-if="activeTab === 'registrations' && selectedTournament" class="p-4 space-y-4 animate-fade-in">
-             <div class="flex justify-between items-center">
-                 <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Inscripciones ({{ registrations.length }})</h3>
-                 <div class="flex items-center gap-2">
-                     <button @click="acceptAllRegistrations" v-if="registrations.some(r => r.payment_status === 'pending')" class="text-[10px] font-bold text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white px-2 py-1 rounded transition">
-                         <i class="ph-bold ph-check-circle"></i> Aceptar Todas
-                     </button>
-                     <button @click="fetchRegistrations" class="text-xs text-[var(--rankit-neon)] hover:underline"><i class="ph-bold ph-arrows-clockwise"></i></button>
-                 </div>
-             </div>
-             
-             <div class="max-h-[300px] overflow-y-auto space-y-2 custom-scrollbar pr-2">
-                 <div v-for="reg in registrations" :key="reg.id" class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 flex flex-col gap-2 text-xs">
-                     <div class="flex justify-between items-start">
-                         <div>
-                             <div class="font-bold text-sm text-black dark:text-white">{{ reg.player_name }}</div>
-                             <div class="text-[10px] text-gray-500">{{ reg.email }}</div>
-                         </div>
-                         <div class="text-right">
-                             <span :class="{'text-yellow-500': reg.payment_status==='pending', 'text-emerald-500': reg.payment_status==='paid', 'text-red-500': reg.payment_status==='rejected'}" class="font-bold uppercase text-[10px]">
-                                 {{ reg.payment_status }}
-                             </span>
-                         </div>
-                     </div>
-                     <div class="flex gap-2 mt-2">
-                         <a v-if="reg.whatsapp" :href="`https://wa.me/${reg.whatsapp.replace(/[^0-9]/g, '')}`" target="_blank" class="flex-1 py-1 text-center bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded transition flex justify-center items-center gap-1 font-bold">
-                             <i class="ph-bold ph-whatsapp-logo"></i> WhatsApp
-                         </a>
-                         <button v-if="reg.payment_status !== 'paid'" @click="updatePayment(reg.id, 'paid')" class="flex-1 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded transition">Aprobar</button>
-                         <button v-if="reg.payment_status !== 'rejected'" @click="updatePayment(reg.id, 'rejected')" class="flex-1 py-1 bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white rounded transition">Rechazar</button>
-                     </div>
-                 </div>
-                 <div v-if="registrations.length === 0" class="text-center py-6 text-gray-500 text-xs italic">
-                     No hay inscripciones aún.
-                 </div>
-             </div>
-
-             <div class="mt-4 pt-4 border-t border-gray-200 dark:border-white/10 space-y-3">
-                 <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500">Clasificar Jugadores</h3>
-                 <div class="text-[10px] text-gray-400">Selecciona jugadores de la tabla general o añade nombres manuales:</div>
-                 
-                 <div class="flex gap-2">
-                     <select v-model="selectedPlayersForClassification" multiple class="flex-1 text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none custom-scrollbar">
-                         <option v-for="p in filteredLeaderboard" :key="p.player_name" :value="p.player_name">{{ p.player_name }}</option>
-                     </select>
-                 </div>
-                 
-                 <div class="flex flex-col gap-1">
-                      <label class="text-[10px] font-bold uppercase text-gray-500">Torneo Destino de Clasificación</label>
-                      <select v-model="targetTournamentId" class="w-full text-xs bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none">
-                          <option :value="null">-- Seleccionar Torneo --</option>
-                          <option v-for="t in props.tournaments" :key="t.id" :value="t.id">
-                              {{ t.name }} (ID: {{ t.id }})
-                          </option>
-                      </select>
-                  </div>
-
-                  <button @click="classifyPlayers" :disabled="selectedPlayersForClassification.length === 0 || !targetTournamentId" class="w-full py-3 text-xs font-bold uppercase btn-skew disabled:opacity-50">
-                      <span class="btn-content">Clasificar a {{ selectedPlayersForClassification.length }} Jugadores</span>
-                  </button>
+          <div v-if="activeTab === 'registrations' && selectedTournament" class="p-4 space-y-6 animate-fade-in flex flex-col justify-center items-center h-[300px]">
+             <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Gestión de Inscripciones</h3>
+             <div class="flex gap-6 w-full max-w-md">
+                <button @click="showRegisteredUsersModal = true; fetchRegistrations()" class="flex-1 p-6 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white rounded-xl text-emerald-500 transition-all flex flex-col items-center justify-center gap-3 group">
+                   <i class="ph-duotone ph-users text-4xl group-hover:scale-110 transition-transform"></i>
+                   <span class="font-bold uppercase tracking-wider text-sm text-center">Ver Inscritos</span>
+                </button>
+                <button @click="showPendingRequestsModal = true; fetchRegistrations()" class="flex-1 p-6 bg-yellow-500/10 border border-yellow-500/30 hover:bg-yellow-500 hover:text-black rounded-xl text-yellow-500 transition-all flex flex-col items-center justify-center gap-3 group">
+                   <i class="ph-duotone ph-clock text-4xl group-hover:scale-110 transition-transform"></i>
+                   <span class="font-bold uppercase tracking-wider text-sm text-center">Ver Peticiones</span>
+                </button>
              </div>
           </div>
 
@@ -1354,6 +1313,20 @@ const copyInviteLink = () => {
                                 </select>
                             </div>
                         </div>
+
+                        <div>
+                            <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Estado de Inscripciones</label>
+                            <select v-model="formSettings.registration_status" class="w-full p-2 text-xs font-bold uppercase border rounded outline-none border-[var(--rankit-neon)]/30 bg-[var(--rankit-neon)]/10 focus:border-[var(--rankit-neon)] text-black dark:text-white custom-scrollbar">
+                                <option value="open">Abiertas (Públicas)</option>
+                                <option value="closed">Cerradas</option>
+                                <option value="disabled">Sin Inscripciones</option>
+                            </select>
+                            
+                            <div v-if="formSettings.registration_status === 'open' || formSettings.registration_status === 'closed'" class="mt-2">
+                                <label class="text-[10px] font-bold uppercase text-gray-500 block mb-1">Precio del Boleto</label>
+                                <input v-model="formSettings.ticket_price" type="text" placeholder="Ej. $150 MXN (vía WhatsApp)" class="w-full p-2 text-xs font-bold uppercase border rounded outline-none border-green-500/30 bg-green-500/10 focus:border-green-500" />
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1600,6 +1573,81 @@ const copyInviteLink = () => {
         </div>
       </div>
     </Modal>
+
+    <!-- MODAL: REGISTERED USERS -->
+    <Modal :show="showRegisteredUsersModal" @close="showRegisteredUsersModal = false" maxWidth="2xl">
+      <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white max-h-[80vh] overflow-y-auto">
+        <div class="flex items-start justify-between mb-6">
+          <h2 class="text-xl italic font-bold uppercase font-display">Usuarios Inscritos (Pagados)</h2>
+          <button @click="showRegisteredUsersModal = false" class="text-gray-500 hover:text-red-500">
+            <i class="text-xl ph ph-x"></i>
+          </button>
+        </div>
+        <div class="space-y-2">
+            <div v-for="reg in registrations.filter(r => r.payment_status === 'paid')" :key="reg.id" class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 flex flex-col gap-2 text-xs">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="font-bold text-sm text-black dark:text-white">{{ reg.player_name }}</div>
+                        <div class="text-[10px] text-gray-500">{{ reg.email }}</div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-emerald-500 font-bold uppercase text-[10px]">PAGADO</span>
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-2">
+                    <a v-if="reg.whatsapp" :href="`https://wa.me/${reg.whatsapp.replace(/[^0-9]/g, '')}`" target="_blank" class="flex-1 py-1 text-center bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded transition flex justify-center items-center gap-1 font-bold">
+                        <i class="ph-bold ph-whatsapp-logo"></i> WhatsApp
+                    </a>
+                    <button @click="updatePayment(reg.id, 'rejected')" class="flex-1 py-1 bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white rounded transition">Rechazar / Mover</button>
+                </div>
+            </div>
+            <div v-if="registrations.filter(r => r.payment_status === 'paid').length === 0" class="text-center py-6 text-gray-500 text-xs italic">
+                No hay usuarios inscritos aún.
+            </div>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- MODAL: PENDING REQUESTS -->
+    <Modal :show="showPendingRequestsModal" @close="showPendingRequestsModal = false" maxWidth="2xl">
+      <div class="p-6 bg-white dark:bg-[#101012] text-black dark:text-white max-h-[80vh] overflow-y-auto">
+        <div class="flex items-start justify-between mb-6">
+          <h2 class="text-xl italic font-bold uppercase font-display flex items-center gap-3">
+              Peticiones Pendientes
+              <button @click="acceptAllRegistrations" v-if="registrations.some(r => r.payment_status === 'pending')" class="text-[10px] font-bold text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white px-2 py-1 rounded transition">
+                 <i class="ph-bold ph-check-circle"></i> Aceptar Todas
+              </button>
+          </h2>
+          <button @click="showPendingRequestsModal = false" class="text-gray-500 hover:text-red-500">
+            <i class="text-xl ph ph-x"></i>
+          </button>
+        </div>
+        <div class="space-y-2">
+            <div v-for="reg in registrations.filter(r => r.payment_status === 'pending')" :key="reg.id" class="p-3 border border-gray-200 dark:border-white/10 rounded bg-gray-50 dark:bg-white/5 flex flex-col gap-2 text-xs">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="font-bold text-sm text-black dark:text-white">{{ reg.player_name }}</div>
+                        <div class="text-[10px] text-gray-500">{{ reg.email }}</div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-yellow-500 font-bold uppercase text-[10px]">PENDIENTE</span>
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-2">
+                    <a v-if="reg.whatsapp" :href="`https://wa.me/${reg.whatsapp.replace(/[^0-9]/g, '')}`" target="_blank" class="flex-1 py-1 text-center bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded transition flex justify-center items-center gap-1 font-bold">
+                        <i class="ph-bold ph-whatsapp-logo"></i> WhatsApp
+                    </a>
+                    <button @click="updatePayment(reg.id, 'paid')" class="flex-1 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded transition">Aprobar</button>
+                    <button @click="updatePayment(reg.id, 'rejected')" class="flex-1 py-1 bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white rounded transition">Rechazar</button>
+                </div>
+            </div>
+            <div v-if="registrations.filter(r => r.payment_status === 'pending').length === 0" class="text-center py-6 text-gray-500 text-xs italic">
+                No hay peticiones pendientes.
+            </div>
+        </div>
+      </div>
+    </Modal>
+
   </div>
 </template>
 

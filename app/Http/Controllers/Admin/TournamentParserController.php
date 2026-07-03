@@ -45,6 +45,8 @@ class TournamentParserController extends Controller
                 $table->json('scoring_format')->nullable(); // Configuración de puntos JSON
                 $table->string('table_name')->nullable();
                 $table->string('banner_image')->nullable();
+                $table->string('registration_status')->default('disabled'); // open, closed, disabled
+                $table->string('ticket_price')->nullable();
                 $table->timestamps();
             });
         } else {
@@ -64,6 +66,13 @@ class TournamentParserController extends Controller
                 if (!Schema::hasColumn('tournaments', 'scoring_format')) $table->json('scoring_format')->nullable();
                 if (!Schema::hasColumn('tournaments', 'table_name')) $table->string('table_name')->nullable();
                 if (!Schema::hasColumn('tournaments', 'banner_image')) $table->string('banner_image')->nullable();
+                if (!Schema::hasColumn('tournaments', 'registration_status')) {
+                    if (Schema::hasColumn('tournaments', 'is_registration_active')) {
+                        $table->dropColumn('is_registration_active');
+                    }
+                    $table->string('registration_status')->default('disabled');
+                }
+                if (!Schema::hasColumn('tournaments', 'ticket_price')) $table->string('ticket_price')->nullable();
              });
 
             // Asignar torneos huérfanos (sin user_id) al usuario jangel
@@ -148,7 +157,7 @@ class TournamentParserController extends Controller
                 $table->id();
                 $table->unsignedBigInteger('tournament_id');
                 $table->string('player_name');
-                $table->string('email');
+                $table->string('email')->nullable();
                 $table->string('whatsapp')->nullable();
                 $table->string('discord')->nullable();
                 $table->string('payment_status')->default('pending'); // pending, paid, rejected
@@ -358,6 +367,8 @@ class TournamentParserController extends Controller
             'rules' => $request->rules,
             'prizes' => $request->prizes,
             'scoring_format' => $request->scoring_format ? json_encode($request->scoring_format) : null,
+            'registration_status' => $request->registration_status ?? 'disabled',
+            'ticket_price' => $request->ticket_price,
             'updated_at' => now(),
         ];
 
@@ -1139,23 +1150,21 @@ class TournamentParserController extends Controller
         ]);
 
         $user = auth()->user();
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'Debes iniciar sesión para registrarte.'], 401);
-        }
+        $email = $user ? $user->email : $request->input('email', $request->whatsapp . '@guest.com');
 
         $exists = DB::table('tournament_registrations')
             ->where('tournament_id', $id)
-            ->where('email', $user->email)
+            ->where('email', $email)
             ->first();
 
         if ($exists) {
-            return response()->json(['success' => false, 'message' => 'Ya existe un registro con este correo para este torneo.'], 400);
+            return response()->json(['success' => false, 'message' => 'Ya existe un registro con estos datos para este torneo.'], 400);
         }
 
         DB::table('tournament_registrations')->insert([
             'tournament_id' => $id,
             'player_name' => $request->player_name,
-            'email' => $user->email,
+            'email' => $email,
             'whatsapp' => $request->whatsapp,
             'discord' => $request->discord,
             'payment_status' => 'pending',
