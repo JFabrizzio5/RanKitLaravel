@@ -104,16 +104,17 @@ const tournamentSearch = ref('');
 const showTournamentDropdown = ref(false);
 const tournamentDropdownRef = ref<HTMLElement | null>(null);
 const filteredTournaments = computed(() => {
-    if (!tournamentSearch.value) return props.tournaments || [];
-    const q = tournamentSearch.value.toLowerCase();
-    return (props.tournaments || []).filter(t => t.name.toLowerCase().includes(q));
+    const all = Array.isArray(props.tournaments) ? props.tournaments : [];
+    if (!tournamentSearch.value.trim()) return all;
+    const q = tournamentSearch.value.trim().toLowerCase();
+    return all.filter(t => t.name.toLowerCase().includes(q));
 });
 const selectTournamentFromDropdown = (id: number) => {
     selectedTournamentId.value = id;
     showTournamentDropdown.value = false;
     tournamentSearch.value = '';
 };
-const handleClickOutsideTournament = (e: MouseEvent) => {
+const handleMouseOutsideTournament = (e: MouseEvent) => {
     if (tournamentDropdownRef.value && !tournamentDropdownRef.value.contains(e.target as Node)) {
         showTournamentDropdown.value = false;
     }
@@ -292,11 +293,12 @@ onMounted(() => {
     }
     fetchPitches(); 
 
-    document.addEventListener('click', handleClickOutsideTournament);
+    // Listener para cerrar el dropdown de torneo al hacer click fuera (mousedown evita conflicto con el toggle)
+    document.addEventListener('mousedown', handleMouseOutsideTournament);
 });
 
 onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutsideTournament);
+    document.removeEventListener('mousedown', handleMouseOutsideTournament);
 });
 
 // --- FUNCIONES DE CANCHAS ---
@@ -954,11 +956,12 @@ const copyInviteLink = () => {
                  <div class="relative flex-1" ref="tournamentDropdownRef">
                      <!-- Trigger -->
                      <button
-                         @click.stop="showTournamentDropdown = !showTournamentDropdown; tournamentSearch = ''"
-                         class="w-full flex items-center justify-between gap-2 text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 focus:border-[var(--rankit-neon)] outline-none hover:border-[var(--rankit-neon)] transition"
+                         @mousedown.stop="showTournamentDropdown = !showTournamentDropdown"
+                         class="w-full flex items-center justify-between gap-2 text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 outline-none hover:border-[var(--rankit-neon)] transition"
+                         :class="showTournamentDropdown ? 'border-[var(--rankit-neon)]' : 'border-gray-200 dark:border-white/10'"
                      >
                          <span class="truncate">
-                             {{ selectedTournament?.name || 'Selecciona un torneo' }}
+                             {{ selectedTournament?.name || 'Selecciona un torneo...' }}
                              {{ selectedTournament?.is_private ? '🔒' : '' }}
                          </span>
                          <i :class="showTournamentDropdown ? 'ph-bold ph-caret-up' : 'ph-bold ph-caret-down'" class="shrink-0 text-[var(--rankit-neon)]"></i>
@@ -978,8 +981,11 @@ const copyInviteLink = () => {
                                      type="text"
                                      placeholder="Buscar torneo..."
                                      class="w-full pl-6 pr-2 py-1.5 text-xs bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded outline-none text-black dark:text-white"
-                                     @click.stop
+                                     @mousedown.stop
                                  />
+                             </div>
+                             <div class="text-[9px] text-gray-400 mt-1 pl-1">
+                                 {{ filteredTournaments.length }} torneo(s)
                              </div>
                          </div>
 
@@ -988,19 +994,20 @@ const copyInviteLink = () => {
                              <div
                                  v-for="t in filteredTournaments"
                                  :key="t.id"
-                                 @click.stop="selectTournamentFromDropdown(t.id)"
-                                 class="flex items-center justify-between px-3 py-2 text-xs font-bold cursor-pointer transition"
+                                 @mousedown.stop="selectTournamentFromDropdown(t.id)"
+                                 class="flex items-center justify-between px-3 py-2 text-xs font-bold cursor-pointer transition select-none"
                                  :class="selectedTournamentId === t.id
                                      ? 'bg-[var(--rankit-neon)] text-white'
                                      : 'text-black dark:text-white hover:bg-gray-100 dark:hover:bg-white/5'"
                              >
                                  <span class="truncate">{{ t.name }}</span>
-                                 <span class="ml-2 shrink-0">
+                                 <span class="ml-2 shrink-0 flex items-center gap-1">
                                      <span v-if="t.is_private" class="text-[10px]">🔒</span>
-                                     <i v-if="selectedTournamentId === t.id" class="ph-bold ph-check text-white ml-1"></i>
+                                     <i v-if="selectedTournamentId === t.id" class="ph-bold ph-check"></i>
                                  </span>
                              </div>
-                             <div v-if="filteredTournaments.length === 0" class="px-3 py-4 text-center text-[10px] text-gray-400 italic">
+                             <div v-if="filteredTournaments.length === 0" class="px-3 py-6 text-center text-[10px] text-gray-400 italic">
+                                 <i class="ph ph-magnifying-glass block text-lg mb-1"></i>
                                  Sin resultados para "{{ tournamentSearch }}"
                              </div>
                          </div>
