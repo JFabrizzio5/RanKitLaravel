@@ -193,6 +193,12 @@ class TournamentParserController extends Controller
                     $table->integer('placement')->default(0);
                 });
             }
+            // Asegurarse de que tournament_from_id exista (alias de source_tournament_id)
+            if (!Schema::hasColumn('tournament_qualifiers', 'tournament_from_id')) {
+                Schema::table('tournament_qualifiers', function (Blueprint $table) {
+                    $table->unsignedBigInteger('tournament_from_id')->nullable()->after('source_tournament_id');
+                });
+            }
         }
 
         // 8. Tabla de Canchas (Pitches)
@@ -1356,11 +1362,12 @@ class TournamentParserController extends Controller
                 $inserts[] = [
                     'parent_tournament_id' => $targetId,
                     'source_tournament_id' => $id,
-                    'player_name' => $p,
-                    'player_email' => null, // Dejamos null porque se saca solo por nombre de momento
-                    'status' => 'qualified',
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'tournament_from_id'   => $id,  // columna requerida por la BD en producción
+                    'player_name'          => $p,
+                    'player_email'         => null,
+                    'status'               => 'qualified',
+                    'created_at'           => now(),
+                    'updated_at'           => now(),
                 ];
             }
         }
@@ -1551,13 +1558,14 @@ class TournamentParserController extends Controller
         DB::table('tournament_qualifiers')->insert([
             'parent_tournament_id' => $id,
             'source_tournament_id' => null, // Manual
-            'player_name' => $request->player_name,
-            'player_email' => $request->player_email,
-            'epic_id' => $request->epic_id ?? null,
-            'kills' => 0,
-            'placement' => 0,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'tournament_from_id'   => null, // Manual (sin torneo origen)
+            'player_name'          => $request->player_name,
+            'player_email'         => $request->player_email,
+            'epic_id'              => $request->epic_id ?? null,
+            'kills'                => 0,
+            'placement'            => 0,
+            'created_at'           => now(),
+            'updated_at'           => now(),
         ]);
 
         return back()->with('success', 'Jugador clasificado manualmente.');
