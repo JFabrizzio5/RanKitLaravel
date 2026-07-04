@@ -14,7 +14,19 @@ use App\Http\Controllers\FootballController; // Futbol
 
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
+
+Route::get('/test-mail', function() {
+    try {
+        Mail::raw('Prueba de conexión SMTP desde Hostinger', function($msg) {
+            $msg->to('cometax.ti@gmail.com')->subject('Prueba Rankit Hostinger');
+        });
+        return "✅ Correo enviado con éxito usando la configuración actual. (Mailer: " . config('mail.default') . ")";
+    } catch (\Exception $e) {
+        return "❌ Error crítico al enviar correo: " . $e->getMessage();
+    }
+});
 
 // --- PAGINA DE INICIO ---
 Route::get('/', function () {
