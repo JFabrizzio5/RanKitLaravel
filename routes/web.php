@@ -225,6 +225,7 @@ Route::middleware('auth')->group(function () {
         
         Route::post('/tournaments/{id}/qualify-manual', [TournamentParserController::class, 'qualifyPlayerManual'])->name('jangel.tournaments.qualify-manual');
         Route::delete('/tournaments/{id}/qualify-manual/{qualifierId}', [TournamentParserController::class, 'removeQualifierManual'])->name('jangel.tournaments.unqualify-manual');
+        Route::post('/tournaments/{id}/send-access-codes', [TournamentParserController::class, 'sendAccessCodes'])->name('jangel.tournaments.send-codes');
 
         Route::get('/api/leaderboard-internal/{tournamentId}', [TournamentParserController::class, 'getLeaderboard'])->name('jangel.api.leaderboard'); // Alias
 

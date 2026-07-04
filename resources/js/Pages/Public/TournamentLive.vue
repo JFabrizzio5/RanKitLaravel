@@ -64,6 +64,7 @@ const props = defineProps<{
   hasPrivateSession?: boolean;
   registrationStatus?: string | null; // null=no logueado, 'none','pending','paid','rejected'
   attemptsLeft?: number;
+  qualifiers?: any[];
 }>()
 
 // --- ACCESO PRIVADO ---
@@ -783,6 +784,35 @@ onUnmounted(() => {
 
                  <!-- Estado: No inscrito (none) -->
                  <form v-else @submit.prevent="submitRegistration" class="space-y-4">
+                     
+                     <div v-if="props.qualifiers && props.qualifiers.length > 0" class="p-4 mb-4 text-sm font-bold border rounded-lg bg-[var(--rankit-neon)]/10 border-[var(--rankit-neon)]/30 text-[var(--rankit-neon)]">
+                         <i class="mr-2 text-lg align-middle ph-fill ph-info"></i>
+                         En este torneo hay clasificados, solo rellena tus datos y nuestros moderadores te pondrán en el torneo.
+                     </div>
+                     
+                     <!-- Tabla de Clasificados -->
+                     <div v-if="props.qualifiers && props.qualifiers.length > 0" class="mb-6 brutal-card bg-black border border-[var(--rankit-neon)]/20 p-4">
+                         <h3 class="text-xs font-bold tracking-widest uppercase text-white mb-3">
+                             <i class="ph-bold ph-users mr-1"></i> Jugadores Clasificados a este torneo ({{ props.qualifiers.length }})
+                         </h3>
+                         <div class="max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                             <table class="w-full text-left text-xs text-gray-300">
+                                 <thead class="text-[10px] text-gray-500 uppercase bg-[#111] sticky top-0">
+                                     <tr>
+                                         <th class="px-2 py-2">Jugador</th>
+                                         <th class="px-2 py-2 text-center">Estado</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody class="divide-y divide-white/5">
+                                     <tr v-for="q in props.qualifiers" :key="q.id" class="hover:bg-white/5 transition-colors">
+                                         <td class="px-2 py-2 font-bold text-white">{{ q.player_name }}</td>
+                                         <td class="px-2 py-2 text-center text-[var(--rankit-neon)] uppercase text-[10px] font-bold">Clasificado</td>
+                                     </tr>
+                                 </tbody>
+                             </table>
+                         </div>
+                     </div>
+
                      <div v-if="!$page.props.auth?.user">
                          <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Correo Electrónico (Opcional)</label>
                          <input v-model="registrationForm.email" type="email" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded dark:bg-black/30 dark:border-white/10 focus:border-[var(--rankit-neon)] focus:ring-[var(--rankit-neon)]">

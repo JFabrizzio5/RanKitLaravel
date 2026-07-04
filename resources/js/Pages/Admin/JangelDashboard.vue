@@ -892,6 +892,27 @@ const copyInviteLink = () => {
     });
 };
 
+const isSendingCodes = ref(false);
+const sendAccessCodes = async () => {
+    if (!selectedTournament.value || isSendingCodes.value) return;
+    
+    if (!confirm('¿Estás seguro de que quieres enviar el código de acceso por correo a TODOS los jugadores inscritos (aceptados) y clasificados?')) return;
+    
+    isSendingCodes.value = true;
+    alert('Enviando correos, por favor espera...');
+    
+    try {
+        const res = await axios.post(`/admin/tournaments/${selectedTournament.value.id}/send-access-codes`, {
+            _token: (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content
+        });
+        alert(res.data.success || 'Correos enviados exitosamente');
+    } catch (err: any) {
+        alert(err.response?.data?.message || 'Error al enviar correos');
+    } finally {
+        isSendingCodes.value = false;
+    }
+};
+
 </script>
 
 <template>
@@ -1066,12 +1087,16 @@ const copyInviteLink = () => {
                 </div>
                 
                 <div v-if="selectedTournament?.is_private" class="mt-2">
-                    <div class="flex items-center gap-2 mb-1">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
                         <span class="text-[9px] bg-red-100 dark:bg-red-900/30 text-red-500 px-2 py-0.5 rounded border border-red-500/20 whitespace-nowrap">
                             🔒 CÓDIGO: {{ selectedTournament.access_code }}
                         </span>
                         <button @click="copyInviteLink" class="text-[9px] font-bold text-[var(--rankit-neon)] hover:underline uppercase">
                             Copiar Link
+                        </button>
+                        <button @click="sendAccessCodes" :disabled="isSendingCodes" class="text-[9px] font-bold text-white bg-[var(--rankit-neon)] px-2 py-0.5 rounded hover:opacity-80 transition flex items-center gap-1 uppercase disabled:opacity-50">
+                            <i class="ph-bold" :class="isSendingCodes ? 'ph-spinner animate-spin' : 'ph-envelope-simple'"></i> 
+                            {{ isSendingCodes ? 'Enviando...' : 'Enviar por Correo' }}
                         </button>
                     </div>
                 </div>

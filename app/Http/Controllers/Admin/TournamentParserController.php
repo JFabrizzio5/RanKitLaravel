@@ -1580,4 +1580,59 @@ class TournamentParserController extends Controller
         DB::table('tournament_qualifiers')->where('id', $qualifierId)->delete();
         return back()->with('success', 'Clasificación removida.');
     }
+
+    public function sendAccessCodes(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'Sin permisos.');
+
+        if (empty($tournament->access_code)) {
+            return back()->with('error', 'El torneo no tiene un código de acceso configurado.');
+        }
+
+        // Obtener correos de inscritos (paid)
+        $paidRegistrations = DB::table('tournament_registrations')
+            ->where('tournament_id', $id)
+            ->where('payment_status', 'paid')
+            ->whereNotNull('email')
+            ->get();
+
+        // Obtener correos de clasificados
+        $qualifiers = DB::table('tournament_qualifiers')
+            ->where('parent_tournament_id', $id)
+            ->whereNotNull('player_email')
+            ->get();
+
+        $emailsSent = 0;
+        $processedEmails = [];
+
+        foreach ($paidRegistrations as $reg) {
+            if (!in_array($reg->email, $processedEmails)) {
+                try {
+                    \Illuminate\Support\Facades\Mail::to($reg->email)
+                        ->send(new \App\Mail\TournamentAccessCodeMail($tournament->name, $reg->player_name ?? 'Jugador', $tournament->access_code));
+                    $emailsSent++;
+                    $processedEmails[] = $reg->email;
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error('Error sending email to ' . $reg->email . ': ' . $e->getMessage());
+                }
+            }
+        }
+
+        foreach ($qualifiers as $qual) {
+            if (!in_array($qual->player_email, $processedEmails)) {
+                try {
+                    \Illuminate\Support\Facades\Mail::to($qual->player_email)
+                        ->send(new \App\Mail\TournamentAccessCodeMail($tournament->name, $qual->player_name ?? 'Jugador', $tournament->access_code));
+                    $emailsSent++;
+                    $processedEmails[] = $qual->player_email;
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error('Error sending email to ' . $qual->player_email . ': ' . $e->getMessage());
+                }
+            }
+        }
+
+        return back()->with('success', "Se enviaron {$emailsSent} correos con el código de acceso a clasificados e inscritos.");
+    }
 }

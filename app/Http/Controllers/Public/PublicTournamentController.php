@@ -66,6 +66,11 @@ class PublicTournamentController extends Controller
             $hasPaidRegistration = ($registrationStatus === 'paid');
         }
 
+        // Cargar clasificados si existen
+        $qualifiers = DB::table('tournament_qualifiers')
+            ->where('parent_tournament_id', $tournament->id)
+            ->get();
+
         // Acceso a códigos de partida
         $sessionKey = "t_access_{$tournament->id}";
         $hasSessionAccess = (bool) session($sessionKey);
@@ -88,6 +93,7 @@ class PublicTournamentController extends Controller
             'hasPrivateSession'  => $hasSessionAccess,
             'registrationStatus' => $registrationStatus, // null, none, pending, paid, rejected
             'attemptsLeft'       => max(0, $attemptsLeft),
+            'qualifiers'         => $qualifiers,
         ]);
     }
 
