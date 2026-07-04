@@ -1212,6 +1212,15 @@ class TournamentParserController extends Controller
             'updated_at' => now(),
         ]);
 
+        if ($request->status === 'paid' && !empty($reg->email) && !empty($tournament->access_code)) {
+            try {
+                \Illuminate\Support\Facades\Mail::to($reg->email)
+                    ->send(new \App\Mail\TournamentAccessCodeMail($tournament->name, $reg->player_name ?? 'Jugador', $tournament->access_code));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Error sending acceptance email: ' . $e->getMessage());
+            }
+        }
+
         return response()->json(['success' => true]);
     }
 
@@ -1224,19 +1233,36 @@ class TournamentParserController extends Controller
         $tournament = $this->getTournamentIfOwner($id);
         if (!$tournament) return response()->json(['error' => 'No autorizado'], 403);
 
-        $count = DB::table('tournament_registrations')
+        $pendingRegs = DB::table('tournament_registrations')
             ->where('tournament_id', $id)
             ->where('payment_status', 'pending')
-            ->count();
+            ->get();
+            
+        $count = $pendingRegs->count();
 
-        DB::table('tournament_registrations')
-            ->where('tournament_id', $id)
-            ->where('payment_status', 'pending')
-            ->update([
-                'payment_status'        => 'paid',
-                'confirmed_by_admin_id' => auth()->id(),
-                'updated_at'            => now(),
-            ]);
+        if ($count > 0) {
+            DB::table('tournament_registrations')
+                ->where('tournament_id', $id)
+                ->where('payment_status', 'pending')
+                ->update([
+                    'payment_status'        => 'paid',
+                    'confirmed_by_admin_id' => auth()->id(),
+                    'updated_at'            => now(),
+                ]);
+
+            if (!empty($tournament->access_code)) {
+                foreach ($pendingRegs as $r) {
+                    if (!empty($r->email)) {
+                        try {
+                            \Illuminate\Support\Facades\Mail::to($r->email)
+                                ->send(new \App\Mail\TournamentAccessCodeMail($tournament->name, $r->player_name ?? 'Jugador', $tournament->access_code));
+                        } catch (\Exception $e) {
+                            \Illuminate\Support\Facades\Log::error('Error sending acceptance email bulk: ' . $e->getMessage());
+                        }
+                    }
+                }
+            }
+        }
 
         return response()->json(['success' => true, 'accepted' => $count]);
     }
