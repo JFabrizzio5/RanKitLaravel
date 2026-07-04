@@ -103,19 +103,38 @@ const selectedMatchId = ref<number | null>(null);
 const tournamentSearch = ref('');
 const showTournamentDropdown = ref(false);
 const tournamentDropdownRef = ref<HTMLElement | null>(null);
+const tournamentTriggerRef = ref<HTMLElement | null>(null);
+const dropdownPosition = ref({ top: 0, left: 0, width: 0 });
+
 const filteredTournaments = computed(() => {
     const all = Array.isArray(props.tournaments) ? props.tournaments : [];
     if (!tournamentSearch.value.trim()) return all;
     const q = tournamentSearch.value.trim().toLowerCase();
     return all.filter(t => t.name.toLowerCase().includes(q));
 });
+
+const openTournamentDropdown = () => {
+    if (tournamentTriggerRef.value) {
+        const rect = tournamentTriggerRef.value.getBoundingClientRect();
+        dropdownPosition.value = {
+            top: rect.bottom + window.scrollY + 4,
+            left: rect.left + window.scrollX,
+            width: rect.width,
+        };
+    }
+    showTournamentDropdown.value = !showTournamentDropdown.value;
+};
+
 const selectTournamentFromDropdown = (id: number) => {
     selectedTournamentId.value = id;
     showTournamentDropdown.value = false;
     tournamentSearch.value = '';
 };
 const handleMouseOutsideTournament = (e: MouseEvent) => {
-    if (tournamentDropdownRef.value && !tournamentDropdownRef.value.contains(e.target as Node)) {
+    const target = e.target as Node;
+    const insideTrigger = tournamentTriggerRef.value?.contains(target);
+    const insideDropdown = tournamentDropdownRef.value?.contains(target);
+    if (!insideTrigger && !insideDropdown) {
         showTournamentDropdown.value = false;
     }
 };
@@ -953,11 +972,12 @@ const copyInviteLink = () => {
              <label class="text-[10px] font-bold uppercase text-gray-500 mb-2 block">Seleccionar Torneo</label>
              <div class="flex gap-2">
                  <!-- Custom Searchable Dropdown -->
-                 <div class="relative flex-1" ref="tournamentDropdownRef">
-                     <!-- Trigger -->
+                 <div class="relative flex-1">
+                     <!-- Trigger Button -->
                      <button
-                         @mousedown.stop="showTournamentDropdown = !showTournamentDropdown"
-                         class="w-full flex items-center justify-between gap-2 text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded p-2 outline-none hover:border-[var(--rankit-neon)] transition"
+                         ref="tournamentTriggerRef"
+                         @mousedown.stop="openTournamentDropdown"
+                         class="w-full flex items-center justify-between gap-2 text-xs font-bold text-black dark:text-white bg-gray-100 dark:bg-white/5 border rounded p-2 outline-none hover:border-[var(--rankit-neon)] transition"
                          :class="showTournamentDropdown ? 'border-[var(--rankit-neon)]' : 'border-gray-200 dark:border-white/10'"
                      >
                          <span class="truncate">
@@ -967,51 +987,61 @@ const copyInviteLink = () => {
                          <i :class="showTournamentDropdown ? 'ph-bold ph-caret-up' : 'ph-bold ph-caret-down'" class="shrink-0 text-[var(--rankit-neon)]"></i>
                      </button>
 
-                     <!-- Dropdown Panel -->
-                     <div
-                         v-if="showTournamentDropdown"
-                         class="absolute z-50 left-0 right-0 top-full mt-1 bg-white dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded shadow-xl overflow-hidden"
-                     >
-                         <!-- Search Input -->
-                         <div class="p-2 border-b border-gray-100 dark:border-white/10">
-                             <div class="relative">
-                                 <i class="absolute left-2 top-1/2 -translate-y-1/2 ph ph-magnifying-glass text-gray-400 text-xs"></i>
-                                 <input
-                                     v-model="tournamentSearch"
-                                     type="text"
-                                     placeholder="Buscar torneo..."
-                                     class="w-full pl-6 pr-2 py-1.5 text-xs bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded outline-none text-black dark:text-white"
-                                     @mousedown.stop
-                                 />
+                     <!-- Dropdown via Teleport (renderizado en body para evitar stacking context) -->
+                     <Teleport to="body">
+                         <div
+                             v-if="showTournamentDropdown"
+                             ref="tournamentDropdownRef"
+                             :style="{
+                                 position: 'fixed',
+                                 top: dropdownPosition.top + 'px',
+                                 left: dropdownPosition.left + 'px',
+                                 width: dropdownPosition.width + 'px',
+                                 zIndex: 9999
+                             }"
+                             class="bg-white dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded shadow-2xl overflow-hidden"
+                         >
+                             <!-- Search Input -->
+                             <div class="p-2 border-b border-gray-100 dark:border-white/10">
+                                 <div class="relative">
+                                     <i class="absolute left-2 top-1/2 -translate-y-1/2 ph ph-magnifying-glass text-gray-400 text-xs"></i>
+                                     <input
+                                         v-model="tournamentSearch"
+                                         type="text"
+                                         placeholder="Buscar torneo..."
+                                         class="w-full pl-6 pr-2 py-1.5 text-xs bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[var(--rankit-neon)] rounded outline-none text-black dark:text-white"
+                                         @mousedown.stop
+                                     />
+                                 </div>
+                                 <div class="text-[9px] text-gray-400 mt-1 pl-1">
+                                     {{ filteredTournaments.length }} torneo(s)
+                                 </div>
                              </div>
-                             <div class="text-[9px] text-gray-400 mt-1 pl-1">
-                                 {{ filteredTournaments.length }} torneo(s)
-                             </div>
-                         </div>
 
-                         <!-- Options List -->
-                         <div class="max-h-[220px] overflow-y-auto custom-scrollbar">
-                             <div
-                                 v-for="t in filteredTournaments"
-                                 :key="t.id"
-                                 @mousedown.stop="selectTournamentFromDropdown(t.id)"
-                                 class="flex items-center justify-between px-3 py-2 text-xs font-bold cursor-pointer transition select-none"
-                                 :class="selectedTournamentId === t.id
-                                     ? 'bg-[var(--rankit-neon)] text-white'
-                                     : 'text-black dark:text-white hover:bg-gray-100 dark:hover:bg-white/5'"
-                             >
-                                 <span class="truncate">{{ t.name }}</span>
-                                 <span class="ml-2 shrink-0 flex items-center gap-1">
-                                     <span v-if="t.is_private" class="text-[10px]">🔒</span>
-                                     <i v-if="selectedTournamentId === t.id" class="ph-bold ph-check"></i>
-                                 </span>
-                             </div>
-                             <div v-if="filteredTournaments.length === 0" class="px-3 py-6 text-center text-[10px] text-gray-400 italic">
-                                 <i class="ph ph-magnifying-glass block text-lg mb-1"></i>
-                                 Sin resultados para "{{ tournamentSearch }}"
+                             <!-- Options List -->
+                             <div class="max-h-[220px] overflow-y-auto custom-scrollbar">
+                                 <div
+                                     v-for="t in filteredTournaments"
+                                     :key="t.id"
+                                     @mousedown.stop="selectTournamentFromDropdown(t.id)"
+                                     class="flex items-center justify-between px-3 py-2 text-xs font-bold cursor-pointer transition select-none"
+                                     :class="selectedTournamentId === t.id
+                                         ? 'bg-[var(--rankit-neon)] text-white'
+                                         : 'text-black dark:text-white hover:bg-gray-100 dark:hover:bg-white/5'"
+                                 >
+                                     <span class="truncate">{{ t.name }}</span>
+                                     <span class="ml-2 shrink-0 flex items-center gap-1">
+                                         <span v-if="t.is_private" class="text-[10px]">🔒</span>
+                                         <i v-if="selectedTournamentId === t.id" class="ph-bold ph-check"></i>
+                                     </span>
+                                 </div>
+                                 <div v-if="filteredTournaments.length === 0" class="px-3 py-6 text-center text-[10px] text-gray-400 italic">
+                                     <i class="ph ph-magnifying-glass block text-lg mb-1"></i>
+                                     Sin resultados para "{{ tournamentSearch }}"
+                                 </div>
                              </div>
                          </div>
-                     </div>
+                     </Teleport>
                  </div>
 
                  <button @click="showCreateModal = true" class="px-3 text-white transition bg-black rounded dark:bg-white dark:text-black hover:opacity-80" title="Crear Nuevo Torneo">
