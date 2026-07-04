@@ -193,6 +193,9 @@ Route::middleware('auth')->group(function () {
         // Crear Slot (Código)
         Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');
 
+        // Enviar código de partida por email
+        Route::post('/tournaments/{id}/match/{matchId}/send-code', [TournamentParserController::class, 'sendMatchCode'])->name('jangel.match.send-code');
+
         // Actualizar partida (Editar código)
         Route::put('/match/{id}', [TournamentParserController::class, 'updateMatch'])->name('jangel.match.update');
         

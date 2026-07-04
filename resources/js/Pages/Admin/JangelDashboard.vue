@@ -905,11 +905,44 @@ const sendAccessCodes = async () => {
         const res = await axios.post(`/admin/tournaments/${selectedTournament.value.id}/send-access-codes`, {
             _token: (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content
         });
-        alert(res.data.success || 'Correos enviados exitosamente');
+        
+        if (res.data.errors && res.data.errors.length > 0) {
+            console.error(res.data.errors);
+            alert(res.data.message + "\n\nRevisa la consola para ver los errores detallados.");
+        } else {
+            alert(res.data.success || res.data.message || 'Correos enviados exitosamente');
+        }
     } catch (err: any) {
         alert(err.response?.data?.message || 'Error al enviar correos');
     } finally {
         isSendingCodes.value = false;
+    }
+};
+
+const sendingMatchCodeId = ref<number | null>(null);
+const sendMatchCode = async (matchId: number) => {
+    if (!selectedTournament.value || sendingMatchCodeId.value) return;
+    
+    if (!confirm('¿Estás seguro de que quieres enviar ESTE código de partida por correo a TODOS los jugadores inscritos (aceptados) y clasificados?')) return;
+    
+    sendingMatchCodeId.value = matchId;
+    alert('Enviando código de partida, por favor espera...');
+    
+    try {
+        const res = await axios.post(`/admin/tournaments/${selectedTournament.value.id}/match/${matchId}/send-code`, {
+            _token: (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content
+        });
+        
+        if (res.data.errors && res.data.errors.length > 0) {
+            console.error("Errores de envío:", res.data.errors);
+            alert(res.data.message + "\n\nHubo fallos al enviar algunos correos. Revisa la consola (F12) para ver a quién no se le pudo enviar.");
+        } else {
+            alert(res.data.success || res.data.message || 'Códigos de partida enviados exitosamente');
+        }
+    } catch (err: any) {
+        alert(err.response?.data?.message || err.response?.data?.error || 'Error al enviar código de partida');
+    } finally {
+        sendingMatchCodeId.value = null;
     }
 };
 
@@ -1188,6 +1221,9 @@ const sendAccessCodes = async () => {
                 </div>
                 
                 <div class="flex gap-2">
+                    <button @click.stop="sendMatchCode(match.id)" :disabled="sendingMatchCodeId === match.id" class="p-1 text-gray-400 hover:text-[var(--rankit-neon)] disabled:opacity-50" title="Enviar Código por Email">
+                        <i class="ph" :class="sendingMatchCodeId === match.id ? 'ph-spinner animate-spin' : 'ph-envelope-simple'"></i>
+                    </button>
                     <button @click.stop="openAppealModal(match.id)" class="p-1 text-gray-400 hover:text-yellow-400" title="Apelar (Auto)">
                         <i class="ph ph-gavel"></i>
                     </button>

@@ -1178,6 +1178,39 @@ class TournamentParserController extends Controller
             'updated_at' => now(),
         ]);
 
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if ($tournament) {
+            // Notificar al jugador
+            if ($email && !str_ends_with($email, '@guest.com')) {
+                try {
+                    \Illuminate\Support\Facades\Mail::to($email)
+                        ->send(new \App\Mail\GenericRankitMail(
+                            'Inscripción Recibida - ' . $tournament->name,
+                            'emails.registration_received',
+                            ['tournamentName' => $tournament->name, 'playerName' => $request->player_name]
+                        ));
+                } catch (\Exception $e) { }
+            }
+
+            // Notificar a los admins
+            $adminEmails = ['18jangel18@gmail.com', 'cometax.ti@gmail.com'];
+            $owner = DB::table('users')->where('id', $tournament->user_id)->first();
+            if ($owner && $owner->email && !in_array($owner->email, $adminEmails)) {
+                $adminEmails[] = $owner->email;
+            }
+
+            foreach ($adminEmails as $adminEmail) {
+                try {
+                    \Illuminate\Support\Facades\Mail::to($adminEmail)
+                        ->send(new \App\Mail\GenericRankitMail(
+                            'Nueva Inscripción - ' . $tournament->name,
+                            'emails.registration_admin_notification',
+                            ['tournamentName' => $tournament->name, 'playerName' => $request->player_name, 'playerEmail' => $email]
+                        ));
+                } catch (\Exception $e) { }
+            }
+        }
+
         return response()->json(['success' => true, 'message' => 'Registro recibido correctamente.']);
     }
 
@@ -1218,6 +1251,17 @@ class TournamentParserController extends Controller
                     ->send(new \App\Mail\TournamentAccessCodeMail($tournament->name, $reg->player_name ?? 'Jugador', $tournament->access_code));
             } catch (\Exception $e) {
                 \Illuminate\Support\Facades\Log::error('Error sending acceptance email: ' . $e->getMessage());
+            }
+        } elseif ($request->status === 'rejected' && !empty($reg->email)) {
+            try {
+                \Illuminate\Support\Facades\Mail::to($reg->email)
+                    ->send(new \App\Mail\GenericRankitMail(
+                        'Inscripción Rechazada - ' . $tournament->name,
+                        'emails.registration_rejected',
+                        ['tournamentName' => $tournament->name, 'playerName' => $reg->player_name ?? 'Jugador']
+                    ));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Error sending rejection email: ' . $e->getMessage());
             }
         }
 
@@ -1660,5 +1704,77 @@ class TournamentParserController extends Controller
         }
 
         return back()->with('success', "Se enviaron {$emailsSent} correos con el código de acceso a clasificados e inscritos.");
+    }
+
+    public function sendMatchCode(Request $request, $id, $matchId)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return response()->json(['error' => 'Sin permisos.'], 403);
+
+        $match = DB::table('tournament_matches')->where('id', $matchId)->where('tournament_id', $id)->first();
+        if (!$match) return response()->json(['error' => 'Partida no encontrada.'], 404);
+
+        if (empty($match->custom_code)) {
+            return response()->json(['error' => 'La partida no tiene un código asignado.'], 400);
+        }
+
+        // Obtener correos de inscritos (paid)
+        $paidRegistrations = DB::table('tournament_registrations')
+            ->where('tournament_id', $id)
+            ->where('payment_status', 'paid')
+            ->whereNotNull('email')
+            ->get();
+
+        // Obtener correos de clasificados
+        $qualifiers = DB::table('tournament_qualifiers')
+            ->where('parent_tournament_id', $id)
+            ->whereNotNull('player_email')
+            ->get();
+
+        $emailsSent = 0;
+        $processedEmails = [];
+        $errors = [];
+
+        foreach ($paidRegistrations as $reg) {
+            if (!in_array($reg->email, $processedEmails)) {
+                try {
+                    \Illuminate\Support\Facades\Mail::to($reg->email)
+                        ->send(new \App\Mail\MatchCodeMail($tournament->name, $reg->player_name ?? 'Jugador', $match->custom_code));
+                    $emailsSent++;
+                    $processedEmails[] = $reg->email;
+                } catch (\Exception $e) {
+                    $errors[] = "Error enviando a {$reg->email}: " . $e->getMessage();
+                    \Illuminate\Support\Facades\Log::error('Error sending match email: ' . $e->getMessage());
+                }
+            }
+        }
+
+        foreach ($qualifiers as $qual) {
+            if (!in_array($qual->player_email, $processedEmails)) {
+                try {
+                    \Illuminate\Support\Facades\Mail::to($qual->player_email)
+                        ->send(new \App\Mail\MatchCodeMail($tournament->name, $qual->player_name ?? 'Jugador', $match->custom_code));
+                    $emailsSent++;
+                    $processedEmails[] = $qual->player_email;
+                } catch (\Exception $e) {
+                    $errors[] = "Error enviando a {$qual->player_email}: " . $e->getMessage();
+                    \Illuminate\Support\Facades\Log::error('Error sending match email: ' . $e->getMessage());
+                }
+            }
+        }
+
+        if (count($errors) > 0) {
+            return response()->json([
+                'success' => true,
+                'message' => "Se enviaron {$emailsSent} correos con el código de partida, pero hubieron errores.",
+                'errors' => $errors
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Se enviaron {$emailsSent} correos con el código de partida."
+        ]);
     }
 }
