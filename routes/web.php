@@ -28,6 +28,17 @@ Route::get('/test-mail', function() {
     }
 });
 
+// --- RUTAS DE DEBUG ---
+Route::get('/debug-role', function (\Illuminate\Http\Request $request) {
+    $user = $request->user();
+    return response()->json([
+        'user' => $user,
+        'role' => $user?->role,
+        'isAdmin' => $user ? $user->isAdmin() : false,
+        'isSuperAdmin' => $user ? $user->isSuperAdmin() : false,
+    ]);
+});
+
 // --- PAGINA DE INICIO ---
 Route::get('/', function () {
     return Inertia::render('Inicio', [
