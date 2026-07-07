@@ -86,7 +86,7 @@ const dynamicLeagueTournaments = computed(() => {
                             Gestiona tus torneos, explora ligas públicas y compite al más alto nivel. Todo tu ecosistema competitivo en un solo lugar.
                         </p>
                     </div>
-                    <div class="shrink-0 flex gap-4" v-if="$page.props.auth?.user?.email === '18jangel18@gmail.com'">
+                    <div class="shrink-0 flex gap-4" v-if="$page.props.auth?.user?.email === '18jangel18@gmail.com' || ['admin', 'superadmin'].includes($page.props.auth?.user?.role || '')">
                         <Link href="/game-selector" class="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-sm rounded hover:bg-gray-200 transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.2)]" style="transform: skewX(-10deg);">
                             <span style="transform: skewX(10deg);" class="block flex items-center gap-2">
                                 <i class="ph-bold ph-plus"></i> CREAR TORNEO

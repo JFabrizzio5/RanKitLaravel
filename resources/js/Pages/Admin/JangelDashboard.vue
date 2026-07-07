@@ -67,7 +67,7 @@ const user = usePage().props.auth.user;
 
 // --- SEGURIDAD JANGEL ---
 const isJangel = computed(() => {
-    return ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com', user.email].includes(user.email);
+    return user.role === 'admin' || user.role === 'superadmin' || ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com'].includes(user.email);
 });
 
 // --- THEME & UTILS ---

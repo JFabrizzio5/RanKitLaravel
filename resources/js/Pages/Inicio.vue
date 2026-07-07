@@ -257,7 +257,7 @@ onMounted(() => {
               LOBBY
             </Link>
             <Link
-              v-if="$page.props.auth.user.email === '18jangel18@gmail.com'"
+              v-if="$page.props.auth.user.email === '18jangel18@gmail.com' || ['admin', 'superadmin'].includes($page.props.auth.user.role || '')"
               :href="route('jangel.indexdos')"
               class="hidden mr-4 text-sm font-bold tracking-wider text-[var(--rankit-neon)] uppercase sm:block hover:text-white"
             >
@@ -331,7 +331,7 @@ onMounted(() => {
       <span class="btn-content">LOBBY</span>
     </Link>
     <Link
-      v-if="$page.props.auth.user.email === '18jangel18@gmail.com'"
+      v-if="$page.props.auth.user.email === '18jangel18@gmail.com' || ['admin', 'superadmin'].includes($page.props.auth.user.role || '')"
       :href="route('jangel.indexdos')"
       class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew-ghost"
     >
