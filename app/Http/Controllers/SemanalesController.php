@@ -68,8 +68,16 @@ class SemanalesController extends Controller
                 // panel) queda en NULL y no en 0, y se distingue "sin configurar" de "false".
                 if (!Schema::hasColumn('tournaments', 'requires_discord')) $table->boolean('requires_discord')->nullable()->default(false);
                 if (!Schema::hasColumn('tournaments', 'requires_whatsapp'))$table->boolean('requires_whatsapp')->nullable()->default(false);
+                if (!Schema::hasColumn('tournaments', 'requires_epic'))    $table->boolean('requires_epic')->nullable()->default(false);
                 if (!Schema::hasColumn('tournaments', 'is_free'))          $table->boolean('is_free')->nullable()->default(false);
             });
+
+            // El Epic ID se guarda junto a la inscripción (la tabla original no lo tenía).
+            if (Schema::hasTable('tournament_registrations') && !Schema::hasColumn('tournament_registrations', 'epic_id')) {
+                Schema::table('tournament_registrations', function (Blueprint $table) {
+                    $table->string('epic_id')->nullable();
+                });
+            }
 
             $this->colCache = []; // Se agregaron columnas: invalidamos el cache.
         } catch (\Throwable $e) {
@@ -191,8 +199,9 @@ class SemanalesController extends Controller
         if ($this->hasCol('start_date'))            $data['start_date'] = null;     // Todavía sin fecha
         if ($this->hasCol('date_label'))            $data['date_label'] = 'PRÓXIMAMENTE';
         if ($this->hasCol('is_free'))               $data['is_free'] = true;
-        if ($this->hasCol('requires_discord'))      $data['requires_discord'] = true;
+        if ($this->hasCol('requires_discord'))      $data['requires_discord'] = false; // Discord es OPCIONAL
         if ($this->hasCol('requires_whatsapp'))     $data['requires_whatsapp'] = true;
+        if ($this->hasCol('requires_epic'))         $data['requires_epic'] = true;     // Epic ID obligatorio
 
         DB::table('tournaments')->insert($data);
     }
@@ -222,17 +231,43 @@ class SemanalesController extends Controller
         if ($this->hasCol('date_label') && is_null($existing->date_label ?? null)) {
             $patch['date_label'] = 'PRÓXIMAMENTE';
         }
-        // Los tres requisitos centrales del cliente se fuerzan (no basta con mirar si son
+        // Los requisitos centrales del cliente se fuerzan (no basta con mirar si son
         // null): un torneo con slug 'semanal-N' creado por otra vía llega con estas
         // columnas en 0/false y hay que corregirlo, no dejarlo mintiendo en /semanales.
         if ($this->hasCol('is_free') && !($existing->is_free ?? false)) {
             $patch['is_free'] = true;
         }
-        if ($this->hasCol('requires_discord') && !($existing->requires_discord ?? false)) {
-            $patch['requires_discord'] = true;
-        }
         if ($this->hasCol('requires_whatsapp') && !($existing->requires_whatsapp ?? false)) {
             $patch['requires_whatsapp'] = true;
+        }
+        if ($this->hasCol('requires_epic') && !($existing->requires_epic ?? false)) {
+            $patch['requires_epic'] = true;
+        }
+        // Discord pasó a ser OPCIONAL: si quedó marcado como obligatorio de la versión
+        // anterior, lo bajamos.
+        if ($this->hasCol('requires_discord') && ($existing->requires_discord ?? false)) {
+            $patch['requires_discord'] = false;
+        }
+        // Reglas y premios: sólo actualizamos los textos que nadie tocó (siguen siendo
+        // idénticos a un default viejo). Si un admin los editó, se respetan.
+        $reglasActuales = trim((string) ($existing->rules ?? ''));
+        if ($reglasActuales !== '') {
+            foreach ($this->legacyRules($existing->name ?? '') as $viejas) {
+                if ($reglasActuales === trim($viejas)) {
+                    $patch['rules'] = $this->defaultRules($existing->name ?? '');
+                    break;
+                }
+            }
+        }
+
+        $premiosActuales = trim((string) ($existing->prizes ?? ''));
+        if ($premiosActuales !== '') {
+            foreach ($this->legacyPrizes() as $viejos) {
+                if ($premiosActuales === trim($viejos)) {
+                    $patch['prizes'] = $this->defaultPrizes();
+                    break;
+                }
+            }
         }
         // Cuarto invariante: un semanal NUNCA es parte de Rankit League. Si el evento fue
         // creado/editado por otra vía (p. ej. /admin/jangel, donde se puede marcar "seriado"
@@ -259,16 +294,60 @@ class SemanalesController extends Controller
             '',
             '1. La entrada es GRATUITA. No se cobra inscripción de ningún tipo.',
             '2. Es un evento PÚBLICO: cualquiera puede inscribirse mientras el registro esté abierto.',
-            '3. Discord y WhatsApp son OBLIGATORIOS: son los únicos canales por los que te avisamos del lobby y del código de la partida. Si no los dejas bien, no podemos contactarte.',
-            '4. La fecha y la hora están POR ANUNCIAR. Se avisan por Discord y WhatsApp con anticipación.',
-            '5. Debes estar en el lobby a la hora indicada. Si no llegas, tu lugar se libera.',
-            '6. Prohibido el teaming (aliarse con otros jugadores fuera de tu equipo). Descalificación inmediata.',
-            '7. Prohibido cualquier tipo de cheat, macro, glitch o cuenta compartida. Descalificación y veto de futuros semanales.',
-            '8. Un solo registro por jugador. Los registros duplicados se eliminan.',
-            '9. La organización puede pedir grabación o replay para validar un resultado.',
-            '10. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
-            '11. La decisión de la organización sobre cualquier incidencia es final.',
+            '3. El Epic ID y el WhatsApp son OBLIGATORIOS: con el Epic ID te identificamos en la partida y por WhatsApp te llega el aviso. El Discord es OPCIONAL.',
+            '4. Te notificamos por mensaje a tu WhatsApp, y una vez inscrito los códigos de partida te llegan por correo.',
+            '5. También puedes entrar al Semanal desde la app para ver las tablas y cómo vas en tiempo real.',
+            '6. La fecha y la hora están POR ANUNCIAR. Se avisan con anticipación.',
+            '7. Debes estar en el lobby a la hora indicada. Si no llegas, tu lugar se libera.',
+            '8. Prohibido el teaming (aliarse con otros jugadores fuera de tu equipo). Descalificación inmediata.',
+            '9. Prohibido cualquier tipo de cheat, macro, glitch o cuenta compartida. Descalificación y veto de futuros semanales.',
+            '10. Un solo registro por jugador. Los registros duplicados se eliminan.',
+            '11. La organización puede pedir grabación o replay para validar un resultado.',
+            '12. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
+            '13. La decisión de la organización sobre cualquier incidencia es final.',
         ]);
+    }
+
+    /** Versiones anteriores del texto por defecto de los premios (ver legacyRules). */
+    private function legacyPrizes(): array
+    {
+        return [
+            implode("\n", [
+                'PREMIOS EN METÁLICO — SEMANALES',
+                '',
+                'Cada semanal reparte premios en metálico entre los mejores del ranking.',
+                'La bolsa exacta de esta edición está POR ANUNCIAR.',
+                '',
+                'El desglose por posición y la forma de pago se publican aquí mismo y se avisan por Discord y WhatsApp antes de que arranque el evento.',
+            ]),
+        ];
+    }
+
+    /**
+     * Versiones anteriores del texto por defecto de las reglas.
+     * Sirven para actualizar los eventos que NADIE editó a mano: si el texto
+     * guardado es idéntico a un default viejo, se reemplaza por el actual;
+     * si un admin lo cambió, se respeta.
+     */
+    private function legacyRules(string $name): array
+    {
+        return [
+            implode("\n", [
+                "REGLAS — {$name}",
+                '',
+                '1. La entrada es GRATUITA. No se cobra inscripción de ningún tipo.',
+                '2. Es un evento PÚBLICO: cualquiera puede inscribirse mientras el registro esté abierto.',
+                '3. Discord y WhatsApp son OBLIGATORIOS: son los únicos canales por los que te avisamos del lobby y del código de la partida. Si no los dejas bien, no podemos contactarte.',
+                '4. La fecha y la hora están POR ANUNCIAR. Se avisan por Discord y WhatsApp con anticipación.',
+                '5. Debes estar en el lobby a la hora indicada. Si no llegas, tu lugar se libera.',
+                '6. Prohibido el teaming (aliarse con otros jugadores fuera de tu equipo). Descalificación inmediata.',
+                '7. Prohibido cualquier tipo de cheat, macro, glitch o cuenta compartida. Descalificación y veto de futuros semanales.',
+                '8. Un solo registro por jugador. Los registros duplicados se eliminan.',
+                '9. La organización puede pedir grabación o replay para validar un resultado.',
+                '10. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
+                '11. La decisión de la organización sobre cualquier incidencia es final.',
+            ]),
+        ];
     }
 
     /** Premios por defecto: todavía sin bolsa confirmada. */
@@ -280,7 +359,7 @@ class SemanalesController extends Controller
             'Cada semanal reparte premios en metálico entre los mejores del ranking.',
             'La bolsa exacta de esta edición está POR ANUNCIAR.',
             '',
-            'El desglose por posición y la forma de pago se publican aquí mismo y se avisan por Discord y WhatsApp antes de que arranque el evento.',
+            'El desglose por posición y la forma de pago se publican aquí mismo y te los avisamos por mensaje antes de que arranque el evento.',
         ]);
     }
 
@@ -358,8 +437,9 @@ class SemanalesController extends Controller
                     'is_free'             => (bool) ($t->is_free ?? true),
                     'entry_fee_label'     => 'GRATIS',
                     'is_public'           => !((bool) ($t->is_private ?? false)),
-                    'requires_discord'    => (bool) ($t->requires_discord ?? true),
+                    'requires_discord'    => (bool) ($t->requires_discord ?? false), // opcional
                     'requires_whatsapp'   => (bool) ($t->requires_whatsapp ?? true),
+                    'requires_epic'       => (bool) ($t->requires_epic ?? true),
                     'registration_status' => (string) ($t->registration_status ?? 'open'),
                     'prizes'              => $t->prizes ?? null,
                     'rules'               => $t->rules ?? null,
@@ -439,16 +519,18 @@ class SemanalesController extends Controller
         // --- 4. Validación (siempre JSON, nunca redirect) ---
         $rules = [
             'player_name' => 'required|string|max:255',
+            'epic_id'     => 'required|string|max:100',
             'whatsapp'    => 'required|string|max:30',
-            'discord'     => 'required|string|max:100',
+            'discord'     => 'nullable|string|max:100', // Discord es OPCIONAL
         ];
 
         $messages = [
             'player_name.required' => 'Necesitamos tu nombre de jugador.',
             'player_name.max'      => 'El nombre de jugador es demasiado largo (máx. 255 caracteres).',
-            'whatsapp.required'    => 'El WhatsApp es obligatorio: es por donde te avisamos del lobby.',
+            'epic_id.required'     => 'El Epic ID es obligatorio: con él te identificamos dentro de la partida.',
+            'epic_id.max'          => 'El Epic ID es demasiado largo (máx. 100 caracteres).',
+            'whatsapp.required'    => 'El WhatsApp es obligatorio: ahí te mandamos el aviso del evento.',
             'whatsapp.max'         => 'El WhatsApp es demasiado largo (máx. 30 caracteres).',
-            'discord.required'     => 'El Discord es obligatorio: es por donde te avisamos del lobby.',
             'discord.max'          => 'El Discord es demasiado largo (máx. 100 caracteres).',
         ];
 
@@ -464,9 +546,10 @@ class SemanalesController extends Controller
         $data = $validator->validated();
 
         // El correo SIEMPRE sale de la sesión: el formulario no puede inscribir a otra persona.
-        $email    = $user->email;
-        $whatsapp = trim($data['whatsapp']);
-        $discord  = trim($data['discord']);
+        $email      = $user->email;
+        $whatsapp   = trim($data['whatsapp']);
+        $discord    = trim((string) ($data['discord'] ?? '')) ?: null; // opcional
+        $epicId     = trim($data['epic_id']);
         $playerName = trim($data['player_name']);
 
         // --- 5. Anti-duplicados (mismo correo o mismo WhatsApp en el mismo semanal) ---
@@ -490,17 +573,25 @@ class SemanalesController extends Controller
 
         // --- 6. Alta. La entrada es gratis => queda confirmada al instante ---
         try {
-            DB::table('tournament_registrations')->insert([
+            $fila = [
                 'tournament_id'  => $tournament->id,
                 'player_name'    => $playerName,
                 'email'          => $email,
                 'whatsapp'       => $whatsapp,
                 'discord'        => $discord,
                 'payment_status' => 'paid',
-                'payment_notes'  => 'Inscripción gratuita (Semanal)',
+                'payment_notes'  => 'Inscripción gratuita (Semanal) · Epic ID: ' . $epicId,
                 'created_at'     => now(),
                 'updated_at'     => now(),
-            ]);
+            ];
+
+            // La columna epic_id se agrega en ensureSchema(); si por lo que sea no existe,
+            // el Epic ID igual queda registrado en payment_notes.
+            if (Schema::hasColumn('tournament_registrations', 'epic_id')) {
+                $fila['epic_id'] = $epicId;
+            }
+
+            DB::table('tournament_registrations')->insert($fila);
         } catch (\Throwable $e) {
             Log::warning('[Semanales] No se pudo guardar la inscripción: ' . $e->getMessage());
 
@@ -544,7 +635,9 @@ class SemanalesController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => '¡Listo! Quedaste inscrito en ' . $tournament->name . '. Te avisamos por Discord y WhatsApp cuando anunciemos la fecha y el código del lobby.',
+            'message' => '¡Listo! Quedaste inscrito en ' . $tournament->name
+                . '. Te avisamos por mensaje a tu WhatsApp y los códigos de partida te llegarán a ' . $email
+                . '. También puedes entrar al evento desde la app para ver las tablas y cómo vas.',
         ]);
     }
 }

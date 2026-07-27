@@ -107,8 +107,8 @@ const faqs = [
         r: 'Nada. La entrada a los Semanales es completamente gratuita. No pedimos pago, ni suscripción, ni tarjeta.',
     },
     {
-        p: '¿Por qué es obligatorio Discord y WhatsApp?',
-        r: 'Ahí entregamos el código de la partida, los horarios y los avisos de último minuto. Si no podemos contactarte, no podemos darte tu lugar en el lobby.',
+        p: '¿Qué datos son obligatorios?',
+        r: 'Tu Epic ID y tu WhatsApp. Con el Epic ID te identificamos dentro de la partida y por WhatsApp te mandamos el aviso. El Discord es opcional: déjalo si quieres estar en la comunidad.',
     },
     {
         p: '¿Cuándo se juegan?',
@@ -132,29 +132,30 @@ const pasos = [
     {
         icono: 'ph-user-plus',
         titulo: 'Te inscribes gratis',
-        texto: 'Llenas el formulario con tu gamertag, tu WhatsApp y tu Discord. Sin pagos, sin letras chiquitas.',
+        texto: 'Llenas el formulario con tu gamertag, tu Epic ID y tu WhatsApp. El Discord es opcional. Sin pagos, sin letras chiquitas.',
     },
     {
-        icono: 'ph-discord-logo',
-        titulo: 'Te sumamos a los canales',
-        texto: 'Te agregamos al Discord y al grupo de WhatsApp del evento. Ahí vive toda la información oficial.',
+        icono: 'ph-chat-circle-text',
+        titulo: 'Te notificamos por mensaje',
+        texto: 'Te llega un mensaje a tu WhatsApp con la fecha y la hora en cuanto se confirmen. Nada de andar adivinando.',
     },
     {
-        icono: 'ph-calendar-check',
-        titulo: 'Te avisamos fecha y código',
-        texto: 'Cuando se confirma el día, te mandamos la hora exacta y el código de la partida privada.',
+        icono: 'ph-envelope-simple',
+        titulo: 'Los códigos llegan a tu correo',
+        texto: 'Una vez inscrito, el código de la partida privada te llega por correo al que tienes en tu cuenta.',
     },
     {
         icono: 'ph-trophy',
-        titulo: 'Juegas y compites',
-        texto: 'Entras al lobby, juegas y peleas por la bolsa semanal en metálico. Así de simple.',
+        titulo: 'Sigue tu avance en la app',
+        texto: 'Entra al Semanal desde la app y revisa las tablas y cómo vas mientras se juega. Compites por la bolsa semanal en metálico.',
     },
 ]
 
 const requisitos = [
-    { icono: 'ph-discord-logo', texto: 'Cuenta de Discord activa (obligatoria).' },
-    { icono: 'ph-whatsapp-logo', texto: 'WhatsApp con el número que registres (obligatorio).' },
-    { icono: 'ph-game-controller', texto: 'Cuenta de juego propia y en regla.' },
+    { icono: 'ph-game-controller', texto: 'Epic ID de tu cuenta de juego (obligatorio).' },
+    { icono: 'ph-whatsapp-logo', texto: 'WhatsApp con el número que registres (obligatorio): ahí te notificamos.' },
+    { icono: 'ph-envelope-simple', texto: 'Correo de tu cuenta Rankit: ahí te llegan los códigos de partida.' },
+    { icono: 'ph-discord-logo', texto: 'Discord (opcional): para estar en la comunidad.' },
     { icono: 'ph-user-check', texto: 'Un registro por persona y por evento.' },
     { icono: 'ph-currency-circle-dollar', texto: 'Entrada 100% gratuita, sin costos ocultos.' },
     { icono: 'ph-users-three', texto: 'Cupos limitados: el orden de inscripción cuenta.' },
@@ -176,6 +177,7 @@ let overflowPrevio = ''
 
 const formulario = ref({
     player_name: '',
+    epic_id: '',
     whatsapp: '',
     discord: '',
 })
@@ -184,6 +186,7 @@ function limpiarFormulario() {
     // El nombre se precarga con el de la cuenta; el correo NO se pide: sale de la sesión.
     formulario.value = {
         player_name: usuario.value?.name || '',
+        epic_id: '',
         whatsapp: '',
         discord: '',
     }
@@ -239,6 +242,7 @@ function validar() {
     const nombre = (formulario.value.player_name || '').trim()
     const whats = (formulario.value.whatsapp || '').trim()
     const disc = (formulario.value.discord || '').trim()
+    const epic = (formulario.value.epic_id || '').trim()
 
     if (!nombre) errs.player_name = 'Escribe tu nombre o gamertag.'
     else if (nombre.length < 3) errs.player_name = 'Debe tener al menos 3 caracteres.'
@@ -249,8 +253,12 @@ function validar() {
     else if (digitos.length < 10) errs.whatsapp = 'Incluye al menos 10 dígitos (con lada).'
     else if (digitos.length > 15) errs.whatsapp = 'Revisa el número, tiene demasiados dígitos.'
 
-    if (!disc) errs.discord = 'Tu usuario de Discord es obligatorio.'
-    else if (disc.length < 2) errs.discord = 'Usuario de Discord demasiado corto.'
+    if (!epic) errs.epic_id = 'Tu Epic ID es obligatorio: con él te identificamos en la partida.'
+    else if (epic.length < 3) errs.epic_id = 'El Epic ID es demasiado corto.'
+    else if (epic.length > 60) errs.epic_id = 'Máximo 60 caracteres.'
+
+    // Discord es OPCIONAL: sólo validamos la longitud si lo escribieron.
+    if (disc && disc.length < 2) errs.discord = 'Usuario de Discord demasiado corto.'
     else if (disc.length > 60) errs.discord = 'Máximo 60 caracteres.'
 
     errores.value = errs
@@ -279,6 +287,7 @@ function enviarInscripcion() {
 
     const payload = {
         player_name: (formulario.value.player_name || '').trim(),
+        epic_id: (formulario.value.epic_id || '').trim(),
         whatsapp: (formulario.value.whatsapp || '').trim(),
         discord: (formulario.value.discord || '').trim(),
     }
@@ -363,7 +372,7 @@ onUnmounted(() => {
     <Head title="Semanales | Rankit">
         <meta
             name="description"
-            content="Semanales de Rankit: torneos promocionales con entrada GRATIS y premios en metálico cada semana. Cupo abierto para todos, inscripción en línea, Discord y WhatsApp obligatorios."
+            content="Semanales de Rankit: torneos promocionales con entrada GRATIS y premios en metálico cada semana. Cupo abierto para todos, inscripción en línea con Epic ID y WhatsApp; los códigos de partida llegan por correo."
         />
         <meta
             name="keywords"
@@ -502,7 +511,7 @@ onUnmounted(() => {
                                 <i class="ph-fill ph-globe-hemisphere-west"></i> Público
                             </span>
                             <span class="sem-chip border-fnBrightPurple/50 text-fnBrightPurple bg-fnBrightPurple/10">
-                                <i class="ph-fill ph-chats-circle"></i> Discord + WhatsApp
+                                <i class="ph-fill ph-game-controller"></i> Epic ID + WhatsApp
                             </span>
                             <span class="sem-chip border-fnGold/50 text-fnGold bg-fnGold/10">
                                 <i class="ph-fill ph-calendar-blank"></i> Fechas: Próximamente
@@ -569,7 +578,7 @@ onUnmounted(() => {
                                 </li>
                                 <li class="flex items-start gap-3">
                                     <i class="mt-0.5 text-lg ph-fill ph-check-circle text-fnEmerald shrink-0"></i>
-                                    <span>Comunicación oficial por Discord y WhatsApp.</span>
+                                    <span>Aviso por mensaje y códigos de partida por correo.</span>
                                 </li>
                             </ul>
                         </div>
@@ -686,10 +695,10 @@ onUnmounted(() => {
                         <div class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase mb-3">Requisitos</div>
                         <div class="flex flex-wrap gap-2">
                             <span
-                                v-if="ev.requires_discord !== false"
-                                class="sem-chip border-fnBrightPurple/40 text-fnBrightPurple bg-fnBrightPurple/10"
+                                v-if="ev.requires_epic !== false"
+                                class="sem-chip border-fnNeonCyan/40 text-fnNeonCyan bg-fnNeonCyan/10"
                             >
-                                <i class="ph-fill ph-discord-logo"></i> Discord obligatorio
+                                <i class="ph-fill ph-game-controller"></i> Epic ID obligatorio
                             </span>
                             <span
                                 v-if="ev.requires_whatsapp !== false"
@@ -697,10 +706,29 @@ onUnmounted(() => {
                             >
                                 <i class="ph-fill ph-whatsapp-logo"></i> WhatsApp obligatorio
                             </span>
+                            <span class="sem-chip border-fnBrightPurple/40 text-fnBrightPurple bg-fnBrightPurple/10">
+                                <i class="ph-fill ph-discord-logo"></i> Discord opcional
+                            </span>
                             <span v-if="ev.is_public" class="sem-chip border-white/20 text-gray-200 bg-white/5">
                                 <i class="ph-fill ph-globe-hemisphere-west"></i> Evento público
                             </span>
                         </div>
+
+                        <!-- Qué pasa después de inscribirte -->
+                        <ul class="mt-4 space-y-1.5 text-xs text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <i class="ph-fill ph-chat-circle-text text-fnEmerald mt-0.5"></i>
+                                <span>Te notificamos por mensaje cuando se confirme la fecha.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="ph-fill ph-envelope-simple text-fnNeonCyan mt-0.5"></i>
+                                <span>Ya inscrito, los códigos de partida te llegan por correo.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="ph-fill ph-chart-line-up text-fnGold mt-0.5"></i>
+                                <span>Entra al evento desde la app para ver las tablas y cómo vas.</span>
+                            </li>
+                        </ul>
                     </div>
 
                     <!-- Premios y reglas -->
@@ -846,7 +874,7 @@ onUnmounted(() => {
                         <strong class="font-bold text-white">Transparencia primero:</strong>
                         no publicamos cantidades que todavía no están confirmadas. En cuanto la bolsa y las fechas queden
                         cerradas, las anunciamos aquí y en los canales oficiales del evento. Si ya estás inscrito, te
-                        llegan por Discord y WhatsApp.
+                        llega el aviso por mensaje.
                     </p>
                 </div>
             </div>
@@ -1033,6 +1061,24 @@ onUnmounted(() => {
                             <p v-if="errores.player_name" class="mt-1.5 text-xs text-fnCrimson">{{ errores.player_name }}</p>
                         </div>
 
+                        <!-- Epic ID (obligatorio) -->
+                        <div>
+                            <label for="sem-epic" class="block mb-2 text-[11px] font-bold tracking-[0.2em] text-gray-300 uppercase">
+                                Epic ID <span class="text-fnCrimson">*</span>
+                            </label>
+                            <input
+                                id="sem-epic"
+                                v-model="formulario.epic_id"
+                                type="text"
+                                maxlength="60"
+                                placeholder="Tu nombre de usuario de Epic Games"
+                                class="sem-input"
+                                :class="errores.epic_id ? 'sem-input-error' : ''"
+                            />
+                            <p v-if="errores.epic_id" class="mt-1.5 text-xs text-fnCrimson">{{ errores.epic_id }}</p>
+                            <p v-else class="mt-1.5 text-xs text-gray-500">Con este ID te identificamos dentro de la partida y en las tablas.</p>
+                        </div>
+
                         <!-- WhatsApp -->
                         <div>
                             <label for="sem-whatsapp" class="block mb-2 text-[11px] font-bold tracking-[0.2em] text-gray-300 uppercase">
@@ -1049,13 +1095,13 @@ onUnmounted(() => {
                                 :class="errores.whatsapp ? 'sem-input-error' : ''"
                             />
                             <p v-if="errores.whatsapp" class="mt-1.5 text-xs text-fnCrimson">{{ errores.whatsapp }}</p>
-                            <p v-else class="mt-1.5 text-xs text-gray-500">Incluye la lada del país. Ahí te avisamos fecha y código.</p>
+                            <p v-else class="mt-1.5 text-xs text-gray-500">Incluye la lada del país. Ahí te llega el mensaje con la fecha.</p>
                         </div>
 
-                        <!-- Discord -->
+                        <!-- Discord (opcional) -->
                         <div>
                             <label for="sem-discord" class="block mb-2 text-[11px] font-bold tracking-[0.2em] text-gray-300 uppercase">
-                                Discord <span class="text-fnCrimson">*</span>
+                                Discord <span class="font-normal normal-case tracking-normal text-gray-500">(opcional)</span>
                             </label>
                             <input
                                 id="sem-discord"
@@ -1067,7 +1113,7 @@ onUnmounted(() => {
                                 :class="errores.discord ? 'sem-input-error' : ''"
                             />
                             <p v-if="errores.discord" class="mt-1.5 text-xs text-fnCrimson">{{ errores.discord }}</p>
-                            <p v-else class="mt-1.5 text-xs text-gray-500">Formato: @usuario o usuario#0000.</p>
+                            <p v-else class="mt-1.5 text-xs text-gray-500">Si lo dejas, te sumamos a la comunidad. Puedes omitirlo.</p>
                         </div>
 
                         <!-- Correo: se autocompleta con el de la cuenta y no se puede editar -->
@@ -1126,8 +1172,9 @@ onUnmounted(() => {
                         </div>
 
                         <p class="text-[11px] leading-relaxed text-gray-500">
-                            Al inscribirte aceptas que te contactemos por WhatsApp y Discord con la información del
-                            evento. Los Semanales son eventos promocionales y no otorgan puntos de Rankit League.
+                            Al inscribirte aceptas que te contactemos por WhatsApp y por correo con la información del
+                            evento y los códigos de partida. Los Semanales son eventos promocionales y no otorgan puntos
+                            de Rankit League.
                         </p>
                     </form>
                 </div>

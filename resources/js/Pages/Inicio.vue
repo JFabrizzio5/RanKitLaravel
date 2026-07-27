@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const props = defineProps<{
   canLogin?: boolean
@@ -46,6 +46,26 @@ const t = computed(() => {
   const translations = {
     es: {
       nav: { tournaments: 'Torneos', pricing: 'Precios', custom: 'Personalizado', partners: 'Partners', weekly: 'Semanales', login: 'Ingresar', create: 'Crear Cuenta', dashboard: 'Dashboard' },
+      // Menú "Competencias": agrupa las páginas de juego para no saturar la barra
+      menu: {
+        compete: 'Competencias',
+        competeDesc: 'Todo lo que puedes jugar en Rankit',
+        league: 'Rankit League',
+        leagueDesc: 'La liga oficial por temporadas',
+        weekly: 'Semanales',
+        weeklyDesc: 'Gratis, con premios en metálico',
+        worldcup: 'Mundial 2026',
+        worldcupDesc: 'Campeón, bracket y estadísticas',
+        live: 'Torneos en curso',
+        liveDesc: 'Lo que se está jugando ahora',
+        badgeNew: 'Nuevo',
+        open: 'Abrir menú',
+        close: 'Cerrar menú',
+        admin: 'Admin',
+        adminFull: 'Admin Eventos',
+        theme: 'Cambiar tema',
+        language: 'Cambiar idioma',
+      },
       hero: {
         powered: 'Powered by',
         badge: 'Plataforma de Torneos v2.0',
@@ -65,7 +85,7 @@ const t = computed(() => {
         dateLabel: 'PRÓXIMAMENTE',
         free: 'ENTRADA GRATIS',
         prize: 'PREMIOS EN METÁLICO SEMANALES',
-        requirements: 'Discord + WhatsApp obligatorios',
+        requirements: 'Epic ID + WhatsApp · Discord opcional',
         cta: 'Ver Semanales',
         note: 'Los Semanales son eventos promocionales gratuitos y NO forman parte de Rankit League: no otorgan puntos ni plazas en la liga.',
         card1: 'Semanal 1',
@@ -125,6 +145,26 @@ const t = computed(() => {
     },
     en: {
       nav: { tournaments: 'Tournaments', pricing: 'Pricing', custom: 'Custom', partners: 'Partners', weekly: 'Weeklies', login: 'Login', create: 'Sign Up', dashboard: 'Dashboard' },
+      // "Compete" menu: groups the game pages so the bar doesn't feel crowded
+      menu: {
+        compete: 'Compete',
+        competeDesc: 'Everything you can play on Rankit',
+        league: 'Rankit League',
+        leagueDesc: 'The official seasonal league',
+        weekly: 'Weeklies',
+        weeklyDesc: 'Free, with cash prizes',
+        worldcup: 'World Cup 2026',
+        worldcupDesc: 'Champion, bracket and stats',
+        live: 'Live tournaments',
+        liveDesc: 'What is being played right now',
+        badgeNew: 'New',
+        open: 'Open menu',
+        close: 'Close menu',
+        admin: 'Admin',
+        adminFull: 'Events Admin',
+        theme: 'Toggle theme',
+        language: 'Change language',
+      },
       hero: {
         powered: 'Powered by',
         badge: 'Tournament Platform v2.0',
@@ -144,7 +184,7 @@ const t = computed(() => {
         dateLabel: 'COMING SOON',
         free: 'FREE ENTRY',
         prize: 'WEEKLY CASH PRIZES',
-        requirements: 'Discord + WhatsApp required',
+        requirements: 'Epic ID + WhatsApp · Discord optional',
         cta: 'View Weeklies',
         note: 'Weeklies are free promotional events and are NOT part of Rankit League: they grant no league points or slots.',
         card1: 'Weekly 1',
@@ -207,6 +247,45 @@ const t = computed(() => {
   return translations[lang.value]
 })
 
+/**
+ * NAVEGACIÓN
+ * La barra tenía 7 enlaces sueltos y se veía saturada. Ahora las páginas de
+ * juego (League, Semanales, Mundial, Torneos) viven en un solo menú
+ * "Competencias", y en móvil hay un panel desplegable en lugar de nada.
+ */
+const menuCompetencias = ref(false)
+const menuMovil = ref(false)
+
+const enlacesCompetencias = computed(() => [
+  { href: '/league', icon: 'ph-trophy', title: t.value.menu.league, desc: t.value.menu.leagueDesc, nuevo: false },
+  { href: '/semanales', icon: 'ph-calendar-star', title: t.value.menu.weekly, desc: t.value.menu.weeklyDesc, nuevo: true },
+  { href: '/mundial', icon: 'ph-globe-hemisphere-west', title: t.value.menu.worldcup, desc: t.value.menu.worldcupDesc, nuevo: false },
+  { href: '#torneos', icon: 'ph-broadcast', title: t.value.menu.live, desc: t.value.menu.liveDesc, nuevo: false },
+])
+
+function alternarCompetencias() {
+  menuCompetencias.value = !menuCompetencias.value
+}
+
+function cerrarMenus() {
+  menuCompetencias.value = false
+  menuMovil.value = false
+}
+
+function alternarMenuMovil() {
+  menuMovil.value = !menuMovil.value
+  if (menuMovil.value) menuCompetencias.value = false
+}
+
+function alClicFuera(e: MouseEvent) {
+  const objetivo = e.target as HTMLElement | null
+  if (objetivo && !objetivo.closest('[data-nav]')) cerrarMenus()
+}
+
+function alPresionarEscape(e: KeyboardEvent) {
+  if (e.key === 'Escape') cerrarMenus()
+}
+
 onMounted(() => {
   // Theme init
   const savedTheme = localStorage.getItem('theme')
@@ -223,6 +302,14 @@ onMounted(() => {
     script.async = true
     document.head.appendChild(script)
   }
+
+  document.addEventListener('click', alClicFuera)
+  window.addEventListener('keydown', alPresionarEscape)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', alClicFuera)
+  window.removeEventListener('keydown', alPresionarEscape)
 })
 </script>
 
@@ -251,57 +338,113 @@ onMounted(() => {
         <span class="text-3xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">Rankit</span>
       </div>
 
-      <!-- Links Desktop -->
-      <div class="hidden gap-8 text-sm font-bold tracking-widest text-gray-500 uppercase md:flex dark:text-gray-400">
-        <a href="#torneos" class="transition hover:text-neon">{{ t.nav.tournaments }}</a>
-        <a href="#pricing" class="text-black transition hover:text-neon dark:text-white">{{ t.nav.pricing }}</a>
+      <!-- Links Desktop: 4 entradas en vez de 7. Lo jugable vive en "Competencias". -->
+      <div class="items-center hidden gap-7 text-sm font-bold tracking-widest text-gray-500 uppercase md:flex dark:text-gray-400" data-nav>
+        <!-- Competencias (desplegable) -->
+        <div class="relative" @mouseenter="menuCompetencias = true" @mouseleave="menuCompetencias = false">
+          <button
+            type="button"
+            class="flex items-center gap-1.5 transition hover:text-neon"
+            :class="menuCompetencias ? 'text-neon' : ''"
+            :aria-expanded="menuCompetencias"
+            aria-haspopup="true"
+            @click="alternarCompetencias"
+          >
+            <span>{{ t.menu.compete }}</span>
+            <span class="w-1.5 h-1.5 rounded-full bg-neon animate-pulse"></span>
+            <i class="text-xs transition-transform ph-bold ph-caret-down" :class="menuCompetencias ? 'rotate-180' : ''"></i>
+          </button>
+
+          <transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 -translate-y-1"
+            leave-active-class="transition duration-100 ease-in"
+            leave-to-class="opacity-0 -translate-y-1"
+          >
+            <div v-show="menuCompetencias" class="absolute left-0 z-50 pt-5 top-full w-80">
+              <div class="p-2 bg-white border border-gray-200 shadow-2xl dark:bg-[#0a0a0a] dark:border-white/10">
+                <component
+                  :is="item.href.startsWith('#') ? 'a' : Link"
+                  v-for="item in enlacesCompetencias"
+                  :key="item.href"
+                  :href="item.href"
+                  class="flex items-start gap-3 p-3 transition-colors group hover:bg-gray-50 dark:hover:bg-white/5"
+                  @click="cerrarMenus"
+                >
+                  <i
+                    class="mt-0.5 text-xl text-gray-400 transition-colors ph-fill group-hover:text-neon"
+                    :class="item.icon"
+                  ></i>
+                  <span class="min-w-0">
+                    <span class="flex items-center gap-2">
+                      <span class="text-xs font-bold tracking-wider text-black uppercase dark:text-white group-hover:text-neon">{{ item.title }}</span>
+                      <span v-if="item.nuevo" class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-black uppercase bg-neon">
+                        {{ t.menu.badgeNew }}
+                      </span>
+                    </span>
+                    <span class="block mt-0.5 font-sans text-[11px] font-normal normal-case tracking-normal text-gray-500 dark:text-gray-400">
+                      {{ item.desc }}
+                    </span>
+                  </span>
+                </component>
+              </div>
+            </div>
+          </transition>
+        </div>
+
+        <a href="#pricing" class="transition hover:text-neon">{{ t.nav.pricing }}</a>
+        <a href="#partners" class="transition hover:text-neon">{{ t.nav.partners }}</a>
         <a href="#contacto" class="transition hover:text-neon">{{ t.nav.custom }}</a>
-        <a href="#partners" class="transition hover:text-neon text-neon">{{ t.nav.partners }}</a>
-        <Link href="/league" class="transition hover:text-neon">League</Link>
-        <Link href="/mundial" class="transition hover:text-neon">Mundial</Link>
-        <!-- Semanales: eventos promocionales gratuitos (destacado con acento neón) -->
-        <Link href="/semanales" class="flex items-center gap-1.5 transition hover:text-neon text-neon">
-          <span class="w-1.5 h-1.5 rounded-full bg-neon animate-pulse"></span>
-          <span>{{ t.nav.weekly }}</span>
-        </Link>
       </div>
 
       <!-- Actions -->
-      <div class="flex items-center gap-4">
-        <!-- Language -->
-        <button @click="toggleLanguage" class="flex items-center gap-1 px-2 py-1 text-xs font-bold transition-colors border border-gray-300 rounded dark:border-gray-700 hover:border-neon">
-          <i class="text-lg ph ph-translate"></i>
-          <span>{{ lang.toUpperCase() }}</span>
-        </button>
-
-        <!-- Theme -->
-        <button @click="toggleTheme" class="p-2 mr-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-neon dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
-          <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
-          <i v-else class="text-xl ph-fill ph-moon"></i>
-        </button>
+      <div class="flex items-center gap-2 sm:gap-3" data-nav>
+        <!-- Idioma + tema, juntos en un solo bloque para no dispersar la barra -->
+        <div class="flex items-center overflow-hidden border border-gray-200 rounded-lg dark:border-white/10">
+          <button
+            :title="t.menu.language"
+            :aria-label="t.menu.language"
+            class="px-2.5 py-2 text-[11px] font-bold text-gray-500 transition-colors dark:text-gray-400 hover:text-neon"
+            @click="toggleLanguage"
+          >
+            {{ lang.toUpperCase() }}
+          </button>
+          <span class="w-px h-5 bg-gray-200 dark:bg-white/10"></span>
+          <button
+            :title="t.menu.theme"
+            :aria-label="t.menu.theme"
+            class="px-2.5 py-2 text-gray-500 transition-colors dark:text-gray-400 hover:text-neon"
+            @click="toggleTheme"
+          >
+            <i v-if="isDark" class="text-base ph-fill ph-sun"></i>
+            <i v-else class="text-base ph-fill ph-moon"></i>
+          </button>
+        </div>
 
         <!-- AUTH LINKS (Conservando Lógica Vue/Inertia) -->
         <template v-if="props.canLogin">
           <template v-if="$page.props.auth?.user">
             <Link
-              :href="route('dashboard')"
-              class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
-            >
-              LOBBY
-            </Link>
-            <Link
               v-if="$page.props.auth.user.email === '18jangel18@gmail.com' || ['admin', 'superadmin'].includes($page.props.auth.user.role || '')"
               :href="route('jangel.indexdos')"
-              class="hidden mr-4 text-sm font-bold tracking-wider text-[var(--rankit-neon)] uppercase sm:block hover:text-white"
+              :title="t.menu.adminFull"
+              class="hidden items-center gap-1.5 px-3 py-2 text-xs font-bold tracking-wider text-[var(--rankit-neon)] uppercase border border-[var(--rankit-neon)]/40 hover:bg-[var(--rankit-neon)]/10 transition-colors lg:flex"
             >
-              ADMIN EVENTOS
+              <i class="ph-bold ph-sliders"></i>
+              <span>{{ t.menu.admin }}</span>
+            </Link>
+            <Link
+              :href="route('dashboard')"
+              class="hidden px-5 py-2 text-xs font-bold tracking-wider uppercase sm:inline-flex btn-skew"
+            >
+              <span class="btn-content">Lobby</span>
             </Link>
           </template>
 
           <template v-else>
             <Link
               :href="route('login')"
-              class="hidden mr-4 text-sm font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
+              class="hidden text-xs font-bold tracking-wider text-gray-600 uppercase sm:block dark:text-gray-300 hover:text-black dark:hover:text-white"
             >
               {{ t.nav.login }}
             </Link>
@@ -309,14 +452,93 @@ onMounted(() => {
             <Link
               v-if="props.canRegister"
               :href="route('register')"
-              class="px-6 py-2 text-sm font-bold tracking-wider uppercase btn-skew"
+              class="hidden px-5 py-2 text-xs font-bold tracking-wider uppercase sm:inline-flex btn-skew"
             >
               <span class="btn-content">{{ t.nav.create }}</span>
             </Link>
           </template>
         </template>
+
+        <!-- Hamburguesa (antes en móvil no había menú: los enlaces simplemente desaparecían) -->
+        <button
+          type="button"
+          class="p-2 -mr-1 text-black transition-colors md:hidden dark:text-white hover:text-neon"
+          :aria-label="menuMovil ? t.menu.close : t.menu.open"
+          :aria-expanded="menuMovil"
+          @click="alternarMenuMovil"
+        >
+          <i class="text-2xl ph-bold" :class="menuMovil ? 'ph-x' : 'ph-list'"></i>
+        </button>
       </div>
     </nav>
+
+    <!-- Panel móvil -->
+    <transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 -translate-y-2"
+      leave-active-class="transition duration-150 ease-in"
+      leave-to-class="opacity-0 -translate-y-2"
+    >
+      <div
+        v-show="menuMovil"
+        data-nav
+        class="fixed inset-x-0 z-40 border-b border-gray-200 top-20 md:hidden bg-white/98 dark:bg-[#050505]/98 dark:border-white/10 backdrop-blur-md max-h-[calc(100vh-5rem)] overflow-y-auto"
+      >
+        <div class="px-6 py-6 space-y-6">
+          <div>
+            <p class="mb-3 text-[10px] font-bold tracking-[0.25em] text-gray-400 uppercase">{{ t.menu.compete }}</p>
+            <div class="space-y-1">
+              <component
+                :is="item.href.startsWith('#') ? 'a' : Link"
+                v-for="item in enlacesCompetencias"
+                :key="'movil-' + item.href"
+                :href="item.href"
+                class="flex items-center gap-3 py-3 border-b border-gray-100 dark:border-white/5"
+                @click="cerrarMenus"
+              >
+                <i class="text-xl text-neon ph-fill" :class="item.icon"></i>
+                <span class="flex items-center gap-2 text-sm font-bold tracking-wider text-black uppercase dark:text-white">
+                  {{ item.title }}
+                  <span v-if="item.nuevo" class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-black uppercase bg-neon">
+                    {{ t.menu.badgeNew }}
+                  </span>
+                </span>
+              </component>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-4 text-sm font-bold tracking-widest text-gray-500 uppercase dark:text-gray-400">
+            <a href="#pricing" @click="cerrarMenus">{{ t.nav.pricing }}</a>
+            <a href="#partners" @click="cerrarMenus">{{ t.nav.partners }}</a>
+            <a href="#contacto" @click="cerrarMenus">{{ t.nav.custom }}</a>
+          </div>
+
+          <div v-if="props.canLogin" class="flex flex-col gap-3 pt-2 border-t border-gray-200 dark:border-white/10">
+            <template v-if="$page.props.auth?.user">
+              <Link :href="route('dashboard')" class="px-6 py-3 text-sm font-bold tracking-wider text-center uppercase btn-skew" @click="cerrarMenus">
+                <span class="btn-content">Lobby</span>
+              </Link>
+              <Link
+                v-if="$page.props.auth.user.email === '18jangel18@gmail.com' || ['admin', 'superadmin'].includes($page.props.auth.user.role || '')"
+                :href="route('jangel.indexdos')"
+                class="py-3 text-sm font-bold tracking-wider text-center text-[var(--rankit-neon)] uppercase border border-[var(--rankit-neon)]/40"
+                @click="cerrarMenus"
+              >
+                {{ t.menu.adminFull }}
+              </Link>
+            </template>
+            <template v-else>
+              <Link :href="route('login')" class="py-3 text-sm font-bold tracking-wider text-center text-gray-600 uppercase border border-gray-300 dark:border-white/15 dark:text-gray-300" @click="cerrarMenus">
+                {{ t.nav.login }}
+              </Link>
+              <Link v-if="props.canRegister" :href="route('register')" class="px-6 py-3 text-sm font-bold tracking-wider text-center uppercase btn-skew" @click="cerrarMenus">
+                <span class="btn-content">{{ t.nav.create }}</span>
+              </Link>
+            </template>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- Hero Section -->
     <header class="relative min-h-[90vh] flex items-center pt-20 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:40px_40px]">
