@@ -103,6 +103,25 @@ const t = computed(() => {
         byline: 'Rankit es un producto de CometaX, la casa de software que lo desarrolla y le da soporte.',
         bylineCta: 'Conocer CometaX',
       },
+      compete: {
+        tag: 'Compite con nosotros',
+        title: 'Nuestras',
+        titleSub: 'competencias',
+        desc: 'Antes de venderte la plataforma, la usamos nosotros. Estas son las competencias que corremos en Rankit.',
+        ownTitle: '¿Y lo tuyo?',
+        ownDesc: 'Monta tu torneo o tu liga con las mismas herramientas. Si prefieres que te lo expliquemos, escríbenos y lo vemos en 5 minutos.',
+        ownCta: 'Crear cuenta gratis',
+        ownCta2: 'Hablar con ventas',
+        soonBadge: 'Pronto',
+      },
+      contact: {
+        rankitTitle: 'Torneos y ligas',
+        rankitDesc: 'Escríbenos por DM y te armamos una demo o una propuesta para tu evento.',
+        rankitCta: 'DM a @rankit.pro',
+        cometaxTitle: 'Software a medida',
+        cometaxDesc: 'Si necesitas un sistema propio, integraciones o algo fuera de Rankit, lo construye CometaX.',
+        cometaxCta: 'Ver CometaX',
+      },
       league: {
         tag: 'Competencia insignia',
         title: 'Rankit',
@@ -280,6 +299,25 @@ const t = computed(() => {
         byline: 'Rankit is a product by CometaX, the software company that builds and supports it.',
         bylineCta: 'Visit CometaX',
       },
+      compete: {
+        tag: 'Compete with us',
+        title: 'Our',
+        titleSub: 'competitions',
+        desc: 'Before selling you the platform, we use it ourselves. These are the competitions we run on Rankit.',
+        ownTitle: 'And yours?',
+        ownDesc: 'Run your tournament or league with the same tools. If you would rather we walk you through it, message us and we cover it in 5 minutes.',
+        ownCta: 'Create free account',
+        ownCta2: 'Talk to sales',
+        soonBadge: 'Soon',
+      },
+      contact: {
+        rankitTitle: 'Tournaments and leagues',
+        rankitDesc: 'DM us and we put together a demo or a proposal for your event.',
+        rankitCta: 'DM @rankit.pro',
+        cometaxTitle: 'Custom software',
+        cometaxDesc: 'If you need your own system, integrations or something beyond Rankit, CometaX builds it.',
+        cometaxCta: 'Visit CometaX',
+      },
       league: {
         tag: 'Flagship competition',
         title: 'Rankit',
@@ -417,7 +455,7 @@ const enlacesCompetencias = computed(() => [
   { href: '/league', icon: 'ph-trophy', title: t.value.menu.league, desc: t.value.menu.leagueDesc, nuevo: false },
   { href: '/semanales', icon: 'ph-calendar-star', title: t.value.menu.weekly, desc: t.value.menu.weeklyDesc, nuevo: true },
   { href: '/mundial', icon: 'ph-globe-hemisphere-west', title: t.value.menu.worldcup, desc: t.value.menu.worldcupDesc, nuevo: false },
-  { href: '#torneos', icon: 'ph-broadcast', title: t.value.menu.live, desc: t.value.menu.liveDesc, nuevo: false },
+  { href: '#competencias', icon: 'ph-broadcast', title: t.value.menu.live, desc: t.value.menu.liveDesc, nuevo: false },
   { href: '/duels', icon: 'ph-sword', title: t.value.menu.duels, desc: t.value.menu.duelsDesc, nuevo: false, pronto: true },
 ])
 
@@ -788,22 +826,23 @@ onUnmounted(() => {
     </Link>
   </template>
 
-  <!-- Si NO está logeado: Ingresar + Crear cuenta -->
+  <!-- Visitante nuevo: un solo camino claro (crear cuenta) + hablar con ventas.
+       "Ingresar" vive en la barra, que es donde lo busca quien ya es cliente. -->
   <template v-else>
-    <Link
-      :href="route('login')"
-      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
-    >
-      <span class="btn-content">{{ t.nav.login }}</span>
-    </Link>
-
     <Link
       v-if="props.canRegister"
       :href="route('register')"
-      class="px-8 py-4 text-lg font-bold tracking-wider uppercase btn-skew-outline"
+      class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew"
     >
-      <span class="btn-content">{{ t.nav.create }}</span>
+      <span class="btn-content">{{ t.compete.ownCta }}</span>
     </Link>
+
+    <button
+      class="px-8 py-4 text-lg font-bold tracking-wider text-black uppercase transition border-2 border-gray-300 dark:text-white hover:border-black dark:border-white/20 dark:hover:border-white"
+      @click="abrirContratar('Gestor Pro')"
+    >
+      {{ t.compete.ownCta2 }}
+    </button>
   </template>
 </div>
 
@@ -892,11 +931,9 @@ onUnmounted(() => {
             <h2 class="mb-6 text-4xl font-black leading-tight text-black uppercase font-display md:text-5xl dark:text-white">
               <span>{{ t.about.title }}</span> <span class="text-neon">{{ t.about.titleSub }}</span>
             </h2>
-            <p class="pl-6 mb-6 text-lg font-light leading-relaxed text-gray-700 border-l-4 dark:text-gray-300 border-neon">
+            <p class="pl-6 mb-10 text-lg font-light leading-relaxed text-gray-700 border-l-4 dark:text-gray-300 border-neon">
               {{ t.about.lead }}
             </p>
-            <p class="mb-10 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.about.body }}</p>
-
             <!-- Para quién -->
             <span class="block mb-4 text-[10px] font-bold tracking-[0.25em] text-gray-400 uppercase">{{ t.about.forTag }}</span>
             <div class="flex flex-wrap gap-2 mb-10">
@@ -946,202 +983,95 @@ onUnmounted(() => {
     </section>
 
     <!-- ======================== RANKIT LEAGUE ========================== -->
-    <section id="rankit-league" class="relative py-24 overflow-hidden border-t border-gray-200 bg-gray-50 dark:bg-black dark:border-white/10 scroll-mt-24">
-      <div class="absolute inset-0 opacity-[0.07] pointer-events-none bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:28px_28px]"></div>
+    <!-- ================== COMPETENCIAS RANKIT ========================== -->
+    <!-- Antes eran tres secciones (League, Torneos, Semanales) diciendo cosas
+         parecidas. Ahora es una sola tarjeta por competencia: menos scroll y un
+         solo camino a la acción. -->
+    <section id="competencias" class="py-24 border-t border-gray-200 bg-gray-50 dark:bg-[#080808] dark:border-white/10 scroll-mt-24">
+      <div class="px-6 mx-auto max-w-7xl">
+        <div class="max-w-2xl mb-14">
+          <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-3 block">{{ t.compete.tag }}</span>
+          <h2 class="mb-4 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
+            <span>{{ t.compete.title }}</span> <span class="text-neon">{{ t.compete.titleSub }}</span>
+          </h2>
+          <p class="font-light text-gray-500 dark:text-gray-400">{{ t.compete.desc }}</p>
+        </div>
 
-      <div class="relative z-10 px-6 mx-auto max-w-7xl">
-        <div class="grid items-center gap-12 lg:grid-cols-2">
-          <div>
-            <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-4 block">{{ t.league.tag }}</span>
-            <h2 class="mb-6 text-5xl font-black italic tracking-tighter text-black uppercase font-display md:text-6xl dark:text-white">
-              <span>{{ t.league.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-fuchsia-400">{{ t.league.titleSub }}</span>
-            </h2>
-            <p class="max-w-xl mb-8 text-lg font-light text-gray-600 dark:text-gray-400">{{ t.league.desc }}</p>
-
-            <ul class="mb-10 space-y-3">
-              <li v-for="p in [t.league.p1, t.league.p2, t.league.p3]" :key="p" class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-                <i class="mt-0.5 text-lg ph-fill ph-check-circle text-neon shrink-0"></i>
-                <span>{{ p }}</span>
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <!-- Rankit League -->
+          <article class="flex flex-col p-8 brutal-card">
+            <i class="mb-5 text-4xl ph-fill ph-trophy text-neon"></i>
+            <h3 class="mb-2 text-2xl font-black italic text-black uppercase font-display dark:text-white">
+              {{ t.league.title }} {{ t.league.titleSub }}
+            </h3>
+            <p class="mb-6 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.league.desc }}</p>
+            <ul class="mb-8 space-y-2">
+              <li v-for="pt in [t.league.p1, t.league.p2, t.league.p3]" :key="pt" class="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <i class="mt-0.5 ph-fill ph-check-circle text-neon shrink-0"></i><span>{{ pt }}</span>
               </li>
             </ul>
-
-            <Link href="/league" class="inline-flex px-10 py-4 text-sm font-bold tracking-wider uppercase btn-skew">
-              <span class="btn-content">{{ t.league.cta }}</span>
+            <Link href="/league" class="inline-flex items-center gap-2 mt-auto text-xs font-bold tracking-wider uppercase text-neon hover:underline">
+              {{ t.league.cta }} <i class="ph-bold ph-arrow-right"></i>
             </Link>
-          </div>
+          </article>
 
-          <!-- Puente hacia Semanales -->
-          <div class="p-8 brutal-card sm:p-10">
-            <div class="flex items-center gap-3 mb-5">
-              <span class="flex items-center justify-center w-12 h-12 bg-neon">
-                <i class="text-2xl text-white ph-fill ph-calendar-star"></i>
-              </span>
-              <div>
-                <p class="text-xl font-black text-black uppercase font-display dark:text-white">{{ t.semanales.title }} {{ t.semanales.titleSub }}</p>
-                <p class="font-mono text-[10px] tracking-widest text-neon uppercase">{{ t.semanales.dateLabel }}</p>
-              </div>
+          <!-- Semanales -->
+          <article class="flex flex-col p-8 brutal-card border-neon">
+            <div class="flex items-start justify-between mb-5">
+              <i class="text-4xl ph-fill ph-calendar-star text-neon"></i>
+              <span class="px-2 py-1 text-[9px] font-bold tracking-widest text-black uppercase bg-neon">{{ t.semanales.tag }}</span>
             </div>
-
-            <p class="mb-6 text-sm leading-relaxed text-gray-600 dark:text-gray-400">{{ t.league.weeklyBridge }}</p>
-
+            <h3 class="mb-2 text-2xl font-black italic text-black uppercase font-display dark:text-white">
+              {{ t.semanales.title }} {{ t.semanales.titleSub }}
+            </h3>
+            <p class="mb-6 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.semanales.desc }}</p>
             <div class="flex flex-wrap gap-2 mb-8">
-              <span class="px-3 py-1 text-[10px] font-bold tracking-wider text-black uppercase bg-neon">{{ t.semanales.free }}</span>
-              <span class="px-3 py-1 text-[10px] font-bold tracking-wider text-gray-600 uppercase border border-gray-300 dark:border-white/15 dark:text-gray-300">
-                {{ t.semanales.prize }}
-              </span>
+              <span class="px-2.5 py-1 text-[10px] font-bold tracking-wider text-black uppercase bg-neon">{{ t.semanales.free }}</span>
+              <span class="px-2.5 py-1 text-[10px] font-bold tracking-wider text-gray-600 uppercase border border-gray-300 dark:border-white/15 dark:text-gray-300">{{ t.semanales.dateLabel }}</span>
+              <span class="px-2.5 py-1 text-[10px] font-bold tracking-wider text-gray-600 uppercase border border-gray-300 dark:border-white/15 dark:text-gray-300">{{ t.semanales.prize }}</span>
             </div>
-
-            <Link href="/semanales" class="inline-flex items-center gap-2 text-sm font-bold tracking-wider uppercase text-neon hover:underline">
-              {{ t.league.weeklyCta }} <i class="ph-bold ph-arrow-right"></i>
+            <Link href="/semanales" class="inline-flex items-center gap-2 mt-auto text-xs font-bold tracking-wider uppercase text-neon hover:underline">
+              {{ t.semanales.cta }} <i class="ph-bold ph-arrow-right"></i>
             </Link>
-          </div>
-        </div>
-      </div>
-    </section>
+          </article>
 
-    <!-- Active Tournaments -->
-    <section id="torneos" class="py-24 bg-gray-50 dark:bg-[#080808]">
-      <div class="px-6 mx-auto max-w-7xl">
-        <div class="flex items-end justify-between mb-12">
-          <div>
-            <h2 class="mb-2 text-4xl font-black text-black uppercase font-display dark:text-white">
-              <span>{{ t.tournaments.title }}</span> <span class="text-neon">{{ t.tournaments.titleSub }}</span>
-            </h2>
-            <p class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ t.tournaments.desc }}</p>
-          </div>
-          <a href="#" class="items-center hidden gap-2 text-sm font-bold tracking-wider text-black uppercase transition md:flex hover:text-neon dark:text-white">
-            <span>{{ t.tournaments.viewAll }}</span> <i class="ph ph-arrow-right"></i>
-          </a>
-        </div>
-
-        <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <div class="cursor-pointer brutal-card group">
-            <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
-              <img src="public/BellzCup.png" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="Valorant" />
-              <div class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-black uppercase bg-neon">Esports</div>
+          <!-- 1v1 / Wagers -->
+          <article class="flex flex-col p-8 brutal-card">
+            <div class="flex items-start justify-between mb-5">
+              <i class="text-4xl ph-fill ph-sword text-neon"></i>
+              <span class="px-2 py-1 text-[9px] font-bold tracking-widest uppercase border border-amber-500/50 text-amber-500">{{ t.compete.soonBadge }}</span>
             </div>
-            <div class="p-6">
-              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">BellzCup</h3>
-              <p class="mb-4 font-mono text-xs text-gray-500">Battle Royale • Crossplay • $2,400.00 MXN en premios</p>
-            </div>
-          </div>
-
-          <div class="cursor-pointer brutal-card group">
-            <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
-              <img src="https://images.unsplash.com/photo-1579952363873-27f3bade9f55?q=80&w=800" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="Futbol" />
-              <div class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-white uppercase bg-black">Deportes</div>
-            </div>
-            <div class="p-6">
-              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">Copa Nocturna</h3>
-              <p class="mb-4 font-mono text-xs text-gray-500">Fut 7 • Cancha Sur • Trofeo</p>
-            </div>
-          </div>
-
-          <div class="cursor-pointer brutal-card group">
-            <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
-              <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=800" class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-60 group-hover:opacity-100 group-hover:scale-110" alt="League" />
-              <div class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-black uppercase bg-neon">Esports</div>
-            </div>
-            <div class="p-6">
-              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">League Weekly</h3>
-              <p class="mb-4 font-mono text-xs text-gray-500">5v5 • Grieta • RP Prizes</p>
-            </div>
-          </div>
-
-          <div class="flex flex-col items-center justify-center p-6 text-center bg-transparent border-gray-300 border-dashed cursor-pointer brutal-card group hover:border-solid dark:border-gray-800">
-            <div class="flex items-center justify-center w-16 h-16 mb-4 text-gray-500 transition bg-gray-200 rounded-full group-hover:bg-neon group-hover:text-black dark:bg-gray-900 dark:text-gray-500">
-              <i class="text-2xl ph ph-plus"></i>
-            </div>
-            <h3 class="text-lg font-bold text-gray-500 uppercase font-display dark:text-gray-400 group-hover:text-black dark:group-hover:text-white">{{ t.tournaments.cardCreate }}</h3>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Semanales: eventos promocionales gratuitos, independientes de Rankit League -->
-    <section
-      id="semanales"
-      class="relative py-24 overflow-hidden border-y-2 border-neon bg-gradient-to-b from-white via-[var(--rankit-neon)]/5 to-white dark:from-[#0a0014] dark:via-[#12001f] dark:to-[#050505]"
-    >
-      <!-- Halo neón decorativo -->
-      <div class="absolute inset-x-0 top-0 h-px pointer-events-none bg-gradient-to-r from-transparent via-[var(--rankit-neon)] to-transparent"></div>
-      <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-[42rem] h-48 rounded-full pointer-events-none bg-[var(--rankit-neon)]/20 blur-3xl"></div>
-
-      <div class="relative z-10 px-6 mx-auto max-w-7xl">
-        <!-- Encabezado -->
-        <div class="mb-14 text-center">
-          <span class="inline-flex items-center gap-2 px-3 py-1 mb-5 text-[10px] font-bold uppercase tracking-[0.25em] border border-neon text-neon bg-neon/10">
-            <span class="w-2 h-2 rounded-full bg-neon animate-pulse"></span>
-            {{ t.semanales.tag }}
-          </span>
-
-          <h2 class="mb-4 text-4xl font-black text-black uppercase font-display md:text-6xl dark:text-white">
-            <!-- Ambos spans en la misma línea: el compilador de Vue condensa los saltos de línea y uniría las palabras -->
-            <span>{{ t.semanales.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600 dark:to-white">{{ t.semanales.titleSub }}</span>
-          </h2>
-
-          <p class="max-w-2xl mx-auto text-lg text-gray-600 dark:text-gray-400">{{ t.semanales.desc }}</p>
-
-          <!-- Resumen rápido -->
-          <div class="flex flex-wrap items-center justify-center gap-3 mt-8">
-            <span class="px-4 py-2 text-xs font-bold tracking-widest text-black uppercase bg-neon">{{ t.semanales.free }}</span>
-            <span class="flex items-center gap-2 px-4 py-2 text-xs font-bold tracking-widest text-gray-800 uppercase bg-white border border-gray-300 dark:bg-white/5 dark:border-white/15 dark:text-gray-200">
-              <i class="ph-fill ph-money text-neon"></i> {{ t.semanales.prize }}
-            </span>
-          </div>
-        </div>
-
-        <!-- Tarjetas: Semanal 1 y Semanal 2 -->
-        <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
-          <div class="brutal-card p-8 bg-white dark:bg-[#0c0018] border-l-4 border-l-[var(--rankit-neon)] group">
-            <div class="flex flex-wrap items-center gap-2 mb-6">
-              <span class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-widest border border-neon text-neon bg-neon/10">
-                <i class="ph ph-calendar-blank"></i> {{ t.semanales.dateLabel }}
-              </span>
-              <span class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-black bg-neon">{{ t.semanales.free }}</span>
-            </div>
-
-            <h3 class="mb-4 text-3xl font-black text-black uppercase transition font-display dark:text-white group-hover:text-neon">
-              {{ t.semanales.card1 }}
-            </h3>
-
-            <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-              <li class="flex items-center gap-3"><i class="text-lg ph-fill ph-money text-neon"></i> {{ t.semanales.prize }}</li>
-              <li class="flex items-center gap-3"><i class="text-lg ph ph-discord-logo text-neon"></i> {{ t.semanales.requirements }}</li>
+            <h3 class="mb-2 text-2xl font-black italic text-black uppercase font-display dark:text-white">{{ t.menu.duels }}</h3>
+            <p class="mb-6 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.pricing.soon1Desc }}</p>
+            <ul class="mb-8 space-y-2">
+              <li v-for="pt in [t.pricing.soon1, t.pricing.soon2, t.pricing.soon3]" :key="pt" class="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <i class="mt-0.5 ph-fill ph-clock text-amber-500 shrink-0"></i><span>{{ pt }}</span>
+              </li>
             </ul>
-          </div>
-
-          <div class="brutal-card p-8 bg-white dark:bg-[#0c0018] border-l-4 border-l-[var(--rankit-neon)] group">
-            <div class="flex flex-wrap items-center gap-2 mb-6">
-              <span class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-widest border border-neon text-neon bg-neon/10">
-                <i class="ph ph-calendar-blank"></i> {{ t.semanales.dateLabel }}
-              </span>
-              <span class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-black bg-neon">{{ t.semanales.free }}</span>
-            </div>
-
-            <h3 class="mb-4 text-3xl font-black text-black uppercase transition font-display dark:text-white group-hover:text-neon">
-              {{ t.semanales.card2 }}
-            </h3>
-
-            <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-              <li class="flex items-center gap-3"><i class="text-lg ph-fill ph-money text-neon"></i> {{ t.semanales.prize }}</li>
-              <li class="flex items-center gap-3"><i class="text-lg ph ph-discord-logo text-neon"></i> {{ t.semanales.requirements }}</li>
-            </ul>
-          </div>
+            <Link href="/duels" class="inline-flex items-center gap-2 mt-auto text-xs font-bold tracking-wider uppercase text-neon hover:underline">
+              {{ t.pricing.soonCta }} <i class="ph-bold ph-arrow-right"></i>
+            </Link>
+          </article>
         </div>
 
-        <!-- CTA -->
-        <div class="flex justify-center mt-12">
-          <Link href="/semanales" class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew">
-            <span class="btn-content">{{ t.semanales.cta }}</span>
-          </Link>
+        <!-- Cierre: un solo camino a la acción -->
+        <div class="flex flex-col items-start gap-6 p-8 mt-8 border border-gray-200 sm:flex-row sm:items-center dark:border-white/10 bg-white dark:bg-black">
+          <div class="flex-1">
+            <h3 class="mb-2 text-2xl font-black text-black uppercase font-display dark:text-white">{{ t.compete.ownTitle }}</h3>
+            <p class="text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.compete.ownDesc }}</p>
+          </div>
+          <div class="flex flex-col w-full gap-3 sm:flex-row sm:w-auto shrink-0">
+            <Link v-if="props.canRegister" :href="route('register')" class="px-7 py-3.5 text-xs font-bold tracking-wider text-center uppercase btn-skew">
+              <span class="btn-content">{{ t.compete.ownCta }}</span>
+            </Link>
+            <button
+              class="px-7 py-3.5 text-xs font-bold tracking-wider text-black uppercase transition border border-gray-300 hover:border-black dark:border-white/20 dark:text-white dark:hover:border-white"
+              @click="abrirContratar('Gestor Pro')"
+            >
+              {{ t.compete.ownCta2 }}
+            </button>
+          </div>
         </div>
-
-        <!-- Aviso: independientes de Rankit League -->
-        <p class="flex items-start max-w-3xl gap-3 p-4 mx-auto mt-10 font-mono text-xs leading-relaxed text-gray-600 bg-white border border-gray-300 dark:text-gray-400 dark:bg-white/5 dark:border-white/15">
-          <i class="text-base ph ph-info text-neon shrink-0"></i>
-          <span>{{ t.semanales.note }}</span>
-        </p>
       </div>
     </section>
 
@@ -1224,15 +1154,14 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Complementos: el ticket se ajusta con add-ons, no inflando el plan base -->
-        <div class="mt-20">
-          <div class="max-w-2xl mb-10">
-            <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-3 block">{{ t.pricing.addonsTag }}</span>
-            <h3 class="mb-3 text-3xl font-black text-black uppercase font-display dark:text-white">{{ t.pricing.addonsTitle }}</h3>
-            <p class="font-light text-gray-500 dark:text-gray-400">{{ t.pricing.addonsDesc }}</p>
+        <!-- Complementos en una sola fila: el ticket se ajusta sin inflar el plan base -->
+        <div class="p-6 mt-10 border border-gray-200 sm:p-8 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
+          <div class="flex flex-col gap-2 mb-6 sm:flex-row sm:items-baseline sm:gap-4">
+            <h3 class="text-xl font-black text-black uppercase font-display dark:text-white">{{ t.pricing.addonsTitle }}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t.pricing.addonsDesc }}</p>
           </div>
 
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
             <div
               v-for="addon in [
                 { icon: 'ph-users-three', title: t.pricing.addonStaffTitle, desc: t.pricing.addonStaffDesc },
@@ -1240,46 +1169,28 @@ onUnmounted(() => {
                 { icon: 'ph-rocket-launch', title: t.pricing.addonSetupTitle, desc: t.pricing.addonSetupDesc },
               ]"
               :key="addon.title"
-              class="p-6 brutal-card"
+              class="flex items-start gap-3"
             >
-              <i class="mb-4 text-3xl ph-fill text-neon" :class="addon.icon"></i>
-              <h4 class="mb-2 text-lg font-bold text-black uppercase font-display dark:text-white">{{ addon.title }}</h4>
-              <p class="mb-4 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ addon.desc }}</p>
-              <span class="font-mono text-[11px] tracking-wider text-neon uppercase">{{ t.pricing.addonPrice }}</span>
+              <i class="mt-0.5 text-2xl ph-fill text-neon shrink-0" :class="addon.icon"></i>
+              <div class="min-w-0">
+                <h4 class="text-sm font-bold text-black uppercase font-display dark:text-white">{{ addon.title }}</h4>
+                <p class="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ addon.desc }}</p>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- En desarrollo: cobro de inscripciones, wagers y 1v1 -->
-        <div class="p-8 mt-20 border border-gray-200 sm:p-10 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
-          <div class="flex flex-col gap-10 lg:flex-row">
-            <div class="lg:w-1/3">
-              <span class="mb-3 inline-flex items-center gap-2 px-2.5 py-1 text-[10px] font-bold tracking-[0.25em] uppercase border border-amber-500/50 text-amber-500 bg-amber-500/10">
-                <i class="ph-fill ph-hammer"></i> {{ t.pricing.soonTag }}
-              </span>
-              <h3 class="mb-3 text-3xl font-black text-black uppercase font-display dark:text-white">{{ t.pricing.soonTitle }}</h3>
-              <p class="mb-6 text-sm font-light leading-relaxed text-gray-500 dark:text-gray-400">{{ t.pricing.soonDesc }}</p>
-              <Link href="/duels" class="inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-neon hover:underline">
-                {{ t.pricing.soonCta }} <i class="ph-bold ph-arrow-right"></i>
-              </Link>
-            </div>
-
-            <div class="grid flex-1 grid-cols-1 gap-5 sm:grid-cols-3">
-              <div
-                v-for="item in [
-                  { icon: 'ph-credit-card', title: t.pricing.soon1, desc: t.pricing.soon1Desc },
-                  { icon: 'ph-users-three', title: t.pricing.soon2, desc: t.pricing.soon2Desc },
-                  { icon: 'ph-sword', title: t.pricing.soon3, desc: t.pricing.soon3Desc },
-                ]"
-                :key="item.title"
-                class="p-5 bg-white border border-gray-200 dark:bg-black dark:border-white/10"
-              >
-                <i class="mb-3 text-2xl ph-fill text-neon" :class="item.icon"></i>
-                <h4 class="mb-2 text-sm font-bold leading-tight text-black uppercase font-display dark:text-white">{{ item.title }}</h4>
-                <p class="text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ item.desc }}</p>
-              </div>
-            </div>
-          </div>
+        <!-- En desarrollo: una línea, el detalle vive en /duels -->
+        <div class="flex flex-col items-start gap-4 p-6 mt-6 border border-gray-200 sm:flex-row sm:items-center dark:border-white/10">
+          <span class="inline-flex items-center gap-2 px-2.5 py-1 text-[10px] font-bold tracking-[0.25em] uppercase border border-amber-500/50 text-amber-500 bg-amber-500/10 shrink-0">
+            <i class="ph-fill ph-hammer"></i> {{ t.pricing.soonTag }}
+          </span>
+          <p class="flex-1 text-sm text-gray-600 dark:text-gray-300">
+            {{ t.pricing.soon1 }} · {{ t.pricing.soon2 }} · {{ t.pricing.soon3 }}
+          </p>
+          <Link href="/duels" class="inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-neon hover:underline shrink-0">
+            {{ t.pricing.soonCta }} <i class="ph-bold ph-arrow-right"></i>
+          </Link>
         </div>
       </div>
     </section>
@@ -1358,103 +1269,41 @@ onUnmounted(() => {
     </section>
 
     <!-- Contact Form -->
-    <section id="contacto" class="py-24 bg-gray-50 dark:bg-[#050505] border-t border-gray-200 dark:border-white/10">
-  <div class="grid items-center max-w-5xl grid-cols-1 gap-16 px-6 mx-auto md:grid-cols-2">
-    <div>
-      <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">{{ t.custom.tag }}</span>
-      <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
-        <!-- Ambos spans en la misma línea: el compilador de Vue condensa los saltos de línea y uniría las palabras -->
-        <span>{{ t.custom.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">{{ t.custom.titleSub }}</span>
-      </h2>
-      <p class="mb-8 text-lg text-gray-500 dark:text-gray-400">{{ t.custom.desc }}</p>
-      <ul class="mb-8 space-y-4 text-sm text-gray-600 dark:text-gray-300">
-        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat1 }}</li>
-        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat2 }}</li>
-        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.custom.feat3 }}</li>
-      </ul>
-    </div>
+    <!-- ====================== CONTACTO (unificado) ====================== -->
+    <!-- Antes había dos secciones casi idénticas (Rankit y CometaX). Una sola. -->
+    <section id="contacto" class="py-24 border-t border-gray-200 bg-gray-50 dark:bg-[#050505] dark:border-white/10 scroll-mt-24">
+      <div class="max-w-5xl px-6 mx-auto">
+        <div class="max-w-2xl mb-12">
+          <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">{{ t.custom.tag }}</span>
+          <h2 class="mb-4 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
+            <span>{{ t.custom.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">{{ t.custom.titleSub }}</span>
+          </h2>
+          <p class="text-lg text-gray-500 dark:text-gray-400">{{ t.custom.desc }}</p>
+        </div>
 
-    <!-- Instagram CTA -->
-    <div class="brutal-card p-10 bg-white dark:bg-[#0a0a0a] flex flex-col items-center justify-center text-center">
-      <div class="w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_var(--rankit-neon)] bg-neon/10">
-<img
-    src="https://cdn-icons-png.flaticon.com/512/1400/1400487.png"
-    alt="Instagram"
-    class="object-contain w-8 h-8"
-  />      </div>
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <!-- Rankit -->
+          <div class="flex flex-col p-8 brutal-card">
+            <i class="mb-4 text-3xl ph-fill ph-instagram-logo text-neon"></i>
+            <h3 class="mb-2 text-xl font-bold text-black uppercase font-display dark:text-white">{{ t.contact.rankitTitle }}</h3>
+            <p class="mb-6 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.contact.rankitDesc }}</p>
+            <a href="https://instagram.com/rankit.pro" target="_blank" rel="noopener" class="w-full py-3.5 mt-auto text-xs font-bold tracking-wider text-center uppercase btn-skew">
+              <span class="btn-content">{{ t.contact.rankitCta }}</span>
+            </a>
+          </div>
 
-      <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">
-        Instagram
-      </h3>
-      <p class="mb-8 text-gray-500 dark:text-gray-400">
-        Escríbenos por DM y te armamos una demo o una propuesta a medida.
-      </p>
-
-      <!-- Cambia el href por tu IG real -->
-      <a
-        href="https://instagram.com/rankit.pro"
-        target="_blank"
-        rel="noopener"
-        class="w-full py-4 text-sm font-bold tracking-wider uppercase btn-skew"
-      >
-        <span class="btn-content">Abrir Instagram</span>
-      </a>
-    </div>
-  </div>
-</section>
-<section id="software-medida" class="py-24 bg-gray-50 dark:bg-[#050505] border-t border-gray-200 dark:border-white/10">
-  <div class="grid items-center max-w-5xl grid-cols-1 gap-16 px-6 mx-auto md:grid-cols-2">
-
-    <!-- Instagram CTA (ahora del lado izquierdo) -->
-    <div class="brutal-card p-10 bg-white dark:bg-[#0a0a0a] flex flex-col items-center justify-center text-center">
-      <div class="w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_var(--rankit-neon)] bg-neon/10">
-        <img
-    src="https://cdn-icons-png.flaticon.com/512/1400/1400487.png"
-          alt="Instagram"
-          class="object-contain w-8 h-8"
-        />
+          <!-- CometaX -->
+          <div class="flex flex-col p-8 brutal-card">
+            <i class="mb-4 text-3xl ph-fill ph-buildings text-neon"></i>
+            <h3 class="mb-2 text-xl font-bold text-black uppercase font-display dark:text-white">{{ t.contact.cometaxTitle }}</h3>
+            <p class="mb-6 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.contact.cometaxDesc }}</p>
+            <a href="https://cometax.click" target="_blank" rel="noopener" class="w-full py-3.5 mt-auto text-xs font-bold tracking-wider text-center text-black uppercase transition border border-gray-300 hover:border-black dark:border-white/20 dark:text-white dark:hover:border-white">
+              {{ t.contact.cometaxCta }}
+            </a>
+          </div>
+        </div>
       </div>
-
-      <h3 class="mb-3 text-2xl font-bold text-black uppercase font-display dark:text-white">
-        CometaX Company
-      </h3>
-      <p class="mb-8 text-gray-500 dark:text-gray-400">
-        Escríbenos por DM para cotizar software a medida.
-      </p>
-
-      <a
-        href="https://instagram.com/cometaxcompany"
-        target="_blank"
-        rel="noopener"
-        class="w-full py-4 text-sm font-bold tracking-wider uppercase btn-skew"
-      >
-        <span class="btn-content">Abrir Instagram</span>
-      </a>
-    </div>
-
-    <!-- Texto (ahora del lado derecho) -->
-    <div>
-      <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">Software</span>
-      <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
-        <span>¿Necesitas software</span>
-        <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">
-          a medida?
-        </span>
-      </h2>
-
-      <p class="mb-8 text-lg text-gray-500 dark:text-gray-400">
-        Si tu organización necesita un sistema personalizado, integraciones especiales o una plataforma completa, lo construimos contigo.
-      </p>
-
-      <ul class="mb-8 space-y-4 text-sm text-gray-600 dark:text-gray-300">
-        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> Integraciones y automatizaciones</li>
-        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> Dashboard + roles + permisos</li>
-        <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> Deploy, soporte y escalamiento</li>
-      </ul>
-    </div>
-
-  </div>
-</section>
+    </section>
 
 
     <!-- Footer -->
@@ -1475,7 +1324,7 @@ onUnmounted(() => {
         
         <!-- Enlaces rápidos -->
         <div class="flex flex-wrap items-center justify-center gap-6 text-xs font-bold tracking-widest text-gray-500 uppercase dark:text-gray-500">
-          <a href="#torneos" class="transition hover:text-neon">{{ t.nav.tournaments }}</a>
+          <a href="#competencias" class="transition hover:text-neon">{{ t.nav.tournaments }}</a>
           <Link href="/semanales" class="transition hover:text-neon text-neon">{{ t.nav.weekly }}</Link>
           <a href="#pricing" class="transition hover:text-neon">{{ t.nav.pricing }}</a>
         </div>
