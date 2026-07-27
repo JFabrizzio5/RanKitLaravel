@@ -1,0 +1,550 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Controllers\Admin\TournamentParserController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Database\Schema\Blueprint;
+use Inertia\Inertia;
+
+/**
+ * SEMANALES (apartado promocional)
+ * --------------------------------------------------------------------------
+ * Eventos semanales gratuitos, públicos y auto-generados. Si no existen al
+ * entrar a /semanales, se crean solos (Semanal 1 y Semanal 2) con fecha
+ * "PRÓXIMAMENTE". NO forman parte de Rankit League: van sin seriación
+ * (is_serialized = false, parent_tournament_id = null) para que nunca
+ * aparezcan en getSerializedStandings().
+ *
+ * Igual que el resto del sistema Jangel, aquí NO usamos modelos Eloquent para
+ * torneos: todo es DB::table('tournaments') + Schema::hasColumn.
+ */
+class SemanalesController extends Controller
+{
+    /** Email del dueño preferente de los semanales (pedido del cliente). */
+    private const OWNER_EMAIL = '18jangel18@gmail.com';
+
+    /** Definición de los semanales que deben existir siempre. */
+    private const SEMANALES = [
+        1 => ['name' => 'Semanal 1', 'slug' => 'semanal-1'],
+        2 => ['name' => 'Semanal 2', 'slug' => 'semanal-2'],
+    ];
+
+    /** Cache local de columnas ya verificadas (evita golpear el information_schema de más). */
+    private array $colCache = [];
+
+    // =====================================================================
+    // 1) ESQUEMA
+    // =====================================================================
+
+    /**
+     * Garantiza que existan las tablas base y las columnas extra que necesitan
+     * los semanales. Todo va nullable / con default para no romper filas viejas.
+     * Si algo falla, sólo avisamos por log: la página NO se debe caer.
+     */
+    private function ensureSchema(): void
+    {
+        try {
+            // Las tablas base ya las sabe crear el parser oficial: no duplicamos CREATE TABLE.
+            if (!Schema::hasTable('tournaments') || !Schema::hasTable('tournament_registrations')) {
+                (new TournamentParserController())->ensureDatabaseIsReady();
+            }
+
+            if (!Schema::hasTable('tournaments')) {
+                return; // No hay nada más que hacer.
+            }
+
+            Schema::table('tournaments', function (Blueprint $table) {
+                if (!Schema::hasColumn('tournaments', 'event_type'))       $table->string('event_type')->nullable();
+                if (!Schema::hasColumn('tournaments', 'week_number'))      $table->unsignedInteger('week_number')->nullable();
+                if (!Schema::hasColumn('tournaments', 'start_date'))       $table->dateTime('start_date')->nullable();
+                if (!Schema::hasColumn('tournaments', 'date_label'))       $table->string('date_label')->nullable();
+                // Nullable igual que las de arriba: son columnas nuevas y nadie depende de
+                // que sean NOT NULL. Así un torneo creado por otra vía (p. ej. store() del
+                // panel) queda en NULL y no en 0, y se distingue "sin configurar" de "false".
+                if (!Schema::hasColumn('tournaments', 'requires_discord')) $table->boolean('requires_discord')->nullable()->default(false);
+                if (!Schema::hasColumn('tournaments', 'requires_whatsapp'))$table->boolean('requires_whatsapp')->nullable()->default(false);
+                if (!Schema::hasColumn('tournaments', 'is_free'))          $table->boolean('is_free')->nullable()->default(false);
+            });
+
+            $this->colCache = []; // Se agregaron columnas: invalidamos el cache.
+        } catch (\Throwable $e) {
+            Log::warning('[Semanales] No se pudo asegurar el esquema: ' . $e->getMessage());
+        }
+    }
+
+    /** Atajo con cache para Schema::hasColumn('tournaments', ...). */
+    private function hasCol(string $column): bool
+    {
+        if (!array_key_exists($column, $this->colCache)) {
+            try {
+                $this->colCache[$column] = Schema::hasColumn('tournaments', $column);
+            } catch (\Throwable $e) {
+                $this->colCache[$column] = false;
+            }
+        }
+
+        return $this->colCache[$column];
+    }
+
+    // =====================================================================
+    // 2) DUEÑO DE LOS EVENTOS
+    // =====================================================================
+
+    /**
+     * Resuelve al dueño de los semanales, en este orden:
+     *   a) 18jangel18@gmail.com  b) superadmin  c) admin  d) el primer usuario.
+     * Devuelve null si la BD no tiene usuarios (tournaments.user_id es FK a users).
+     */
+    private function resolveOwner()
+    {
+        try {
+            if (!Schema::hasTable('users')) {
+                return null;
+            }
+
+            $owner = DB::table('users')->where('email', self::OWNER_EMAIL)->first();
+            if ($owner) return $owner;
+
+            if ($this->usersHasRole()) {
+                $owner = DB::table('users')->where('role', 'superadmin')->orderBy('id')->first();
+                if ($owner) return $owner;
+
+                $owner = DB::table('users')->where('role', 'admin')->orderBy('id')->first();
+                if ($owner) return $owner;
+            }
+
+            return DB::table('users')->orderBy('id')->first();
+        } catch (\Throwable $e) {
+            Log::warning('[Semanales] No se pudo resolver el dueño: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /** La columna 'role' puede no existir en instalaciones viejas. */
+    private function usersHasRole(): bool
+    {
+        try {
+            return Schema::hasColumn('users', 'role');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    // =====================================================================
+    // 3) AUTO-CREACIÓN DE LOS SEMANALES
+    // =====================================================================
+
+    /**
+     * Crea Semanal 1 y Semanal 2 si no existen. Es idempotente: si el evento ya
+     * está creado NO lo sobrescribe, sólo rellena huecos (valores nulos).
+     * Nunca toca name / rules / prizes / banner / registration_status ya editados
+     * por un admin.
+     */
+    private function ensureSemanales($owner): void
+    {
+        if (!$owner) return;
+
+        foreach (self::SEMANALES as $week => $def) {
+            try {
+                $existing = DB::table('tournaments')->where('slug', $def['slug'])->first();
+
+                if (!$existing) {
+                    $this->insertSemanal($owner, $week, $def);
+                    continue;
+                }
+
+                $this->fillMissingFields($owner, $week, $existing);
+            } catch (\Throwable $e) {
+                Log::warning("[Semanales] Falló el alta/ajuste de {$def['slug']}: " . $e->getMessage());
+            }
+        }
+    }
+
+    /** Inserta un semanal nuevo con la configuración pedida por el cliente. */
+    private function insertSemanal($owner, int $week, array $def): void
+    {
+        $data = [
+            'user_id'    => $owner->id,
+            'name'       => $def['name'],
+            'rules'      => $this->defaultRules($def['name']),
+            'prizes'     => $this->defaultPrizes(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        // Mismo patrón de table_name que store(): slug + timestamp.
+        if ($this->hasCol('table_name'))            $data['table_name'] = $def['slug'] . '_' . time();
+        if ($this->hasCol('slug'))                  $data['slug'] = $def['slug'];
+        if ($this->hasCol('is_private'))            $data['is_private'] = false;   // Evento público
+        if ($this->hasCol('is_serialized'))         $data['is_serialized'] = false; // NO es Rankit League
+        if ($this->hasCol('parent_tournament_id'))  $data['parent_tournament_id'] = null;
+        if ($this->hasCol('access_code'))           $data['access_code'] = null;
+        if ($this->hasCol('registration_status'))   $data['registration_status'] = 'open';
+        if ($this->hasCol('ticket_price'))          $data['ticket_price'] = '0';
+        if ($this->hasCol('event_type'))            $data['event_type'] = 'semanal';
+        if ($this->hasCol('week_number'))           $data['week_number'] = $week;
+        if ($this->hasCol('start_date'))            $data['start_date'] = null;     // Todavía sin fecha
+        if ($this->hasCol('date_label'))            $data['date_label'] = 'PRÓXIMAMENTE';
+        if ($this->hasCol('is_free'))               $data['is_free'] = true;
+        if ($this->hasCol('requires_discord'))      $data['requires_discord'] = true;
+        if ($this->hasCol('requires_whatsapp'))     $data['requires_whatsapp'] = true;
+
+        DB::table('tournaments')->insert($data);
+    }
+
+    /**
+     * El evento ya existe: completamos lo que esté en null y reafirmamos los tres
+     * requisitos que definen a un semanal (gratuito + Discord + WhatsApp obligatorios).
+     * Esos tres son invariantes del apartado, no configuración opcional: un semanal
+     * adoptado (creado a mano o recreado desde /admin/jangel, donde los booleanos se
+     * quedan en su default) debe quedar bien sí o sí.
+     * Lo demás (name / rules / prizes / banner / registration_status) NO se pisa:
+     * eso sí es configuración que el admin puede haber cambiado a mano.
+     */
+    private function fillMissingFields($owner, int $week, $existing): void
+    {
+        $patch = [];
+
+        if ($this->hasCol('user_id') && is_null($existing->user_id ?? null)) {
+            $patch['user_id'] = $owner->id;
+        }
+        if ($this->hasCol('event_type') && is_null($existing->event_type ?? null)) {
+            $patch['event_type'] = 'semanal';
+        }
+        if ($this->hasCol('week_number') && is_null($existing->week_number ?? null)) {
+            $patch['week_number'] = $week;
+        }
+        if ($this->hasCol('date_label') && is_null($existing->date_label ?? null)) {
+            $patch['date_label'] = 'PRÓXIMAMENTE';
+        }
+        // Los tres requisitos centrales del cliente se fuerzan (no basta con mirar si son
+        // null): un torneo con slug 'semanal-N' creado por otra vía llega con estas
+        // columnas en 0/false y hay que corregirlo, no dejarlo mintiendo en /semanales.
+        if ($this->hasCol('is_free') && !($existing->is_free ?? false)) {
+            $patch['is_free'] = true;
+        }
+        if ($this->hasCol('requires_discord') && !($existing->requires_discord ?? false)) {
+            $patch['requires_discord'] = true;
+        }
+        if ($this->hasCol('requires_whatsapp') && !($existing->requires_whatsapp ?? false)) {
+            $patch['requires_whatsapp'] = true;
+        }
+        // Cuarto invariante: un semanal NUNCA es parte de Rankit League. Si el evento fue
+        // creado/editado por otra vía (p. ej. /admin/jangel, donde se puede marcar "seriado"
+        // y elegir torneo padre), lo desenganchamos para que no entre en la clasificación
+        // de la liga ni en getSerializedStandings().
+        if ($this->hasCol('is_serialized') && ($existing->is_serialized ?? false)) {
+            $patch['is_serialized'] = false;
+        }
+        if ($this->hasCol('parent_tournament_id') && !is_null($existing->parent_tournament_id ?? null)) {
+            $patch['parent_tournament_id'] = null;
+        }
+
+        if (!empty($patch)) {
+            $patch['updated_at'] = now();
+            DB::table('tournaments')->where('id', $existing->id)->update($patch);
+        }
+    }
+
+    /** Reglas por defecto (texto libre, editable después desde el panel). */
+    private function defaultRules(string $name): string
+    {
+        return implode("\n", [
+            "REGLAS — {$name}",
+            '',
+            '1. La entrada es GRATUITA. No se cobra inscripción de ningún tipo.',
+            '2. Es un evento PÚBLICO: cualquiera puede inscribirse mientras el registro esté abierto.',
+            '3. Discord y WhatsApp son OBLIGATORIOS: son los únicos canales por los que te avisamos del lobby y del código de la partida. Si no los dejas bien, no podemos contactarte.',
+            '4. La fecha y la hora están POR ANUNCIAR. Se avisan por Discord y WhatsApp con anticipación.',
+            '5. Debes estar en el lobby a la hora indicada. Si no llegas, tu lugar se libera.',
+            '6. Prohibido el teaming (aliarse con otros jugadores fuera de tu equipo). Descalificación inmediata.',
+            '7. Prohibido cualquier tipo de cheat, macro, glitch o cuenta compartida. Descalificación y veto de futuros semanales.',
+            '8. Un solo registro por jugador. Los registros duplicados se eliminan.',
+            '9. La organización puede pedir grabación o replay para validar un resultado.',
+            '10. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
+            '11. La decisión de la organización sobre cualquier incidencia es final.',
+        ]);
+    }
+
+    /** Premios por defecto: todavía sin bolsa confirmada. */
+    private function defaultPrizes(): string
+    {
+        return implode("\n", [
+            'PREMIOS EN METÁLICO — SEMANALES',
+            '',
+            'Cada semanal reparte premios en metálico entre los mejores del ranking.',
+            'La bolsa exacta de esta edición está POR ANUNCIAR.',
+            '',
+            'El desglose por posición y la forma de pago se publican aquí mismo y se avisan por Discord y WhatsApp antes de que arranque el evento.',
+        ]);
+    }
+
+    // =====================================================================
+    // 4) VISTA PÚBLICA  (GET /semanales)
+    // =====================================================================
+
+    public function index()
+    {
+        $this->ensureSchema();
+
+        // Sin sesión no se puede inscribir: dejamos marcada la vuelta para que,
+        // al iniciar sesión, redirect()->intended() los traiga de regreso aquí.
+        if (!auth()->check()) {
+            session(['url.intended' => url('/semanales')]);
+        }
+
+        $owner        = $this->resolveOwner();
+        $errorMessage = null;
+        $semanales    = [];
+
+        if (!$owner) {
+            $errorMessage = 'Todavía no podemos crear los semanales porque no hay ningún usuario registrado en la plataforma. Crea la cuenta de administrador y vuelve a entrar.';
+
+            return Inertia::render('Semanales/Index', [
+                'semanales'    => [],
+                'ownerEmail'   => null,
+                'canRegister'  => false,
+                'errorMessage' => $errorMessage,
+            ]);
+        }
+
+        $this->ensureSemanales($owner);
+
+        try {
+            $rows = DB::table('tournaments')
+                ->whereIn('slug', array_column(self::SEMANALES, 'slug'))
+                ->get();
+
+            // Ordenamos por week_number (con fallback al slug si la columna no existe).
+            $rows = $rows->sortBy(function ($t) {
+                return (int) ($t->week_number ?? 0);
+            })->values();
+
+            $userEmail = auth()->user()?->email;
+
+            foreach ($rows as $t) {
+                $playersCount = 0;
+                $isRegistered = false;
+
+                try {
+                    $playersCount = DB::table('tournament_registrations')
+                        ->where('tournament_id', $t->id)
+                        ->count();
+
+                    if ($userEmail) {
+                        $isRegistered = DB::table('tournament_registrations')
+                            ->where('tournament_id', $t->id)
+                            ->where('email', $userEmail)
+                            ->exists();
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[Semanales] No se pudieron contar inscritos: ' . $e->getMessage());
+                }
+
+                $slug = $t->slug ?? '';
+
+                $semanales[] = [
+                    'id'                  => (int) $t->id,
+                    'name'                => (string) $t->name,
+                    'slug'                => (string) $slug,
+                    'week_number'         => (int) ($t->week_number ?? 0),
+                    'date_label'          => (string) ($t->date_label ?: 'PRÓXIMAMENTE'),
+                    'start_date'          => $t->start_date ? (string) $t->start_date : null,
+                    'is_free'             => (bool) ($t->is_free ?? true),
+                    'entry_fee_label'     => 'GRATIS',
+                    'is_public'           => !((bool) ($t->is_private ?? false)),
+                    'requires_discord'    => (bool) ($t->requires_discord ?? true),
+                    'requires_whatsapp'   => (bool) ($t->requires_whatsapp ?? true),
+                    'registration_status' => (string) ($t->registration_status ?? 'open'),
+                    'prizes'              => $t->prizes ?? null,
+                    'rules'               => $t->rules ?? null,
+                    'players_count'       => (int) $playersCount,
+                    'is_registered'       => (bool) $isRegistered,
+                    'public_url'          => '/t/' . $slug,
+                ];
+            }
+
+            if (empty($semanales)) {
+                $errorMessage = 'No se pudieron crear los semanales automáticamente. Revisa la configuración de la base de datos e inténtalo de nuevo.';
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[Semanales] Error al leer los eventos: ' . $e->getMessage());
+            $semanales    = [];
+            $errorMessage = 'No se pudieron cargar los semanales en este momento. Vuelve a intentarlo en unos minutos.';
+        }
+
+        $canRegister = collect($semanales)
+            ->contains(fn ($s) => $s['registration_status'] === 'open');
+
+        return Inertia::render('Semanales/Index', [
+            'semanales'    => $semanales,
+            'ownerEmail'   => $owner->email ?? null,
+            'canRegister'  => $canRegister,
+            'errorMessage' => $errorMessage,
+        ]);
+    }
+
+    // =====================================================================
+    // 5) INSCRIPCIÓN  (POST /semanales/{id}/registro)
+    // =====================================================================
+
+    public function register(Request $request, $id)
+    {
+        $this->ensureSchema();
+
+        // --- 1. Localizar el semanal (por id o por slug) ---
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if (!$tournament) {
+            $tournament = DB::table('tournaments')->where('slug', $id)->first();
+        }
+
+        if (!$tournament || ($tournament->event_type ?? null) !== 'semanal') {
+            return response()->json([
+                'success' => false,
+                'message' => 'No encontramos ese semanal. Refresca la página e inténtalo de nuevo.',
+            ], 404);
+        }
+
+        // --- 2. ¿Está abierto el registro? ---
+        $status = $tournament->registration_status ?? 'open';
+        if ($status === 'closed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Las inscripciones para este semanal ya están cerradas.',
+            ], 403);
+        }
+        if ($status === 'disabled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Las inscripciones para este semanal todavía no están habilitadas. Atento a Discord y WhatsApp.',
+            ], 403);
+        }
+
+        // --- 3. Hay que tener cuenta: el correo sale de la sesión, no del formulario ---
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json([
+                'success'      => false,
+                'requiresAuth' => true,
+                'message'      => 'Necesitas una cuenta de Rankit para inscribirte. Inicia sesión (o créala en 30 segundos) y vuelve a intentarlo.',
+            ], 401);
+        }
+
+        // --- 4. Validación (siempre JSON, nunca redirect) ---
+        $rules = [
+            'player_name' => 'required|string|max:255',
+            'whatsapp'    => 'required|string|max:30',
+            'discord'     => 'required|string|max:100',
+        ];
+
+        $messages = [
+            'player_name.required' => 'Necesitamos tu nombre de jugador.',
+            'player_name.max'      => 'El nombre de jugador es demasiado largo (máx. 255 caracteres).',
+            'whatsapp.required'    => 'El WhatsApp es obligatorio: es por donde te avisamos del lobby.',
+            'whatsapp.max'         => 'El WhatsApp es demasiado largo (máx. 30 caracteres).',
+            'discord.required'     => 'El Discord es obligatorio: es por donde te avisamos del lobby.',
+            'discord.max'          => 'El Discord es demasiado largo (máx. 100 caracteres).',
+        ];
+
+        $validator = Validator::make($request->all(), $rules, $messages);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
+
+        // El correo SIEMPRE sale de la sesión: el formulario no puede inscribir a otra persona.
+        $email    = $user->email;
+        $whatsapp = trim($data['whatsapp']);
+        $discord  = trim($data['discord']);
+        $playerName = trim($data['player_name']);
+
+        // --- 5. Anti-duplicados (mismo correo o mismo WhatsApp en el mismo semanal) ---
+        try {
+            $duplicated = DB::table('tournament_registrations')
+                ->where('tournament_id', $tournament->id)
+                ->where(function ($q) use ($email, $whatsapp) {
+                    $q->where('email', $email)->orWhere('whatsapp', $whatsapp);
+                })
+                ->exists();
+
+            if ($duplicated) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ya estás inscrito en este semanal con esos datos. Nos vemos en el lobby.',
+                ], 409);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[Semanales] No se pudo verificar duplicados: ' . $e->getMessage());
+        }
+
+        // --- 6. Alta. La entrada es gratis => queda confirmada al instante ---
+        try {
+            DB::table('tournament_registrations')->insert([
+                'tournament_id'  => $tournament->id,
+                'player_name'    => $playerName,
+                'email'          => $email,
+                'whatsapp'       => $whatsapp,
+                'discord'        => $discord,
+                'payment_status' => 'paid',
+                'payment_notes'  => 'Inscripción gratuita (Semanal)',
+                'created_at'     => now(),
+                'updated_at'     => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('[Semanales] No se pudo guardar la inscripción: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'No pudimos guardar tu inscripción. Inténtalo de nuevo en unos segundos.',
+            ], 422);
+        }
+
+        // --- 7. Correos (mismo patrón que registerForTournament) ---
+        // Si el SMTP falla, la inscripción ya quedó guardada: no rompemos nada.
+        if ($email) {
+            try {
+                \Illuminate\Support\Facades\Mail::to($email)
+                    ->send(new \App\Mail\GenericRankitMail(
+                        'Inscripción Recibida - ' . $tournament->name,
+                        'emails.registration_received',
+                        ['tournamentName' => $tournament->name, 'playerName' => $playerName]
+                    ));
+            } catch (\Exception $e) { }
+        }
+
+        $adminEmails = ['18jangel18@gmail.com', 'cometax.ti@gmail.com'];
+        try {
+            $owner = DB::table('users')->where('id', $tournament->user_id)->first();
+            if ($owner && $owner->email && !in_array($owner->email, $adminEmails)) {
+                $adminEmails[] = $owner->email;
+            }
+        } catch (\Exception $e) { }
+
+        foreach ($adminEmails as $adminEmail) {
+            try {
+                \Illuminate\Support\Facades\Mail::to($adminEmail)
+                    ->send(new \App\Mail\GenericRankitMail(
+                        'Nueva Inscripción - ' . $tournament->name,
+                        'emails.registration_admin_notification',
+                        ['tournamentName' => $tournament->name, 'playerName' => $playerName, 'playerEmail' => $email]
+                    ));
+            } catch (\Exception $e) { }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => '¡Listo! Quedaste inscrito en ' . $tournament->name . '. Te avisamos por Discord y WhatsApp cuando anunciemos la fecha y el código del lobby.',
+        ]);
+    }
+}

@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\TournamentParserController; // Admin Nuevo
 use App\Http\Controllers\Admin\AdminUserController; // Gestión de usuarios
 use App\Http\Controllers\Public\PublicTournamentController; // Publico Nuevo
 use App\Http\Controllers\TournamentsController; // Publico Viejo (Listado)
+use App\Http\Controllers\SemanalesController; // Semanales (promocional)
 use App\Http\Controllers\TournamentController; // Dashboard Viejo
 use App\Http\Controllers\ProfilePageController; // Rankit
 use App\Http\Controllers\LolTournamentController; // LoL / Valorant
@@ -58,6 +59,14 @@ Route::get('/league', function () {
 Route::get('/mundial', function () {
     return Inertia::render('WorldCup');
 })->name('worldcup.index');
+
+// --- SEMANALES (apartado promocional, NO es Rankit League) ---
+// Vista pública: si los eventos no existen, el controlador los crea solo.
+Route::get('/semanales', [SemanalesController::class, 'index'])->name('semanales.index');
+// Inscripción gratuita (JSON, sin auth obligatoria, con throttle anti-spam).
+Route::post('/semanales/{id}/registro', [SemanalesController::class, 'register'])
+    ->middleware('throttle:10,1')
+    ->name('semanales.register');
 
 // --- AUTH SOCIAL ---
 Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('google.redirect');

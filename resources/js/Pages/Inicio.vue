@@ -45,7 +45,7 @@ function toggleLanguage() {
 const t = computed(() => {
   const translations = {
     es: {
-      nav: { tournaments: 'Torneos', pricing: 'Precios', custom: 'Personalizado', partners: 'Partners', login: 'Ingresar', create: 'Crear Cuenta', dashboard: 'Dashboard' },
+      nav: { tournaments: 'Torneos', pricing: 'Precios', custom: 'Personalizado', partners: 'Partners', weekly: 'Semanales', login: 'Ingresar', create: 'Crear Cuenta', dashboard: 'Dashboard' },
       hero: {
         powered: 'Powered by',
         badge: 'Plataforma de Torneos v2.0',
@@ -57,6 +57,20 @@ const t = computed(() => {
         btnDemo: 'Ver Demo',
       },
       tournaments: { title: 'Torneos', titleSub: 'En Curso', desc: 'Únete a la competencia. Demuestra tu nivel.', viewAll: 'Ver Todos', cardCreate: 'Crea tu Torneo' },
+      semanales: {
+        tag: 'Nuevo · Eventos promocionales',
+        title: 'Torneos',
+        titleSub: 'Semanales',
+        desc: 'Cada semana lanzamos torneos promocionales con entrada gratuita y premios en metálico. Sin cuota, sin excusas.',
+        dateLabel: 'PRÓXIMAMENTE',
+        free: 'ENTRADA GRATIS',
+        prize: 'PREMIOS EN METÁLICO SEMANALES',
+        requirements: 'Discord + WhatsApp obligatorios',
+        cta: 'Ver Semanales',
+        note: 'Los Semanales son eventos promocionales gratuitos y NO forman parte de Rankit League: no otorgan puntos ni plazas en la liga.',
+        card1: 'Semanal 1',
+        card2: 'Semanal 2',
+      },
       pricing: {
         title: 'Elige tu',
         titleSub: 'Nivel',
@@ -98,7 +112,7 @@ const t = computed(() => {
       custom: {
         tag: 'Enterprise',
         title: '¿Necesitas algo',
-        titleSub: ' a medida?',
+        titleSub: 'a medida?',
         desc: 'Para organizaciones grandes, ligas nacionales o integraciones personalizadas. Cuéntanos tu proyecto.',
         feat1: 'Desarrollo de Features Exclusivos',
         feat2: 'Servidores Dedicados',
@@ -110,7 +124,7 @@ const t = computed(() => {
       },
     },
     en: {
-      nav: { tournaments: 'Tournaments', pricing: 'Pricing', custom: 'Custom', partners: 'Partners', login: 'Login', create: 'Sign Up', dashboard: 'Dashboard' },
+      nav: { tournaments: 'Tournaments', pricing: 'Pricing', custom: 'Custom', partners: 'Partners', weekly: 'Weeklies', login: 'Login', create: 'Sign Up', dashboard: 'Dashboard' },
       hero: {
         powered: 'Powered by',
         badge: 'Tournament Platform v2.0',
@@ -122,6 +136,20 @@ const t = computed(() => {
         btnDemo: 'Watch Demo',
       },
       tournaments: { title: 'Live', titleSub: 'Tournaments', desc: 'Join the competition. Show your skills.', viewAll: 'View All', cardCreate: 'Create Tournament' },
+      semanales: {
+        tag: 'New · Promo events',
+        title: 'Weekly',
+        titleSub: 'Tournaments',
+        desc: 'Every week we launch promotional tournaments with free entry and cash prizes. No fee, no excuses.',
+        dateLabel: 'COMING SOON',
+        free: 'FREE ENTRY',
+        prize: 'WEEKLY CASH PRIZES',
+        requirements: 'Discord + WhatsApp required',
+        cta: 'View Weeklies',
+        note: 'Weeklies are free promotional events and are NOT part of Rankit League: they grant no league points or slots.',
+        card1: 'Weekly 1',
+        card2: 'Weekly 2',
+      },
       pricing: {
         title: 'Choose your',
         titleSub: 'Level',
@@ -231,6 +259,11 @@ onMounted(() => {
         <a href="#partners" class="transition hover:text-neon text-neon">{{ t.nav.partners }}</a>
         <Link href="/league" class="transition hover:text-neon">League</Link>
         <Link href="/mundial" class="transition hover:text-neon">Mundial</Link>
+        <!-- Semanales: eventos promocionales gratuitos (destacado con acento neón) -->
+        <Link href="/semanales" class="flex items-center gap-1.5 transition hover:text-neon text-neon">
+          <span class="w-1.5 h-1.5 rounded-full bg-neon animate-pulse"></span>
+          <span>{{ t.nav.weekly }}</span>
+        </Link>
       </div>
 
       <!-- Actions -->
@@ -492,6 +525,93 @@ onMounted(() => {
       </div>
     </section>
 
+    <!-- Semanales: eventos promocionales gratuitos, independientes de Rankit League -->
+    <section
+      id="semanales"
+      class="relative py-24 overflow-hidden border-y-2 border-neon bg-gradient-to-b from-white via-[var(--rankit-neon)]/5 to-white dark:from-[#0a0014] dark:via-[#12001f] dark:to-[#050505]"
+    >
+      <!-- Halo neón decorativo -->
+      <div class="absolute inset-x-0 top-0 h-px pointer-events-none bg-gradient-to-r from-transparent via-[var(--rankit-neon)] to-transparent"></div>
+      <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-[42rem] h-48 rounded-full pointer-events-none bg-[var(--rankit-neon)]/20 blur-3xl"></div>
+
+      <div class="relative z-10 px-6 mx-auto max-w-7xl">
+        <!-- Encabezado -->
+        <div class="mb-14 text-center">
+          <span class="inline-flex items-center gap-2 px-3 py-1 mb-5 text-[10px] font-bold uppercase tracking-[0.25em] border border-neon text-neon bg-neon/10">
+            <span class="w-2 h-2 rounded-full bg-neon animate-pulse"></span>
+            {{ t.semanales.tag }}
+          </span>
+
+          <h2 class="mb-4 text-4xl font-black text-black uppercase font-display md:text-6xl dark:text-white">
+            <!-- Ambos spans en la misma línea: el compilador de Vue condensa los saltos de línea y uniría las palabras -->
+            <span>{{ t.semanales.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600 dark:to-white">{{ t.semanales.titleSub }}</span>
+          </h2>
+
+          <p class="max-w-2xl mx-auto text-lg text-gray-600 dark:text-gray-400">{{ t.semanales.desc }}</p>
+
+          <!-- Resumen rápido -->
+          <div class="flex flex-wrap items-center justify-center gap-3 mt-8">
+            <span class="px-4 py-2 text-xs font-bold tracking-widest text-black uppercase bg-neon">{{ t.semanales.free }}</span>
+            <span class="flex items-center gap-2 px-4 py-2 text-xs font-bold tracking-widest text-gray-800 uppercase bg-white border border-gray-300 dark:bg-white/5 dark:border-white/15 dark:text-gray-200">
+              <i class="ph-fill ph-money text-neon"></i> {{ t.semanales.prize }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Tarjetas: Semanal 1 y Semanal 2 -->
+        <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
+          <div class="brutal-card p-8 bg-white dark:bg-[#0c0018] border-l-4 border-l-[var(--rankit-neon)] group">
+            <div class="flex flex-wrap items-center gap-2 mb-6">
+              <span class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-widest border border-neon text-neon bg-neon/10">
+                <i class="ph ph-calendar-blank"></i> {{ t.semanales.dateLabel }}
+              </span>
+              <span class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-black bg-neon">{{ t.semanales.free }}</span>
+            </div>
+
+            <h3 class="mb-4 text-3xl font-black text-black uppercase transition font-display dark:text-white group-hover:text-neon">
+              {{ t.semanales.card1 }}
+            </h3>
+
+            <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <li class="flex items-center gap-3"><i class="text-lg ph-fill ph-money text-neon"></i> {{ t.semanales.prize }}</li>
+              <li class="flex items-center gap-3"><i class="text-lg ph ph-discord-logo text-neon"></i> {{ t.semanales.requirements }}</li>
+            </ul>
+          </div>
+
+          <div class="brutal-card p-8 bg-white dark:bg-[#0c0018] border-l-4 border-l-[var(--rankit-neon)] group">
+            <div class="flex flex-wrap items-center gap-2 mb-6">
+              <span class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-widest border border-neon text-neon bg-neon/10">
+                <i class="ph ph-calendar-blank"></i> {{ t.semanales.dateLabel }}
+              </span>
+              <span class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-black bg-neon">{{ t.semanales.free }}</span>
+            </div>
+
+            <h3 class="mb-4 text-3xl font-black text-black uppercase transition font-display dark:text-white group-hover:text-neon">
+              {{ t.semanales.card2 }}
+            </h3>
+
+            <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <li class="flex items-center gap-3"><i class="text-lg ph-fill ph-money text-neon"></i> {{ t.semanales.prize }}</li>
+              <li class="flex items-center gap-3"><i class="text-lg ph ph-discord-logo text-neon"></i> {{ t.semanales.requirements }}</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- CTA -->
+        <div class="flex justify-center mt-12">
+          <Link href="/semanales" class="px-10 py-4 text-lg font-bold tracking-wider uppercase btn-skew">
+            <span class="btn-content">{{ t.semanales.cta }}</span>
+          </Link>
+        </div>
+
+        <!-- Aviso: independientes de Rankit League -->
+        <p class="flex items-start max-w-3xl gap-3 p-4 mx-auto mt-10 font-mono text-xs leading-relaxed text-gray-600 bg-white border border-gray-300 dark:text-gray-400 dark:bg-white/5 dark:border-white/15">
+          <i class="text-base ph ph-info text-neon shrink-0"></i>
+          <span>{{ t.semanales.note }}</span>
+        </p>
+      </div>
+    </section>
+
     <!-- Pricing Section -->
     <section id="pricing" class="relative py-24 overflow-hidden bg-white border-t border-gray-200 dark:bg-black dark:border-white/10">
       <div class="relative z-10 px-6 mx-auto max-w-7xl">
@@ -565,10 +685,8 @@ onMounted(() => {
         <div class="mb-16 text-center">
           <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-3 block">{{ t.alliance.tag }}</span>
           <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
-            <span>{{ t.alliance.title }}</span>
-            <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600">
-              {{ t.alliance.titleSub }}
-            </span>
+            <!-- Ambos spans en la misma línea: el compilador de Vue condensa los saltos de línea y uniría las palabras -->
+            <span>{{ t.alliance.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-purple-600">{{ t.alliance.titleSub }}</span>
           </h2>
           <p class="max-w-2xl mx-auto text-lg text-gray-500 dark:text-gray-400">
             {{ t.alliance.desc }}
@@ -639,10 +757,8 @@ onMounted(() => {
     <div>
       <span class="block mb-2 text-xs font-bold tracking-widest uppercase text-neon">{{ t.custom.tag }}</span>
       <h2 class="mb-6 text-4xl font-black text-black uppercase font-display md:text-5xl dark:text-white">
-        <span>{{ t.custom.title }}</span>
-        <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">
-          {{ t.custom.titleSub }}
-        </span>
+        <!-- Ambos spans en la misma línea: el compilador de Vue condensa los saltos de línea y uniría las palabras -->
+        <span>{{ t.custom.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-gray-800 dark:to-white">{{ t.custom.titleSub }}</span>
       </h2>
       <p class="mb-8 text-lg text-gray-500 dark:text-gray-400">{{ t.custom.desc }}</p>
       <ul class="mb-8 space-y-4 text-sm text-gray-600 dark:text-gray-300">
@@ -751,6 +867,13 @@ onMounted(() => {
           </div>
         </div>
         
+        <!-- Enlaces rápidos -->
+        <div class="flex flex-wrap items-center justify-center gap-6 text-xs font-bold tracking-widest text-gray-500 uppercase dark:text-gray-500">
+          <a href="#torneos" class="transition hover:text-neon">{{ t.nav.tournaments }}</a>
+          <Link href="/semanales" class="transition hover:text-neon text-neon">{{ t.nav.weekly }}</Link>
+          <a href="#pricing" class="transition hover:text-neon">{{ t.nav.pricing }}</a>
+        </div>
+
         <!-- CometaX Footer Logo -->
         <div class="flex flex-col items-center justify-center gap-2 transition-opacity cursor-pointer group hover:opacity-100">
           <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 dark:text-gray-600">Powered By</span>

@@ -17,7 +17,7 @@ class TournamentParserController extends Controller
     /**
      * Asegura que la infraestructura de DB esté lista y actualizada.
      */
-    protected function ensureDatabaseIsReady()
+    public function ensureDatabaseIsReady()
     {
         // 0. Tabla de Usuarios (Asegurar que existe el rol)
         if (Schema::hasTable('users')) {
