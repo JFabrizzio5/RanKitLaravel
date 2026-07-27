@@ -103,6 +103,21 @@ const t = computed(() => {
         byline: 'Rankit es un producto de CometaX, la casa de software que lo desarrolla y le da soporte.',
         bylineCta: 'Conocer CometaX',
       },
+      play: {
+        tag: 'Para jugar',
+        title: 'Entra y',
+        titleSub: 'compite',
+        desc: 'Si llegaste a jugar, empieza por aquí. Estos son los eventos abiertos: elige uno, inscríbete y listo.',
+        bellzTag: 'Esports',
+        bellzDesc: 'Battle Royale · Crossplay · Premios en metálico',
+        weeklyTag: 'Gratis',
+        weeklyDesc: 'Cada semana · Entrada gratuita · Bolsa en metálico',
+        leagueTag: 'Liga',
+        leagueDesc: 'Clasificatorios, repechaje y gran final por temporada',
+        createTitle: 'Crea tu torneo',
+        createDesc: '¿Organizas tú? Monta el tuyo en minutos.',
+        enter: 'Entrar',
+      },
       compete: {
         tag: 'Compite con nosotros',
         title: 'Nuestras',
@@ -299,6 +314,21 @@ const t = computed(() => {
         byline: 'Rankit is a product by CometaX, the software company that builds and supports it.',
         bylineCta: 'Visit CometaX',
       },
+      play: {
+        tag: 'To play',
+        title: 'Jump in and',
+        titleSub: 'compete',
+        desc: 'If you came to play, start here. These are the open events: pick one, sign up and go.',
+        bellzTag: 'Esports',
+        bellzDesc: 'Battle Royale · Crossplay · Cash prizes',
+        weeklyTag: 'Free',
+        weeklyDesc: 'Every week · Free entry · Cash pot',
+        leagueTag: 'League',
+        leagueDesc: 'Qualifiers, last chance and grand final each season',
+        createTitle: 'Create your tournament',
+        createDesc: 'Are you the organizer? Set yours up in minutes.',
+        enter: 'Enter',
+      },
       compete: {
         tag: 'Compete with us',
         title: 'Our',
@@ -455,7 +485,7 @@ const enlacesCompetencias = computed(() => [
   { href: '/league', icon: 'ph-trophy', title: t.value.menu.league, desc: t.value.menu.leagueDesc, nuevo: false },
   { href: '/semanales', icon: 'ph-calendar-star', title: t.value.menu.weekly, desc: t.value.menu.weeklyDesc, nuevo: true },
   { href: '/mundial', icon: 'ph-globe-hemisphere-west', title: t.value.menu.worldcup, desc: t.value.menu.worldcupDesc, nuevo: false },
-  { href: '#competencias', icon: 'ph-broadcast', title: t.value.menu.live, desc: t.value.menu.liveDesc, nuevo: false },
+  { href: '#torneos', icon: 'ph-broadcast', title: t.value.menu.live, desc: t.value.menu.liveDesc, nuevo: false },
   { href: '/duels', icon: 'ph-sword', title: t.value.menu.duels, desc: t.value.menu.duelsDesc, nuevo: false, pronto: true },
 ])
 
@@ -493,6 +523,18 @@ function alPresionarEscape(e: KeyboardEvent) {
 const WA_VENTAS = '525532351392'
 const IG_RANKIT = 'https://instagram.com/rankit.pro'
 const WEB_COMETAX = 'https://cometax.click'
+
+/**
+ * En el hosting compartido la raíz del sitio es la del proyecto, así que las
+ * imágenes viven en "public/...". En local (php artisan serve) la raíz ya es
+ * public/, por eso reintentamos sin el prefijo antes de dejar la imagen rota.
+ */
+function imagenFallback(e: Event, ruta: string) {
+  const img = e.target as HTMLImageElement | null
+  if (!img || img.dataset.fallback === '1') return
+  img.dataset.fallback = '1'
+  img.src = ruta
+}
 
 const modalContratar = ref(false)
 const planElegido = ref('Gestor Pro')
@@ -922,6 +964,96 @@ onUnmounted(() => {
     </div>
 
     <!-- ======================= QUÉ ES RANKIT ========================== -->
+    <!-- ===================== PARA JUGAR (eventos) ======================= -->
+    <!-- Primero lo que le sirve a quien viene a jugar: dónde meterse hoy.
+         Lo de vender viene después, más abajo. -->
+    <section id="torneos" class="py-20 bg-gray-50 dark:bg-[#080808] scroll-mt-24">
+      <div class="px-6 mx-auto max-w-7xl">
+        <div class="flex flex-col justify-between gap-4 mb-10 md:flex-row md:items-end">
+          <div class="max-w-2xl">
+            <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-3 block">{{ t.play.tag }}</span>
+            <h2 class="mb-3 text-4xl font-black text-black uppercase font-display dark:text-white">
+              <span>{{ t.play.title }}</span> <span class="text-neon">{{ t.play.titleSub }}</span>
+            </h2>
+            <p class="font-light text-gray-500 dark:text-gray-400">{{ t.play.desc }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <!-- BellzCup -->
+          <Link href="/BellzCup" class="cursor-pointer brutal-card group">
+            <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
+              <img
+                src="public/BellzCup.png"
+                alt="BellzCup"
+                @error="imagenFallback($event, '/BellzCup.png')"
+                class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-70 group-hover:opacity-100 group-hover:scale-105"
+              />
+              <span class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-black uppercase bg-neon">{{ t.play.bellzTag }}</span>
+            </div>
+            <div class="p-5">
+              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">BellzCup</h3>
+              <p class="mb-4 font-mono text-[11px] leading-relaxed text-gray-500">{{ t.play.bellzDesc }}</p>
+              <span class="inline-flex items-center gap-1 text-[11px] font-bold tracking-wider uppercase text-neon">
+                {{ t.play.enter }} <i class="ph-bold ph-arrow-right"></i>
+              </span>
+            </div>
+          </Link>
+
+          <!-- Semanales -->
+          <Link href="/semanales" class="cursor-pointer brutal-card group border-neon">
+            <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800 bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:22px_22px] flex items-center justify-center">
+              <i class="text-6xl transition-transform ph-fill ph-calendar-star text-neon group-hover:scale-110"></i>
+              <span class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-black uppercase bg-neon">{{ t.play.weeklyTag }}</span>
+            </div>
+            <div class="p-5">
+              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">
+                {{ t.semanales.card1 }} · {{ t.semanales.card2 }}
+              </h3>
+              <p class="mb-4 font-mono text-[11px] leading-relaxed text-gray-500">{{ t.play.weeklyDesc }}</p>
+              <span class="inline-flex items-center gap-1 text-[11px] font-bold tracking-wider uppercase text-neon">
+                {{ t.play.enter }} <i class="ph-bold ph-arrow-right"></i>
+              </span>
+            </div>
+          </Link>
+
+          <!-- Rankit League -->
+          <Link href="/league" class="cursor-pointer brutal-card group">
+            <div class="aspect-[4/3] relative overflow-hidden border-b border-gray-200 dark:border-gray-800">
+              <img
+                src="public/league/gran-final.png"
+                alt="Rankit League"
+                @error="imagenFallback($event, '/league/gran-final.png')"
+                class="object-cover w-full h-full transition duration-500 opacity-90 dark:opacity-70 group-hover:opacity-100 group-hover:scale-105"
+              />
+              <span class="absolute top-0 left-0 px-3 py-1 text-xs font-bold text-white uppercase bg-black">{{ t.play.leagueTag }}</span>
+            </div>
+            <div class="p-5">
+              <h3 class="mb-1 text-xl font-bold text-black uppercase transition font-display dark:text-white group-hover:text-neon">Rankit League</h3>
+              <p class="mb-4 font-mono text-[11px] leading-relaxed text-gray-500">{{ t.play.leagueDesc }}</p>
+              <span class="inline-flex items-center gap-1 text-[11px] font-bold tracking-wider uppercase text-neon">
+                {{ t.play.enter }} <i class="ph-bold ph-arrow-right"></i>
+              </span>
+            </div>
+          </Link>
+
+          <!-- Crea el tuyo -->
+          <Link
+            :href="props.canRegister ? route('register') : '/'"
+            class="flex flex-col items-center justify-center p-6 text-center bg-transparent border-gray-300 border-dashed cursor-pointer brutal-card group hover:border-solid dark:border-gray-800"
+          >
+            <span class="flex items-center justify-center w-16 h-16 mb-4 text-gray-500 transition bg-gray-200 rounded-full group-hover:bg-neon group-hover:text-white dark:bg-gray-900 dark:text-gray-500">
+              <i class="text-2xl ph ph-plus"></i>
+            </span>
+            <h3 class="mb-2 text-lg font-bold text-gray-500 uppercase font-display dark:text-gray-400 group-hover:text-black dark:group-hover:text-white">
+              {{ t.play.createTitle }}
+            </h3>
+            <p class="font-mono text-[11px] leading-relaxed text-gray-500">{{ t.play.createDesc }}</p>
+          </Link>
+        </div>
+      </div>
+    </section>
+
     <section id="que-es" class="py-24 bg-white border-t border-gray-200 dark:bg-[#050505] dark:border-white/10 scroll-mt-24">
       <div class="px-6 mx-auto max-w-7xl">
         <div class="grid gap-14 lg:grid-cols-2 lg:gap-20">
@@ -1324,7 +1456,7 @@ onUnmounted(() => {
         
         <!-- Enlaces rápidos -->
         <div class="flex flex-wrap items-center justify-center gap-6 text-xs font-bold tracking-widest text-gray-500 uppercase dark:text-gray-500">
-          <a href="#competencias" class="transition hover:text-neon">{{ t.nav.tournaments }}</a>
+          <a href="#torneos" class="transition hover:text-neon">{{ t.nav.tournaments }}</a>
           <Link href="/semanales" class="transition hover:text-neon text-neon">{{ t.nav.weekly }}</Link>
           <a href="#pricing" class="transition hover:text-neon">{{ t.nav.pricing }}</a>
         </div>
