@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import RankitContactWidget from '@/Components/RankitContactWidget.vue'
 
 const props = defineProps<{
   canLogin?: boolean
@@ -45,7 +46,7 @@ function toggleLanguage() {
 const t = computed(() => {
   const translations = {
     es: {
-      nav: { tournaments: 'Torneos', pricing: 'Precios', custom: 'Personalizado', partners: 'Partners', weekly: 'Semanales', login: 'Ingresar', create: 'Crear Cuenta', dashboard: 'Dashboard' },
+      nav: { about: 'Plataforma', tournaments: 'Torneos', pricing: 'Precios', custom: 'Personalizado', partners: 'Partners', weekly: 'Semanales', login: 'Ingresar', create: 'Crear Cuenta', dashboard: 'Dashboard' },
       // Menú "Competencias": agrupa las páginas de juego para no saturar la barra
       menu: {
         compete: 'Competencias',
@@ -58,6 +59,9 @@ const t = computed(() => {
         worldcupDesc: 'Campeón, bracket y estadísticas',
         live: 'Torneos en curso',
         liveDesc: 'Lo que se está jugando ahora',
+        duels: '1v1 y Wagers',
+        duelsDesc: 'Retos con bolsa · Próximamente',
+        soon: 'Pronto',
         badgeNew: 'Nuevo',
         open: 'Abrir menú',
         close: 'Cerrar menú',
@@ -77,6 +81,40 @@ const t = computed(() => {
         btnDemo: 'Ver Demo',
       },
       tournaments: { title: 'Torneos', titleSub: 'En Curso', desc: 'Únete a la competencia. Demuestra tu nivel.', viewAll: 'Ver Todos', cardCreate: 'Crea tu Torneo' },
+      about: {
+        tag: 'Qué es Rankit',
+        title: 'El sistema operativo de',
+        titleSub: 'la competencia',
+        lead: 'Rankit es la plataforma donde se arma, se juega y se sigue una competencia completa: desde que abres inscripciones hasta que publicas al campeón. Da igual si es un torneo de Fortnite en Discord o una liga de fútbol 7 los sábados.',
+        body: 'Nació de organizar eventos reales y toparse siempre con lo mismo: pagos por transferencia que nadie cuadra, brackets en hojas de cálculo, resultados en capturas de pantalla y una comunidad preguntando a qué hora juega. Rankit junta todo eso en un solo lugar, con página pública para tus jugadores y datos en vivo para tu transmisión.',
+        f1Title: 'Inscripciones y control',
+        f1Desc: 'Abres el registro, recibes jugadores o equipos y llevas quién pagó, quién está confirmado y quién quedó en lista de espera.',
+        f2Title: 'Brackets y calendario',
+        f2Desc: 'Eliminación, grupos o liga: el sistema arma los cruces, agenda las partidas y recalcula la tabla en cuanto cargas un resultado.',
+        f3Title: 'Resultados y estadísticas',
+        f3Desc: 'Puntos por posición y por kills, ajustes manuales con bitácora, clasificados por etapa y tablas que se actualizan solas.',
+        f4Title: 'Widgets para tu stream',
+        f4Desc: 'Overlays de OBS con la tabla en vivo y la ficha de cada jugador, más una página pública que puedes compartir con tu comunidad.',
+        forTag: 'Para quién es',
+        for1: 'Organizadores de torneos y ligas',
+        for2: 'Streamers y creadores de contenido',
+        for3: 'Canchas, gimnasios y centros de gaming',
+        for4: 'Equipos, clubes y comunidades',
+        byline: 'Rankit es un producto de CometaX, la casa de software que lo desarrolla y le da soporte.',
+        bylineCta: 'Conocer CometaX',
+      },
+      league: {
+        tag: 'Competencia insignia',
+        title: 'Rankit',
+        titleSub: 'League',
+        desc: 'Nuestra liga propia por temporadas: clasificatorios, repechaje y gran final, con tabla acumulada y bolsa en juego. Es la vitrina de lo que la plataforma puede hacer con tu evento.',
+        p1: 'Formato por etapas con clasificación acumulada',
+        p2: 'Tabla en vivo y widgets en transmisión',
+        p3: 'Premios y clasificados por corte',
+        cta: 'Ver Rankit League',
+        weeklyBridge: '¿Vas empezando? Los Semanales son la puerta de entrada: gratis, cada semana y con premio en metálico.',
+        weeklyCta: 'Ver Semanales',
+      },
       semanales: {
         tag: 'Nuevo · Eventos promocionales',
         title: 'Torneos',
@@ -104,12 +142,53 @@ const t = computed(() => {
         feat: {
           tournaments: '2 Torneos al mes',
           brackets: 'Brackets Automáticos',
+          publicPage: 'Página pública del torneo',
           unlimited: 'Torneos Ilimitados',
           obs: 'OBS Widgets (Streaming)',
-          payments: 'Pagos integrados',
+          payments: 'Inscripciones y control de pagos',
+          stats: 'Estadísticas y tablas en vivo',
           multiuser: 'Multiusuario',
           whitelabel: 'Marca Blanca',
+          priority: 'Soporte prioritario incluido',
+          noPriority: 'Sin soporte prioritario (se contrata aparte)',
         },
+        addonsTag: 'Complementos',
+        addonsTitle: 'Arma tu plan',
+        addonsDesc: 'Cada organización pesa distinto. En vez de inflar el plan base, agregas sólo lo que necesitas y el ticket se ajusta a tu tamaño.',
+        addonStaffTitle: 'Staff adicional',
+        addonStaffDesc: 'Suma jueces, moderadores o coorganizadores a tu panel, cada uno con su acceso.',
+        addonSupportTitle: 'Soporte prioritario',
+        addonSupportDesc: 'Atención en horario de evento y respuesta preferente cuando algo se cae en plena final.',
+        addonSetupTitle: 'Puesta en marcha',
+        addonSetupDesc: 'Te dejamos configurado el primer torneo, los widgets y el formato de puntos.',
+        addonPrice: 'Se cotiza según tu evento',
+        soonTag: 'En desarrollo',
+        soonTitle: 'Lo que viene',
+        soonDesc: 'Estamos construyendo el siguiente paso del ecosistema. Nada de esto está disponible todavía y lo decimos antes, no después.',
+        soon1: 'Cobro de inscripciones dentro de la plataforma',
+        soon1Desc: 'Que el dinero de las entradas te llegue directo, sin transferencias sueltas ni hojas de cálculo.',
+        soon2: 'Wagers entre equipos',
+        soon2Desc: 'Dos escuadras acuerdan la bolsa, juegan su serie y el sistema reparte según el resultado.',
+        soon3: 'Duelos 1v1',
+        soon3Desc: 'Retos directos entre jugadores con la bolsa resguardada hasta validar el resultado.',
+        soonCta: 'Ver el detalle de 1v1 y Wagers',
+      },
+      hire: {
+        title: 'Contratar',
+        subtitle: 'Así lo activamos',
+        intro: 'Todavía no cobramos en línea dentro de Rankit. Para contratar hablamos contigo, revisamos tu caso y activamos el plan a mano — normalmente el mismo día.',
+        planLabel: 'Plan elegido',
+        step1Title: 'Escríbenos por Instagram',
+        step1Desc: 'La vía más rápida: DM a @rankit.pro. Ahí resolvemos dudas y te pasamos los datos de pago.',
+        step1Cta: 'Abrir @rankit.pro',
+        step2Title: 'O por WhatsApp',
+        step2Desc: 'Si prefieres el teléfono, escribe al WhatsApp de ventas y te contestamos igual de rápido.',
+        step2Cta: 'Escribir por WhatsApp',
+        step3Title: 'O desde CometaX',
+        step3Desc: 'Rankit es un producto de CometaX. En su sitio puedes agendar una reunión y ver el resto del ecosistema.',
+        step3Cta: 'Ir a cometax.click',
+        note: 'Al contactarnos dinos qué plan quieres y qué organizas: con eso te armamos la propuesta y activamos tu cuenta.',
+        close: 'Cerrar',
       },
       alliance: {
         tag: 'Rankit Alliance',
@@ -144,7 +223,7 @@ const t = computed(() => {
       },
     },
     en: {
-      nav: { tournaments: 'Tournaments', pricing: 'Pricing', custom: 'Custom', partners: 'Partners', weekly: 'Weeklies', login: 'Login', create: 'Sign Up', dashboard: 'Dashboard' },
+      nav: { about: 'Platform', tournaments: 'Tournaments', pricing: 'Pricing', custom: 'Custom', partners: 'Partners', weekly: 'Weeklies', login: 'Login', create: 'Sign Up', dashboard: 'Dashboard' },
       // "Compete" menu: groups the game pages so the bar doesn't feel crowded
       menu: {
         compete: 'Compete',
@@ -157,6 +236,9 @@ const t = computed(() => {
         worldcupDesc: 'Champion, bracket and stats',
         live: 'Live tournaments',
         liveDesc: 'What is being played right now',
+        duels: '1v1 & Wagers',
+        duelsDesc: 'Challenges with a pot · Coming soon',
+        soon: 'Soon',
         badgeNew: 'New',
         open: 'Open menu',
         close: 'Close menu',
@@ -176,6 +258,40 @@ const t = computed(() => {
         btnDemo: 'Watch Demo',
       },
       tournaments: { title: 'Live', titleSub: 'Tournaments', desc: 'Join the competition. Show your skills.', viewAll: 'View All', cardCreate: 'Create Tournament' },
+      about: {
+        tag: 'What Rankit is',
+        title: 'The operating system of',
+        titleSub: 'competition',
+        lead: 'Rankit is where a full competition gets built, played and followed: from opening registrations to publishing the champion. Works the same for a Fortnite tournament on Discord or a Saturday 7-a-side league.',
+        body: 'It was born from running real events and always hitting the same wall: bank transfers nobody reconciles, brackets in spreadsheets, results in screenshots and a community asking when they play. Rankit puts all of that in one place, with a public page for your players and live data for your broadcast.',
+        f1Title: 'Registrations and control',
+        f1Desc: 'Open sign-ups, receive players or teams and track who paid, who is confirmed and who is on the waitlist.',
+        f2Title: 'Brackets and schedule',
+        f2Desc: 'Knockout, groups or league: the system builds the matchups, schedules games and recalculates the table as soon as you load a result.',
+        f3Title: 'Results and stats',
+        f3Desc: 'Points by placement and kills, manual adjustments with an audit log, qualifiers per stage and standings that update themselves.',
+        f4Title: 'Widgets for your stream',
+        f4Desc: 'OBS overlays with live standings and per-player cards, plus a public page you can share with your community.',
+        forTag: 'Who it is for',
+        for1: 'Tournament and league organizers',
+        for2: 'Streamers and content creators',
+        for3: 'Venues, gyms and gaming centers',
+        for4: 'Teams, clubs and communities',
+        byline: 'Rankit is a product by CometaX, the software company that builds and supports it.',
+        bylineCta: 'Visit CometaX',
+      },
+      league: {
+        tag: 'Flagship competition',
+        title: 'Rankit',
+        titleSub: 'League',
+        desc: 'Our own seasonal league: qualifiers, last chance and grand final, with a cumulative table and a prize pot. It is the showcase of what the platform can do with your event.',
+        p1: 'Staged format with cumulative standings',
+        p2: 'Live table and broadcast widgets',
+        p3: 'Prizes and qualifiers per cut',
+        cta: 'View Rankit League',
+        weeklyBridge: 'Just starting out? The Weeklies are the way in: free, every week and with a cash prize.',
+        weeklyCta: 'View Weeklies',
+      },
       semanales: {
         tag: 'New · Promo events',
         title: 'Weekly',
@@ -203,12 +319,53 @@ const t = computed(() => {
         feat: {
           tournaments: '2 Tournaments/mo',
           brackets: 'Auto Brackets',
+          publicPage: 'Public tournament page',
           unlimited: 'Unlimited Tournaments',
           obs: 'OBS Widgets (Streaming)',
-          payments: 'Integrated Payments',
+          payments: 'Registrations and payment tracking',
+          stats: 'Live stats and standings',
           multiuser: 'Multi-user Access',
           whitelabel: 'White Label',
+          priority: 'Priority support included',
+          noPriority: 'No priority support (available as an add-on)',
         },
+        addonsTag: 'Add-ons',
+        addonsTitle: 'Build your plan',
+        addonsDesc: 'Every organization is different. Instead of bloating the base plan, you add only what you need and the ticket fits your size.',
+        addonStaffTitle: 'Extra staff',
+        addonStaffDesc: 'Add referees, moderators or co-organizers to your panel, each with their own access.',
+        addonSupportTitle: 'Priority support',
+        addonSupportDesc: 'Event-hours coverage and preferred response when something breaks mid-final.',
+        addonSetupTitle: 'Setup service',
+        addonSetupDesc: 'We set up your first tournament, the widgets and the scoring format for you.',
+        addonPrice: 'Quoted per event',
+        soonTag: 'In development',
+        soonTitle: 'What is coming',
+        soonDesc: 'We are building the next step of the ecosystem. None of this is available yet and we say so upfront, not after.',
+        soon1: 'Entry fee collection inside the platform',
+        soon1Desc: 'Entry money lands directly with you — no scattered transfers, no spreadsheets.',
+        soon2: 'Team wagers',
+        soon2Desc: 'Two squads agree on the pot, play their series and the system splits it by result.',
+        soon3: '1v1 duels',
+        soon3Desc: 'Direct player challenges with the pot held until the result is validated.',
+        soonCta: 'See the 1v1 & Wagers details',
+      },
+      hire: {
+        title: 'Get started',
+        subtitle: 'How we activate it',
+        intro: 'We do not charge online inside Rankit yet. To sign up we talk to you, review your case and activate the plan manually — usually the same day.',
+        planLabel: 'Selected plan',
+        step1Title: 'Message us on Instagram',
+        step1Desc: 'Fastest route: DM @rankit.pro. We answer questions there and send you the payment details.',
+        step1Cta: 'Open @rankit.pro',
+        step2Title: 'Or on WhatsApp',
+        step2Desc: 'If you prefer the phone, message our sales WhatsApp and we reply just as fast.',
+        step2Cta: 'Message on WhatsApp',
+        step3Title: 'Or through CometaX',
+        step3Desc: 'Rankit is a CometaX product. On their site you can book a call and see the rest of the ecosystem.',
+        step3Cta: 'Go to cometax.click',
+        note: 'When you reach out, tell us which plan you want and what you run: with that we build the proposal and activate your account.',
+        close: 'Close',
       },
       alliance: {
         tag: 'Rankit Alliance',
@@ -261,6 +418,7 @@ const enlacesCompetencias = computed(() => [
   { href: '/semanales', icon: 'ph-calendar-star', title: t.value.menu.weekly, desc: t.value.menu.weeklyDesc, nuevo: true },
   { href: '/mundial', icon: 'ph-globe-hemisphere-west', title: t.value.menu.worldcup, desc: t.value.menu.worldcupDesc, nuevo: false },
   { href: '#torneos', icon: 'ph-broadcast', title: t.value.menu.live, desc: t.value.menu.liveDesc, nuevo: false },
+  { href: '/duels', icon: 'ph-sword', title: t.value.menu.duels, desc: t.value.menu.duelsDesc, nuevo: false, pronto: true },
 ])
 
 function alternarCompetencias() {
@@ -283,8 +441,36 @@ function alClicFuera(e: MouseEvent) {
 }
 
 function alPresionarEscape(e: KeyboardEvent) {
-  if (e.key === 'Escape') cerrarMenus()
+  if (e.key === 'Escape') {
+    cerrarMenus()
+    modalContratar.value = false
+  }
 }
+
+/**
+ * CONTRATACIÓN
+ * Todavía no hay cobro en línea: el botón de cada plan abre un modal con las
+ * tres vías reales para contratar (IG de Rankit, WhatsApp de ventas y CometaX).
+ */
+const WA_VENTAS = '525532351392'
+const IG_RANKIT = 'https://instagram.com/rankit.pro'
+const WEB_COMETAX = 'https://cometax.click'
+
+const modalContratar = ref(false)
+const planElegido = ref('Gestor Pro')
+
+function abrirContratar(plan: string) {
+  planElegido.value = plan
+  modalContratar.value = true
+}
+
+const enlaceWhatsAppPlan = computed(() => {
+  const msg =
+    lang.value === 'es'
+      ? `Hola Rankit, me interesa contratar el plan ${planElegido.value}. ¿Me pasan los detalles?`
+      : `Hi Rankit, I'd like to get the ${planElegido.value} plan. Could you send me the details?`
+  return 'https://wa.me/' + WA_VENTAS + '?text=' + encodeURIComponent(msg)
+})
 
 onMounted(() => {
   // Theme init
@@ -381,6 +567,9 @@ onUnmounted(() => {
                       <span v-if="item.nuevo" class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-black uppercase bg-neon">
                         {{ t.menu.badgeNew }}
                       </span>
+                      <span v-else-if="item.pronto" class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase border border-amber-400/50 text-amber-400">
+                        {{ t.menu.soon }}
+                      </span>
                     </span>
                     <span class="block mt-0.5 font-sans text-[11px] font-normal normal-case tracking-normal text-gray-500 dark:text-gray-400">
                       {{ item.desc }}
@@ -392,6 +581,7 @@ onUnmounted(() => {
           </transition>
         </div>
 
+        <a href="#que-es" class="transition hover:text-neon">{{ t.nav.about }}</a>
         <a href="#pricing" class="transition hover:text-neon">{{ t.nav.pricing }}</a>
         <a href="#partners" class="transition hover:text-neon">{{ t.nav.partners }}</a>
         <a href="#contacto" class="transition hover:text-neon">{{ t.nav.custom }}</a>
@@ -502,12 +692,16 @@ onUnmounted(() => {
                   <span v-if="item.nuevo" class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-black uppercase bg-neon">
                     {{ t.menu.badgeNew }}
                   </span>
+                  <span v-else-if="item.pronto" class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase border border-amber-400/50 text-amber-400">
+                    {{ t.menu.soon }}
+                  </span>
                 </span>
               </component>
             </div>
           </div>
 
           <div class="flex flex-col gap-4 text-sm font-bold tracking-widest text-gray-500 uppercase dark:text-gray-400">
+            <a href="#que-es" @click="cerrarMenus">{{ t.nav.about }}</a>
             <a href="#pricing" @click="cerrarMenus">{{ t.nav.pricing }}</a>
             <a href="#partners" @click="cerrarMenus">{{ t.nav.partners }}</a>
             <a href="#contacto" @click="cerrarMenus">{{ t.nav.custom }}</a>
@@ -688,6 +882,123 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- ======================= QUÉ ES RANKIT ========================== -->
+    <section id="que-es" class="py-24 bg-white border-t border-gray-200 dark:bg-[#050505] dark:border-white/10 scroll-mt-24">
+      <div class="px-6 mx-auto max-w-7xl">
+        <div class="grid gap-14 lg:grid-cols-2 lg:gap-20">
+          <!-- Texto -->
+          <div>
+            <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-4 block">{{ t.about.tag }}</span>
+            <h2 class="mb-6 text-4xl font-black leading-tight text-black uppercase font-display md:text-5xl dark:text-white">
+              <span>{{ t.about.title }}</span> <span class="text-neon">{{ t.about.titleSub }}</span>
+            </h2>
+            <p class="pl-6 mb-6 text-lg font-light leading-relaxed text-gray-700 border-l-4 dark:text-gray-300 border-neon">
+              {{ t.about.lead }}
+            </p>
+            <p class="mb-10 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ t.about.body }}</p>
+
+            <!-- Para quién -->
+            <span class="block mb-4 text-[10px] font-bold tracking-[0.25em] text-gray-400 uppercase">{{ t.about.forTag }}</span>
+            <div class="flex flex-wrap gap-2 mb-10">
+              <span
+                v-for="quien in [t.about.for1, t.about.for2, t.about.for3, t.about.for4]"
+                :key="quien"
+                class="px-3 py-1.5 text-[11px] font-bold tracking-wider text-gray-600 uppercase border border-gray-300 dark:border-white/15 dark:text-gray-300"
+              >
+                {{ quien }}
+              </span>
+            </div>
+
+            <!-- Firma CometaX -->
+            <div class="flex flex-col gap-3 p-4 border border-gray-200 sm:flex-row sm:items-center dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
+              <p class="flex-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t.about.byline }}</p>
+              <a
+                href="https://cometax.click"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase text-neon hover:underline shrink-0"
+              >
+                {{ t.about.bylineCta }} <i class="ph-bold ph-arrow-up-right"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- Módulos -->
+          <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 h-fit">
+            <div
+              v-for="(mod, i) in [
+                { icon: 'ph-clipboard-text', title: t.about.f1Title, desc: t.about.f1Desc },
+                { icon: 'ph-tree-structure', title: t.about.f2Title, desc: t.about.f2Desc },
+                { icon: 'ph-chart-line-up', title: t.about.f3Title, desc: t.about.f3Desc },
+                { icon: 'ph-broadcast', title: t.about.f4Title, desc: t.about.f4Desc },
+              ]"
+              :key="mod.title"
+              class="relative p-6 brutal-card"
+              :class="i % 2 === 1 ? 'sm:translate-y-6' : ''"
+            >
+              <i class="mb-4 text-3xl ph-fill text-neon" :class="mod.icon"></i>
+              <h3 class="mb-2 text-base font-bold leading-tight text-black uppercase font-display dark:text-white">{{ mod.title }}</h3>
+              <p class="text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ mod.desc }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================== RANKIT LEAGUE ========================== -->
+    <section id="rankit-league" class="relative py-24 overflow-hidden border-t border-gray-200 bg-gray-50 dark:bg-black dark:border-white/10 scroll-mt-24">
+      <div class="absolute inset-0 opacity-[0.07] pointer-events-none bg-tech-grid-light dark:bg-tech-grid-dark bg-[length:28px_28px]"></div>
+
+      <div class="relative z-10 px-6 mx-auto max-w-7xl">
+        <div class="grid items-center gap-12 lg:grid-cols-2">
+          <div>
+            <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-4 block">{{ t.league.tag }}</span>
+            <h2 class="mb-6 text-5xl font-black italic tracking-tighter text-black uppercase font-display md:text-6xl dark:text-white">
+              <span>{{ t.league.title }}</span> <span class="text-transparent bg-clip-text bg-gradient-to-r from-[var(--rankit-neon)] to-fuchsia-400">{{ t.league.titleSub }}</span>
+            </h2>
+            <p class="max-w-xl mb-8 text-lg font-light text-gray-600 dark:text-gray-400">{{ t.league.desc }}</p>
+
+            <ul class="mb-10 space-y-3">
+              <li v-for="p in [t.league.p1, t.league.p2, t.league.p3]" :key="p" class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
+                <i class="mt-0.5 text-lg ph-fill ph-check-circle text-neon shrink-0"></i>
+                <span>{{ p }}</span>
+              </li>
+            </ul>
+
+            <Link href="/league" class="inline-flex px-10 py-4 text-sm font-bold tracking-wider uppercase btn-skew">
+              <span class="btn-content">{{ t.league.cta }}</span>
+            </Link>
+          </div>
+
+          <!-- Puente hacia Semanales -->
+          <div class="p-8 brutal-card sm:p-10">
+            <div class="flex items-center gap-3 mb-5">
+              <span class="flex items-center justify-center w-12 h-12 bg-neon">
+                <i class="text-2xl text-white ph-fill ph-calendar-star"></i>
+              </span>
+              <div>
+                <p class="text-xl font-black text-black uppercase font-display dark:text-white">{{ t.semanales.title }} {{ t.semanales.titleSub }}</p>
+                <p class="font-mono text-[10px] tracking-widest text-neon uppercase">{{ t.semanales.dateLabel }}</p>
+              </div>
+            </div>
+
+            <p class="mb-6 text-sm leading-relaxed text-gray-600 dark:text-gray-400">{{ t.league.weeklyBridge }}</p>
+
+            <div class="flex flex-wrap gap-2 mb-8">
+              <span class="px-3 py-1 text-[10px] font-bold tracking-wider text-black uppercase bg-neon">{{ t.semanales.free }}</span>
+              <span class="px-3 py-1 text-[10px] font-bold tracking-wider text-gray-600 uppercase border border-gray-300 dark:border-white/15 dark:text-gray-300">
+                {{ t.semanales.prize }}
+              </span>
+            </div>
+
+            <Link href="/semanales" class="inline-flex items-center gap-2 text-sm font-bold tracking-wider uppercase text-neon hover:underline">
+              {{ t.league.weeklyCta }} <i class="ph-bold ph-arrow-right"></i>
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Active Tournaments -->
     <section id="torneos" class="py-24 bg-gray-50 dark:bg-[#080808]">
       <div class="px-6 mx-auto max-w-7xl">
@@ -849,15 +1160,22 @@ onUnmounted(() => {
           <div class="brutal-card p-8 h-min bg-white dark:bg-[#080808]">
             <h3 class="text-2xl font-bold text-gray-700 uppercase font-display dark:text-gray-300">Base</h3>
             <div class="flex items-baseline mt-4 mb-6">
-              <span class="text-4xl font-black text-black dark:text-white">$100</span>
+              <span class="text-4xl font-black text-black dark:text-white">$250</span>
               <span class="ml-2 font-mono text-sm text-gray-500">MXN / {{ t.pricing.period }}</span>
             </div>
-            <button class="w-full py-3 mb-8 text-xs font-bold tracking-wider text-black uppercase transition border border-gray-300 hover:border-black dark:border-gray-700 dark:hover:border-white dark:text-white">
+            <button
+              class="w-full py-3 mb-8 text-xs font-bold tracking-wider text-black uppercase transition border border-gray-300 hover:border-black dark:border-gray-700 dark:hover:border-white dark:text-white"
+              @click="abrirContratar('Base')"
+            >
               {{ t.pricing.btnStart }}
             </button>
             <ul class="space-y-4 text-sm text-gray-600 dark:text-gray-300">
               <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.pricing.feat.tournaments }}</li>
               <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.pricing.feat.brackets }}</li>
+              <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.pricing.feat.publicPage }}</li>
+              <li class="flex items-start gap-3 text-gray-400 dark:text-gray-500">
+                <i class="mt-0.5 ph ph-x-circle"></i> <span>{{ t.pricing.feat.noPriority }}</span>
+              </li>
             </ul>
           </div>
 
@@ -871,13 +1189,17 @@ onUnmounted(() => {
               <span class="text-5xl font-black text-black dark:text-white">$800</span>
               <span class="ml-2 font-mono text-sm text-gray-500">MXN / {{ t.pricing.period }}</span>
             </div>
-            <button class="w-full bg-neon hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black text-black font-bold py-4 uppercase text-xs tracking-wider transition mb-8 shadow-[0_0_20px_var(--rankit-neon)]">
+            <button
+              class="w-full bg-neon hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black text-black font-bold py-4 uppercase text-xs tracking-wider transition mb-8 shadow-[0_0_20px_var(--rankit-neon)]"
+              @click="abrirContratar('Gestor Pro')"
+            >
               {{ t.pricing.btnPro }}
             </button>
             <ul class="space-y-4 text-sm text-gray-800 dark:text-white">
               <li class="flex items-center gap-3"><i class="text-lg ph ph-check-circle text-neon"></i> {{ t.pricing.feat.unlimited }}</li>
               <li class="flex items-center gap-3"><i class="text-lg ph ph-check-circle text-neon"></i> {{ t.pricing.feat.obs }}</li>
               <li class="flex items-center gap-3"><i class="text-lg ph ph-check-circle text-neon"></i> {{ t.pricing.feat.payments }}</li>
+              <li class="flex items-center gap-3"><i class="text-lg ph ph-check-circle text-neon"></i> {{ t.pricing.feat.stats }}</li>
             </ul>
           </div>
 
@@ -888,13 +1210,75 @@ onUnmounted(() => {
               <span class="text-4xl font-black text-black dark:text-white">$5,000</span>
               <span class="ml-2 font-mono text-sm text-gray-500">MXN / {{ t.pricing.period }}</span>
             </div>
-            <button class="w-full py-3 mb-8 text-xs font-bold tracking-wider text-black uppercase transition border border-gray-300 hover:border-black dark:border-gray-700 dark:hover:border-white dark:text-white">
+            <button
+              class="w-full py-3 mb-8 text-xs font-bold tracking-wider text-black uppercase transition border border-gray-300 hover:border-black dark:border-gray-700 dark:hover:border-white dark:text-white"
+              @click="abrirContratar(t.pricing.planEnterprise)"
+            >
               {{ t.pricing.btnContact }}
             </button>
             <ul class="space-y-4 text-sm text-gray-600 dark:text-gray-300">
               <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.pricing.feat.multiuser }}</li>
               <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.pricing.feat.whitelabel }}</li>
+              <li class="flex items-center gap-3"><i class="ph ph-check text-neon"></i> {{ t.pricing.feat.priority }}</li>
             </ul>
+          </div>
+        </div>
+
+        <!-- Complementos: el ticket se ajusta con add-ons, no inflando el plan base -->
+        <div class="mt-20">
+          <div class="max-w-2xl mb-10">
+            <span class="text-neon font-bold tracking-[0.3em] uppercase text-xs mb-3 block">{{ t.pricing.addonsTag }}</span>
+            <h3 class="mb-3 text-3xl font-black text-black uppercase font-display dark:text-white">{{ t.pricing.addonsTitle }}</h3>
+            <p class="font-light text-gray-500 dark:text-gray-400">{{ t.pricing.addonsDesc }}</p>
+          </div>
+
+          <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div
+              v-for="addon in [
+                { icon: 'ph-users-three', title: t.pricing.addonStaffTitle, desc: t.pricing.addonStaffDesc },
+                { icon: 'ph-headset', title: t.pricing.addonSupportTitle, desc: t.pricing.addonSupportDesc },
+                { icon: 'ph-rocket-launch', title: t.pricing.addonSetupTitle, desc: t.pricing.addonSetupDesc },
+              ]"
+              :key="addon.title"
+              class="p-6 brutal-card"
+            >
+              <i class="mb-4 text-3xl ph-fill text-neon" :class="addon.icon"></i>
+              <h4 class="mb-2 text-lg font-bold text-black uppercase font-display dark:text-white">{{ addon.title }}</h4>
+              <p class="mb-4 text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ addon.desc }}</p>
+              <span class="font-mono text-[11px] tracking-wider text-neon uppercase">{{ t.pricing.addonPrice }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- En desarrollo: cobro de inscripciones, wagers y 1v1 -->
+        <div class="p-8 mt-20 border border-gray-200 sm:p-10 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
+          <div class="flex flex-col gap-10 lg:flex-row">
+            <div class="lg:w-1/3">
+              <span class="mb-3 inline-flex items-center gap-2 px-2.5 py-1 text-[10px] font-bold tracking-[0.25em] uppercase border border-amber-500/50 text-amber-500 bg-amber-500/10">
+                <i class="ph-fill ph-hammer"></i> {{ t.pricing.soonTag }}
+              </span>
+              <h3 class="mb-3 text-3xl font-black text-black uppercase font-display dark:text-white">{{ t.pricing.soonTitle }}</h3>
+              <p class="mb-6 text-sm font-light leading-relaxed text-gray-500 dark:text-gray-400">{{ t.pricing.soonDesc }}</p>
+              <Link href="/duels" class="inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-neon hover:underline">
+                {{ t.pricing.soonCta }} <i class="ph-bold ph-arrow-right"></i>
+              </Link>
+            </div>
+
+            <div class="grid flex-1 grid-cols-1 gap-5 sm:grid-cols-3">
+              <div
+                v-for="item in [
+                  { icon: 'ph-credit-card', title: t.pricing.soon1, desc: t.pricing.soon1Desc },
+                  { icon: 'ph-users-three', title: t.pricing.soon2, desc: t.pricing.soon2Desc },
+                  { icon: 'ph-sword', title: t.pricing.soon3, desc: t.pricing.soon3Desc },
+                ]"
+                :key="item.title"
+                class="p-5 bg-white border border-gray-200 dark:bg-black dark:border-white/10"
+              >
+                <i class="mb-3 text-2xl ph-fill text-neon" :class="item.icon"></i>
+                <h4 class="mb-2 text-sm font-bold leading-tight text-black uppercase font-display dark:text-white">{{ item.title }}</h4>
+                <p class="text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ item.desc }}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1110,6 +1494,104 @@ onUnmounted(() => {
         </div>
       </div>
     </footer>
+
+    <!-- ===================== MODAL DE CONTRATACIÓN ====================== -->
+    <!-- Todavía no hay cobro en línea: aquí explicamos las 3 vías reales. -->
+    <transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0"
+      leave-active-class="transition duration-150 ease-in"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="modalContratar" class="fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="modalContratar = false"></div>
+
+        <div class="relative w-full max-w-lg bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div class="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-200 dark:border-white/10">
+            <div>
+              <span class="text-neon font-bold tracking-[0.3em] uppercase text-[10px] block mb-1">{{ t.hire.subtitle }}</span>
+              <h3 class="text-2xl font-black text-black uppercase font-display dark:text-white">{{ t.hire.title }}</h3>
+              <p class="mt-1 font-mono text-xs text-gray-500">{{ t.hire.planLabel }}: <span class="text-neon">{{ planElegido }}</span></p>
+            </div>
+            <button class="text-gray-400 hover:text-black dark:hover:text-white" :aria-label="t.hire.close" @click="modalContratar = false">
+              <i class="text-2xl ph-bold ph-x"></i>
+            </button>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+            <p class="text-sm leading-relaxed text-gray-600 dark:text-gray-400">{{ t.hire.intro }}</p>
+
+            <!-- 1. Instagram (vía preferente) -->
+            <a
+              :href="IG_RANKIT"
+              target="_blank"
+              rel="noopener"
+              class="flex items-start gap-4 p-4 transition-colors border border-gray-200 dark:border-white/10 hover:border-neon group"
+            >
+              <span class="flex items-center justify-center w-10 h-10 text-white shrink-0 bg-gradient-to-tr from-amber-500 via-pink-600 to-purple-600">
+                <i class="text-xl ph-fill ph-instagram-logo"></i>
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-black uppercase dark:text-white group-hover:text-neon">{{ t.hire.step1Title }}</span>
+                  <span class="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-black uppercase bg-neon">1</span>
+                </span>
+                <span class="block mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t.hire.step1Desc }}</span>
+                <span class="inline-flex items-center gap-1 mt-2 text-[11px] font-bold tracking-wider uppercase text-neon">
+                  {{ t.hire.step1Cta }} <i class="ph-bold ph-arrow-up-right"></i>
+                </span>
+              </span>
+            </a>
+
+            <!-- 2. WhatsApp -->
+            <a
+              :href="enlaceWhatsAppPlan"
+              target="_blank"
+              rel="noopener"
+              class="flex items-start gap-4 p-4 transition-colors border border-gray-200 dark:border-white/10 hover:border-[#25D366] group"
+            >
+              <span class="flex items-center justify-center w-10 h-10 text-black shrink-0 bg-[#25D366]">
+                <i class="text-xl ph-fill ph-whatsapp-logo"></i>
+              </span>
+              <span class="min-w-0">
+                <span class="text-sm font-bold text-black uppercase dark:text-white group-hover:text-[#25D366]">{{ t.hire.step2Title }}</span>
+                <span class="block mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t.hire.step2Desc }}</span>
+                <span class="inline-flex items-center gap-1 mt-2 text-[11px] font-bold tracking-wider uppercase text-[#25D366]">
+                  {{ t.hire.step2Cta }} <i class="ph-bold ph-arrow-up-right"></i>
+                </span>
+              </span>
+            </a>
+
+            <!-- 3. CometaX -->
+            <a
+              :href="WEB_COMETAX"
+              target="_blank"
+              rel="noopener"
+              class="flex items-start gap-4 p-4 transition-colors border border-gray-200 dark:border-white/10 hover:border-black dark:hover:border-white group"
+            >
+              <span class="flex items-center justify-center w-10 h-10 text-white bg-black shrink-0 dark:bg-white dark:text-black">
+                <i class="text-xl ph-fill ph-buildings"></i>
+              </span>
+              <span class="min-w-0">
+                <span class="text-sm font-bold text-black uppercase dark:text-white">{{ t.hire.step3Title }}</span>
+                <span class="block mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t.hire.step3Desc }}</span>
+                <span class="inline-flex items-center gap-1 mt-2 text-[11px] font-bold tracking-wider text-black uppercase dark:text-white">
+                  {{ t.hire.step3Cta }} <i class="ph-bold ph-arrow-up-right"></i>
+                </span>
+              </span>
+            </a>
+
+            <p class="flex items-start gap-2 pt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-500">
+              <i class="mt-0.5 ph-fill ph-info text-neon shrink-0"></i>
+              <span>{{ t.hire.note }}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Widget de contacto: WhatsApp directo + chatbot de dudas -->
+    <RankitContactWidget :lang="lang" origen="Landing principal" />
   </div>
 </template>
 

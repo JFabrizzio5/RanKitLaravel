@@ -7,6 +7,7 @@
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
+import RankitContactWidget from '@/Components/RankitContactWidget.vue'
 
 const props = defineProps({
     semanales: { type: Array, default: () => [] },
@@ -1180,7 +1181,8 @@ onUnmounted(() => {
                 </div>
             </div>
         </Teleport>
-    </div>
+        <RankitContactWidget origen="Landing Semanales" />
+</div>
 </template>
 
 <style scoped>

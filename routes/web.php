@@ -68,6 +68,11 @@ Route::post('/semanales/{id}/registro', [SemanalesController::class, 'register']
     ->middleware('throttle:10,1')
     ->name('semanales.register');
 
+// --- 1V1 / WAGERS (landing "coming soon" para organizadores y streamers) ---
+Route::get('/duels', function () {
+    return Inertia::render('Duels/Index');
+})->name('duels.index');
+
 // --- AUTH SOCIAL ---
 Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('google.redirect');
 Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name('google.callback');
