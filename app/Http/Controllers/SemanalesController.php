@@ -28,11 +28,35 @@ class SemanalesController extends Controller
     /** Email del dueño preferente de los semanales (pedido del cliente). */
     private const OWNER_EMAIL = '18jangel18@gmail.com';
 
-    /** Definición de los semanales que deben existir siempre. */
+    /**
+     * Definición de los semanales que deben existir siempre.
+     *
+     * 'date_label' es el texto que se ve en la tarjeta (/semanales) y 'start_date'
+     * la fecha real en BD. Para cambiar la fecha de un semanal basta con editar
+     * aquí: fillMissingFields() reemplaza las etiquetas que nadie tocó a mano
+     * (ver legacyDateLabels()).
+     */
     private const SEMANALES = [
-        1 => ['name' => 'Semanal 1', 'slug' => 'semanal-1'],
-        2 => ['name' => 'Semanal 2', 'slug' => 'semanal-2'],
+        1 => [
+            'name'       => 'Semanal 1',
+            'slug'       => 'semanal-1',
+            'date_label' => 'JUEVES 13 DE AGOSTO',
+            'start_date' => '2026-08-13',
+        ],
+        2 => [
+            'name'       => 'Semanal 2',
+            'slug'       => 'semanal-2',
+            'date_label' => 'VIERNES 14 DE AGOSTO',
+            'start_date' => '2026-08-14',
+        ],
     ];
+
+    /** Bolsa de cada semanal: base y la que aplica si se llena el lobby. */
+    private const PREMIO_BASE  = 250;
+    private const PREMIO_LLENO = 500;
+
+    /** Jugadores que tiene que haber para que la bolsa suba a PREMIO_LLENO. */
+    private const CUPO_LLENO = 100;
 
     /** Cache local de columnas ya verificadas (evita golpear el information_schema de más). */
     private array $colCache = [];
@@ -179,7 +203,7 @@ class SemanalesController extends Controller
         $data = [
             'user_id'    => $owner->id,
             'name'       => $def['name'],
-            'rules'      => $this->defaultRules($def['name']),
+            'rules'      => $this->defaultRules($def['name'], $def['date_label'] ?? null),
             'prizes'     => $this->defaultPrizes(),
             'created_at' => now(),
             'updated_at' => now(),
@@ -196,8 +220,8 @@ class SemanalesController extends Controller
         if ($this->hasCol('ticket_price'))          $data['ticket_price'] = '0';
         if ($this->hasCol('event_type'))            $data['event_type'] = 'semanal';
         if ($this->hasCol('week_number'))           $data['week_number'] = $week;
-        if ($this->hasCol('start_date'))            $data['start_date'] = null;     // Todavía sin fecha
-        if ($this->hasCol('date_label'))            $data['date_label'] = 'PRÓXIMAMENTE';
+        if ($this->hasCol('start_date'))            $data['start_date'] = $def['start_date'] ?? null;
+        if ($this->hasCol('date_label'))            $data['date_label'] = $def['date_label'] ?? 'PRÓXIMAMENTE';
         if ($this->hasCol('is_free'))               $data['is_free'] = true;
         if ($this->hasCol('requires_discord'))      $data['requires_discord'] = false; // Discord es OPCIONAL
         if ($this->hasCol('requires_whatsapp'))     $data['requires_whatsapp'] = true;
@@ -228,8 +252,22 @@ class SemanalesController extends Controller
         if ($this->hasCol('week_number') && is_null($existing->week_number ?? null)) {
             $patch['week_number'] = $week;
         }
-        if ($this->hasCol('date_label') && is_null($existing->date_label ?? null)) {
-            $patch['date_label'] = 'PRÓXIMAMENTE';
+        // Fecha: se rellena si está vacía y se actualiza si sigue teniendo una etiqueta
+        // por defecto que nadie editó (p. ej. el viejo 'PRÓXIMAMENTE'). Si un admin
+        // escribió otra cosa a mano, se respeta.
+        $def       = self::SEMANALES[$week] ?? [];
+        $dateLabel = $def['date_label'] ?? null;
+        $etiquetaActual = trim((string) ($existing->date_label ?? ''));
+
+        if ($this->hasCol('date_label') && $dateLabel) {
+            if ($etiquetaActual === '' || in_array($etiquetaActual, $this->legacyDateLabels(), true)) {
+                $patch['date_label'] = $dateLabel;
+            }
+        }
+        // start_date sólo se rellena si está vacía: es la fecha real y puede llevar hora
+        // puesta desde el panel, así que nunca la pisamos.
+        if ($this->hasCol('start_date') && is_null($existing->start_date ?? null) && !empty($def['start_date'])) {
+            $patch['start_date'] = $def['start_date'];
         }
         // Los requisitos centrales del cliente se fuerzan (no basta con mirar si son
         // null): un torneo con slug 'semanal-N' creado por otra vía llega con estas
@@ -254,7 +292,7 @@ class SemanalesController extends Controller
         if ($reglasActuales !== '') {
             foreach ($this->legacyRules($existing->name ?? '') as $viejas) {
                 if ($reglasActuales === trim($viejas)) {
-                    $patch['rules'] = $this->defaultRules($existing->name ?? '');
+                    $patch['rules'] = $this->defaultRules($existing->name ?? '', $dateLabel);
                     break;
                 }
             }
@@ -287,8 +325,13 @@ class SemanalesController extends Controller
     }
 
     /** Reglas por defecto (texto libre, editable después desde el panel). */
-    private function defaultRules(string $name): string
+    private function defaultRules(string $name, ?string $dateLabel = null): string
     {
+        // La etiqueta va en mayúsculas para la tarjeta; dentro de la frase se lee mejor en minúsculas.
+        $fecha = $dateLabel
+            ? '6. El evento se juega el ' . mb_strtolower($dateLabel, 'UTF-8') . '. La hora se avisa con anticipación.'
+            : '6. La fecha y la hora están POR ANUNCIAR. Se avisan con anticipación.';
+
         return implode("\n", [
             "REGLAS — {$name}",
             '',
@@ -297,7 +340,7 @@ class SemanalesController extends Controller
             '3. El Epic ID y el WhatsApp son OBLIGATORIOS: con el Epic ID te identificamos en la partida y por WhatsApp te llega el aviso. El Discord es OPCIONAL.',
             '4. Te notificamos por mensaje a tu WhatsApp, y una vez inscrito los códigos de partida te llegan por correo.',
             '5. También puedes entrar al Semanal desde la app para ver las tablas y cómo vas en tiempo real.',
-            '6. La fecha y la hora están POR ANUNCIAR. Se avisan con anticipación.',
+            $fecha,
             '7. Debes estar en el lobby a la hora indicada. Si no llegas, tu lugar se libera.',
             '8. Prohibido el teaming (aliarse con otros jugadores fuera de tu equipo). Descalificación inmediata.',
             '9. Prohibido cualquier tipo de cheat, macro, glitch o cuenta compartida. Descalificación y veto de futuros semanales.',
@@ -306,6 +349,20 @@ class SemanalesController extends Controller
             '12. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
             '13. La decisión de la organización sobre cualquier incidencia es final.',
         ]);
+    }
+
+    /**
+     * Etiquetas de fecha que puso el sistema (no un admin). Si date_label sigue
+     * siendo una de estas, se puede reemplazar por la fecha actual sin pisar
+     * nada escrito a mano.
+     */
+    private function legacyDateLabels(): array
+    {
+        return [
+            'PRÓXIMAMENTE',
+            'PROXIMAMENTE',
+            'POR ANUNCIAR',
+        ];
     }
 
     /** Versiones anteriores del texto por defecto de los premios (ver legacyRules). */
@@ -319,6 +376,14 @@ class SemanalesController extends Controller
                 'La bolsa exacta de esta edición está POR ANUNCIAR.',
                 '',
                 'El desglose por posición y la forma de pago se publican aquí mismo y se avisan por Discord y WhatsApp antes de que arranque el evento.',
+            ]),
+            implode("\n", [
+                'PREMIOS EN METÁLICO — SEMANALES',
+                '',
+                'Cada semanal reparte premios en metálico entre los mejores del ranking.',
+                'La bolsa exacta de esta edición está POR ANUNCIAR.',
+                '',
+                'El desglose por posición y la forma de pago se publican aquí mismo y te los avisamos por mensaje antes de que arranque el evento.',
             ]),
         ];
     }
@@ -347,17 +412,38 @@ class SemanalesController extends Controller
                 '10. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
                 '11. La decisión de la organización sobre cualquier incidencia es final.',
             ]),
+            implode("\n", [
+                "REGLAS — {$name}",
+                '',
+                '1. La entrada es GRATUITA. No se cobra inscripción de ningún tipo.',
+                '2. Es un evento PÚBLICO: cualquiera puede inscribirse mientras el registro esté abierto.',
+                '3. El Epic ID y el WhatsApp son OBLIGATORIOS: con el Epic ID te identificamos en la partida y por WhatsApp te llega el aviso. El Discord es OPCIONAL.',
+                '4. Te notificamos por mensaje a tu WhatsApp, y una vez inscrito los códigos de partida te llegan por correo.',
+                '5. También puedes entrar al Semanal desde la app para ver las tablas y cómo vas en tiempo real.',
+                '6. La fecha y la hora están POR ANUNCIAR. Se avisan con anticipación.',
+                '7. Debes estar en el lobby a la hora indicada. Si no llegas, tu lugar se libera.',
+                '8. Prohibido el teaming (aliarse con otros jugadores fuera de tu equipo). Descalificación inmediata.',
+                '9. Prohibido cualquier tipo de cheat, macro, glitch o cuenta compartida. Descalificación y veto de futuros semanales.',
+                '10. Un solo registro por jugador. Los registros duplicados se eliminan.',
+                '11. La organización puede pedir grabación o replay para validar un resultado.',
+                '12. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
+                '13. La decisión de la organización sobre cualquier incidencia es final.',
+            ]),
         ];
     }
 
-    /** Premios por defecto: todavía sin bolsa confirmada. */
+    /** Premios por defecto: bolsa base y bolsa ampliada si se llena el lobby. */
     private function defaultPrizes(): string
     {
+        $base  = number_format(self::PREMIO_BASE);
+        $lleno = number_format(self::PREMIO_LLENO);
+        $cupo  = number_format(self::CUPO_LLENO);
+
         return implode("\n", [
             'PREMIOS EN METÁLICO — SEMANALES',
             '',
-            'Cada semanal reparte premios en metálico entre los mejores del ranking.',
-            'La bolsa exacta de esta edición está POR ANUNCIAR.',
+            "Cada semanal reparte una bolsa de \${$base} MXN entre los mejores del ranking.",
+            "Si se llenan los {$cupo} lugares del evento, la bolsa sube a \${$lleno} MXN.",
             '',
             'El desglose por posición y la forma de pago se publican aquí mismo y te los avisamos por mensaje antes de que arranque el evento.',
         ]);

@@ -719,7 +719,7 @@ onUnmounted(() => {
                         <ul class="mt-4 space-y-1.5 text-xs text-gray-400">
                             <li class="flex items-start gap-2">
                                 <i class="ph-fill ph-chat-circle-text text-fnEmerald mt-0.5"></i>
-                                <span>Te notificamos por mensaje cuando se confirme la fecha.</span>
+                                <span>Te notificamos por mensaje cuando se confirme la hora del lobby.</span>
                             </li>
                             <li class="flex items-start gap-2">
                                 <i class="ph-fill ph-envelope-simple text-fnNeonCyan mt-0.5"></i>
