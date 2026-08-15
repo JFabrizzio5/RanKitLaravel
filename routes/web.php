@@ -67,6 +67,11 @@ Route::get('/semanales', [SemanalesController::class, 'index'])->name('semanales
 Route::post('/semanales/{id}/registro', [SemanalesController::class, 'register'])
     ->middleware('throttle:10,1')
     ->name('semanales.register');
+// Aviso por correo a los inscritos de que el evento se recorrió (sólo admin).
+// El throttle es bajo a propósito: manda correos masivos.
+Route::post('/semanales/{id}/aviso-recorrido', [SemanalesController::class, 'notifyReschedule'])
+    ->middleware(['auth', 'throttle:5,10'])
+    ->name('semanales.reschedule-notice');
 
 // --- 1V1 / WAGERS (landing "coming soon" para organizadores y streamers) ---
 Route::get('/duels', function () {

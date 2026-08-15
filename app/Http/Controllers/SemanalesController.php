@@ -34,20 +34,29 @@ class SemanalesController extends Controller
      * 'date_label' es el texto que se ve en la tarjeta (/semanales) y 'start_date'
      * la fecha real en BD. Para cambiar la fecha de un semanal basta con editar
      * aquí: fillMissingFields() reemplaza las etiquetas que nadie tocó a mano
-     * (ver legacyDateLabels()).
+     * (ver legacyDateLabels()). IMPORTANTE: al cambiar una fecha hay que dejar la
+     * anterior en legacyDateLabels() / legacyStartDates() para que el evento ya
+     * creado en BD se actualice solo.
+     *
+     * 'registration_status' controla el registro desde código:
+     *   - 'closed' se fuerza siempre (cerrar gana sobre lo que haya en BD).
+     *   - 'open'   sólo se aplica al crear el evento; si un admin lo cerró a mano
+     *              desde el panel, NO se vuelve a abrir solo.
      */
     private const SEMANALES = [
         1 => [
-            'name'       => 'Semanal 1',
-            'slug'       => 'semanal-1',
-            'date_label' => 'JUEVES 13 DE AGOSTO',
-            'start_date' => '2026-08-13',
+            'name'                => 'Semanal 1',
+            'slug'                => 'semanal-1',
+            'date_label'          => 'JUEVES 13 DE AGOSTO',
+            'start_date'          => '2026-08-13',
+            'registration_status' => 'closed', // Ya se jugó: inscripciones cerradas.
         ],
         2 => [
-            'name'       => 'Semanal 2',
-            'slug'       => 'semanal-2',
-            'date_label' => 'VIERNES 14 DE AGOSTO',
-            'start_date' => '2026-08-14',
+            'name'                => 'Semanal 2',
+            'slug'                => 'semanal-2',
+            'date_label'          => 'SÁBADO 15 DE AGOSTO',
+            'start_date'          => '2026-08-15',
+            'registration_status' => 'open',
         ],
     ];
 
@@ -216,7 +225,7 @@ class SemanalesController extends Controller
         if ($this->hasCol('is_serialized'))         $data['is_serialized'] = false; // NO es Rankit League
         if ($this->hasCol('parent_tournament_id'))  $data['parent_tournament_id'] = null;
         if ($this->hasCol('access_code'))           $data['access_code'] = null;
-        if ($this->hasCol('registration_status'))   $data['registration_status'] = 'open';
+        if ($this->hasCol('registration_status'))   $data['registration_status'] = $def['registration_status'] ?? 'open';
         if ($this->hasCol('ticket_price'))          $data['ticket_price'] = '0';
         if ($this->hasCol('event_type'))            $data['event_type'] = 'semanal';
         if ($this->hasCol('week_number'))           $data['week_number'] = $week;
@@ -264,10 +273,31 @@ class SemanalesController extends Controller
                 $patch['date_label'] = $dateLabel;
             }
         }
-        // start_date sólo se rellena si está vacía: es la fecha real y puede llevar hora
-        // puesta desde el panel, así que nunca la pisamos.
-        if ($this->hasCol('start_date') && is_null($existing->start_date ?? null) && !empty($def['start_date'])) {
-            $patch['start_date'] = $def['start_date'];
+        // start_date: se rellena si está vacía y se corrige si sigue teniendo una fecha
+        // que puso el propio código en un deploy anterior (ver legacyStartDates()).
+        // Si el admin le puso otra fecha/hora desde el panel, no se toca.
+        if ($this->hasCol('start_date') && !empty($def['start_date'])) {
+            $fechaActual = $existing->start_date ?? null;
+            $soloFecha   = $fechaActual ? substr((string) $fechaActual, 0, 10) : '';
+
+            if (is_null($fechaActual) || $soloFecha === '') {
+                $patch['start_date'] = $def['start_date'];
+            } elseif ($soloFecha !== $def['start_date'] && in_array($soloFecha, $this->legacyStartDates(), true)) {
+                $patch['start_date'] = $def['start_date'];
+            }
+        }
+        // Registro: 'closed' se fuerza siempre (es la forma de cerrar un semanal desde
+        // código). 'open' sólo se aplica si en BD no hay nada, para no reabrir un evento
+        // que un admin cerró a mano.
+        $estadoDeseado = $def['registration_status'] ?? null;
+        $estadoActual  = trim((string) ($existing->registration_status ?? ''));
+
+        if ($this->hasCol('registration_status') && $estadoDeseado) {
+            if ($estadoDeseado === 'closed' && $estadoActual !== 'closed') {
+                $patch['registration_status'] = 'closed';
+            } elseif ($estadoActual === '') {
+                $patch['registration_status'] = $estadoDeseado;
+            }
         }
         // Los requisitos centrales del cliente se fuerzan (no basta con mirar si son
         // null): un torneo con slug 'semanal-N' creado por otra vía llega con estas
@@ -362,6 +392,23 @@ class SemanalesController extends Controller
             'PRÓXIMAMENTE',
             'PROXIMAMENTE',
             'POR ANUNCIAR',
+            // Fechas que puso el código en deploys anteriores. Al mover un semanal,
+            // su etiqueta anterior se agrega aquí para que la BD se actualice sola.
+            'JUEVES 13 DE AGOSTO',
+            'VIERNES 14 DE AGOSTO',
+        ];
+    }
+
+    /**
+     * Fechas reales (start_date) que puso el código en deploys anteriores. Si la BD
+     * sigue teniendo una de estas, se puede mover al valor actual sin pisar una fecha
+     * que un admin haya escrito a mano desde el panel.
+     */
+    private function legacyStartDates(): array
+    {
+        return [
+            '2026-08-13',
+            '2026-08-14',
         ];
     }
 
@@ -396,7 +443,15 @@ class SemanalesController extends Controller
      */
     private function legacyRules(string $name): array
     {
-        return [
+        // El texto por defecto lleva la fecha dentro (punto 6), así que cada etiqueta
+        // que usó el código en algún momento genera una versión distinta de las reglas.
+        // Se agregan todas para poder refrescarlas cuando se mueve la fecha del semanal.
+        $porFecha = [$this->defaultRules($name, null)];
+        foreach ($this->legacyDateLabels() as $etiqueta) {
+            $porFecha[] = $this->defaultRules($name, $etiqueta);
+        }
+
+        return array_merge($porFecha, [
             implode("\n", [
                 "REGLAS — {$name}",
                 '',
@@ -429,7 +484,7 @@ class SemanalesController extends Controller
                 '12. Evento PROMOCIONAL e independiente: los semanales NO forman parte de Rankit League ni otorgan puntos para su clasificación.',
                 '13. La decisión de la organización sobre cualquier incidencia es final.',
             ]),
-        ];
+        ]);
     }
 
     /** Premios por defecto: bolsa base y bolsa ampliada si se llena el lobby. */
@@ -552,7 +607,23 @@ class SemanalesController extends Controller
             'ownerEmail'   => $owner->email ?? null,
             'canRegister'  => $canRegister,
             'errorMessage' => $errorMessage,
+            // Habilita las acciones de administración en la página (avisar cambio de fecha).
+            'isAdmin'      => $this->userIsAdmin(),
         ]);
+    }
+
+    /** ¿El usuario de la sesión puede usar las acciones de admin de los semanales? */
+    private function userIsAdmin(): bool
+    {
+        $user = auth()->user();
+
+        if (!$user) return false;
+
+        try {
+            return method_exists($user, 'isAdmin') ? (bool) $user->isAdmin() : false;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     // =====================================================================
@@ -724,6 +795,149 @@ class SemanalesController extends Controller
             'message' => '¡Listo! Quedaste inscrito en ' . $tournament->name
                 . '. Te avisamos por mensaje a tu WhatsApp y los códigos de partida te llegarán a ' . $email
                 . '. También puedes entrar al evento desde la app para ver las tablas y cómo vas.',
+        ]);
+    }
+
+    // =====================================================================
+    // 6) AVISO DE CAMBIO DE FECHA  (POST /semanales/{id}/aviso-recorrido)
+    // =====================================================================
+
+    /**
+     * Manda un correo a TODOS los inscritos del semanal avisando que el evento se
+     * recorrió. Sólo para administradores. No modifica el torneo: la fecha de la
+     * tarjeta se sigue cambiando desde el panel o desde la constante SEMANALES.
+     */
+    public function notifyReschedule(Request $request, $id)
+    {
+        $this->ensureSchema();
+
+        if (!$this->userIsAdmin()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sólo un administrador puede mandar este aviso.',
+            ], 403);
+        }
+
+        // --- 1. Localizar el semanal (por id o por slug) ---
+        $tournament = DB::table('tournaments')->where('id', $id)->first();
+        if (!$tournament) {
+            $tournament = DB::table('tournaments')->where('slug', $id)->first();
+        }
+
+        if (!$tournament || ($tournament->event_type ?? null) !== 'semanal') {
+            return response()->json([
+                'success' => false,
+                'message' => 'No encontramos ese semanal. Refresca la página e inténtalo de nuevo.',
+            ], 404);
+        }
+
+        // --- 2. Datos del aviso ---
+        $validator = Validator::make($request->all(), [
+            'date_label' => 'nullable|string|max:120',
+            'note'       => 'nullable|string|max:600',
+        ], [
+            'date_label.max' => 'La fecha nueva es demasiado larga (máx. 120 caracteres).',
+            'note.max'       => 'La nota es demasiado larga (máx. 600 caracteres).',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Revisa los datos del aviso.',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $nuevaFecha = trim((string) $request->input('date_label', ''));
+        if ($nuevaFecha === '') {
+            $nuevaFecha = trim((string) ($tournament->date_label ?? '')) ?: 'POR ANUNCIAR';
+        }
+        $nota = trim((string) $request->input('note', ''));
+
+        // --- 3. Destinatarios: los inscritos del evento (correos únicos) ---
+        try {
+            $inscritos = DB::table('tournament_registrations')
+                ->where('tournament_id', $tournament->id)
+                ->whereNotNull('email')
+                ->where('email', '<>', '')
+                ->get(['email', 'player_name']);
+        } catch (\Throwable $e) {
+            Log::warning('[Semanales] No se pudieron leer los inscritos para el aviso: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'No pudimos leer la lista de inscritos. Inténtalo de nuevo en unos segundos.',
+            ], 500);
+        }
+
+        // Un correo por persona aunque tenga varios registros.
+        $destinatarios = [];
+        foreach ($inscritos as $fila) {
+            $correo = strtolower(trim((string) $fila->email));
+            if ($correo === '' || isset($destinatarios[$correo])) continue;
+            $destinatarios[$correo] = trim((string) ($fila->player_name ?? '')) ?: 'jugador';
+        }
+
+        if (empty($destinatarios)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Todavía no hay inscritos en ' . $tournament->name . ', así que no hay a quién avisarle.',
+            ], 422);
+        }
+
+        // --- 4. Envío (si un correo falla, seguimos con los demás) ---
+        $enviados = 0;
+        $fallidos = 0;
+
+        foreach ($destinatarios as $correo => $nombre) {
+            try {
+                \Illuminate\Support\Facades\Mail::to($correo)
+                    ->send(new \App\Mail\GenericRankitMail(
+                        'Cambio de fecha - ' . $tournament->name,
+                        'emails.semanal_rescheduled',
+                        [
+                            'playerName'     => $nombre,
+                            'tournamentName' => $tournament->name,
+                            'dateLabel'      => $nuevaFecha,
+                            'note'           => $nota,
+                        ]
+                    ));
+                $enviados++;
+            } catch (\Throwable $e) {
+                $fallidos++;
+                Log::warning("[Semanales] Falló el aviso de cambio de fecha a {$correo}: " . $e->getMessage());
+            }
+        }
+
+        Log::info('[Semanales] Aviso de cambio de fecha enviado', [
+            'tournament' => $tournament->slug ?? $tournament->id,
+            'admin'      => auth()->user()?->email,
+            'nueva'      => $nuevaFecha,
+            'enviados'   => $enviados,
+            'fallidos'   => $fallidos,
+        ]);
+
+        if ($enviados === 0) {
+            return response()->json([
+                'success'  => false,
+                'message'  => 'No se pudo enviar ningún correo. Revisa la configuración de correo e inténtalo de nuevo.',
+                'sent'     => 0,
+                'failed'   => $fallidos,
+                'total'    => count($destinatarios),
+            ], 500);
+        }
+
+        $mensaje = "Aviso enviado a {$enviados} inscrito(s) de {$tournament->name}.";
+        if ($fallidos > 0) {
+            $mensaje .= " {$fallidos} correo(s) no salieron: revisa el log.";
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $mensaje,
+            'sent'    => $enviados,
+            'failed'  => $fallidos,
+            'total'   => count($destinatarios),
         ]);
     }
 }

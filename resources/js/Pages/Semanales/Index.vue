@@ -14,10 +14,12 @@ const props = defineProps({
     ownerEmail: { type: String, default: null },
     canRegister: { type: Boolean, default: false },
     errorMessage: { type: String, default: null },
+    isAdmin: { type: Boolean, default: false },
 })
 
 const page = usePage()
 const usuario = computed(() => page.props?.auth?.user ?? null)
+const esAdmin = computed(() => props.isAdmin === true)
 
 /* ------------------------------------------------------------------ */
 /* Datos derivados                                                      */
@@ -113,7 +115,7 @@ const faqs = [
     },
     {
         p: '¿Cuándo se juegan?',
-        r: 'Las fechas se anuncian próximamente. Al inscribirte quedas en la lista y te avisamos en cuanto queden confirmadas.',
+        r: 'La fecha de cada Semanal aparece en su tarjeta, aquí arriba. Cuando un Semanal ya se jugó, su registro queda cerrado y el siguiente sigue abierto. La hora del lobby te llega por WhatsApp.',
     },
     {
         p: '¿Puedo inscribirme a los dos Semanales?',
@@ -235,7 +237,9 @@ function cerrarModal() {
 }
 
 function manejarTecla(e) {
-    if (e.key === 'Escape' && modalAbierto.value) cerrarModal()
+    if (e.key !== 'Escape') return
+    if (modalAbierto.value) cerrarModal()
+    else if (avisoAbierto.value) cerrarAviso()
 }
 
 function validar() {
@@ -344,6 +348,87 @@ function enviarInscripcion() {
         })
         .finally(() => {
             enviando.value = false
+        })
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin · aviso de que el evento se recorrió                           */
+/* ------------------------------------------------------------------ */
+
+const avisoAbierto = ref(false)
+const avisoEvento = ref(null)
+const avisoEnviando = ref(false)
+const avisoMensaje = ref('')
+const avisoOk = ref(false)
+const avisoConfirmado = ref(false)
+const avisoForm = ref({ date_label: '', note: '' })
+
+const avisoDestinatarios = computed(() => Number(avisoEvento.value?.players_count) || 0)
+
+function abrirAviso(ev) {
+    if (!ev || !esAdmin.value) return
+
+    avisoEvento.value = ev
+    avisoForm.value = { date_label: ev.date_label || '', note: '' }
+    avisoMensaje.value = ''
+    avisoOk.value = false
+    avisoConfirmado.value = false
+    avisoAbierto.value = true
+    bloquearScroll()
+}
+
+function cerrarAviso() {
+    if (avisoEnviando.value) return
+    avisoAbierto.value = false
+    avisoEvento.value = null
+    restaurarScroll()
+}
+
+function enviarAviso() {
+    if (avisoEnviando.value || !avisoEvento.value) return
+
+    // Manda correos a gente real: sin la casilla marcada no sale nada.
+    if (!avisoConfirmado.value) {
+        avisoOk.value = false
+        avisoMensaje.value = 'Marca la casilla de confirmación antes de enviar.'
+        return
+    }
+
+    const token = document.querySelector('meta[name="csrf-token"]')
+    const headers = token ? { 'X-CSRF-TOKEN': token.getAttribute('content') } : {}
+
+    const payload = {
+        date_label: (avisoForm.value.date_label || '').trim(),
+        note: (avisoForm.value.note || '').trim(),
+    }
+
+    avisoEnviando.value = true
+    avisoMensaje.value = ''
+
+    axios
+        .post('/semanales/' + avisoEvento.value.id + '/aviso-recorrido', payload, { headers })
+        .then((res) => {
+            const data = res?.data || {}
+            avisoOk.value = data.success === true
+            avisoMensaje.value = data.message || 'Aviso enviado.'
+            if (data.success === true) avisoConfirmado.value = false
+        })
+        .catch((err) => {
+            avisoOk.value = false
+            const estado = err?.response?.status
+            if (estado === 429) {
+                avisoMensaje.value = 'Demasiados avisos seguidos. Espera unos minutos antes de volver a enviar.'
+                return
+            }
+            if (estado === 419) {
+                avisoMensaje.value = 'Tu sesión expiró. Recarga la página e inténtalo de nuevo.'
+                return
+            }
+            avisoMensaje.value =
+                err?.response?.data?.message || 'No pudimos enviar el aviso. Inténtalo de nuevo en unos segundos.'
+        })
+        .finally(() => {
+            avisoEnviando.value = false
         })
 }
 
@@ -785,6 +870,31 @@ onUnmounted(() => {
                         </a>
                     </div>
 
+                    <!-- Acciones de administración (sólo admin) -->
+                    <div v-if="esAdmin" class="pt-4 mt-4 border-t border-dashed border-fnGold/25">
+                        <div class="flex items-center gap-2 mb-2 text-[10px] font-bold tracking-[0.2em] text-fnGold uppercase">
+                            <i class="ph-fill ph-shield-star"></i> Administración
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center w-full gap-2 px-5 py-3 text-xs font-bold tracking-widest uppercase transition-colors border text-fnGold border-fnGold/40 bg-fnGold/5 hover:bg-fnGold/15 hover:border-fnGold disabled:opacity-40"
+                            :disabled="(Number(ev.players_count) || 0) === 0"
+                            @click="abrirAviso(ev)"
+                        >
+                            <i class="ph-bold ph-calendar-x"></i>
+                            Avisar que se recorrió
+                        </button>
+                        <p class="mt-2 text-[11px] text-gray-500">
+                            <template v-if="(Number(ev.players_count) || 0) === 0">
+                                Todavía no hay inscritos a quienes avisar.
+                            </template>
+                            <template v-else>
+                                Manda un correo a los {{ ev.players_count }} inscrito(s) de este Semanal con la nueva
+                                fecha.
+                            </template>
+                        </p>
+                    </div>
+
                     <!-- Sin sesión: la inscripción exige cuenta (el correo se toma de ahí) -->
                     <p
                         v-if="!usuario && registroAbierto(ev) && !estaInscrito(ev)"
@@ -1181,6 +1291,124 @@ onUnmounted(() => {
                 </div>
             </div>
         </Teleport>
+
+        <!-- ============ MODAL ADMIN · AVISO DE CAMBIO DE FECHA ============= -->
+        <Teleport to="body">
+            <div v-if="avisoAbierto" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6">
+                <div class="absolute inset-0 bg-black/85 backdrop-blur-sm" @click="cerrarAviso"></div>
+
+                <div
+                    class="relative z-10 w-full sm:max-w-lg max-h-[92vh] overflow-y-auto sem-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="titulo-modal-aviso"
+                >
+                    <div class="sticky top-0 z-10 flex items-start justify-between gap-4 px-6 py-5 border-b border-white/10 bg-[#0f081c]">
+                        <div class="min-w-0">
+                            <div class="text-[10px] font-bold tracking-[0.25em] text-fnGold uppercase mb-1">
+                                Aviso a los inscritos
+                            </div>
+                            <h3 id="titulo-modal-aviso" class="text-xl font-black italic text-white uppercase break-words font-display">
+                                {{ avisoEvento?.name || 'Semanal' }}
+                            </h3>
+                        </div>
+                        <button
+                            type="button"
+                            class="flex items-center justify-center w-9 h-9 text-gray-400 transition-colors border shrink-0 border-white/15 hover:text-white hover:border-white/40"
+                            aria-label="Cerrar"
+                            @click="cerrarAviso"
+                        >
+                            <i class="text-lg ph-bold ph-x"></i>
+                        </button>
+                    </div>
+
+                    <form class="px-6 py-6 space-y-5" @submit.prevent="enviarAviso">
+                        <div class="flex items-start gap-3 p-3 border border-fnGold/30 bg-fnGold/[0.07]">
+                            <i class="text-lg ph-fill ph-envelope-simple text-fnGold shrink-0"></i>
+                            <span class="text-xs leading-relaxed text-gray-200">
+                                Se enviará un correo a
+                                <strong class="text-fnGold">{{ avisoDestinatarios }} inscrito(s)</strong>
+                                avisando que el evento se recorrió. Esta acción no se puede deshacer.
+                            </span>
+                        </div>
+
+                        <div>
+                            <label for="aviso-fecha" class="block mb-2 text-[11px] font-bold tracking-[0.2em] text-gray-300 uppercase">
+                                Nueva fecha <span class="text-fnCrimson">*</span>
+                            </label>
+                            <input
+                                id="aviso-fecha"
+                                v-model="avisoForm.date_label"
+                                type="text"
+                                maxlength="120"
+                                placeholder="Ej. SÁBADO 15 DE AGOSTO"
+                                class="sem-input"
+                            />
+                            <p class="mt-1.5 text-xs text-gray-500">
+                                Es el texto que verán en el correo. Si lo dejas vacío se manda la fecha que ya tiene la
+                                tarjeta. Ojo: esto <strong>no cambia</strong> la fecha del evento, sólo avisa.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label for="aviso-nota" class="block mb-2 text-[11px] font-bold tracking-[0.2em] text-gray-300 uppercase">
+                                Nota <span class="font-normal normal-case tracking-normal text-gray-500">(opcional)</span>
+                            </label>
+                            <textarea
+                                id="aviso-nota"
+                                v-model="avisoForm.note"
+                                rows="3"
+                                maxlength="600"
+                                placeholder="Ej. Se recorrió por mantenimiento de los servidores de Epic. Tu lugar sigue apartado."
+                                class="sem-input"
+                            ></textarea>
+                            <p class="mt-1.5 text-xs text-gray-500">Aparece dentro del correo, debajo de la fecha.</p>
+                        </div>
+
+                        <label class="flex items-start gap-3 p-3 text-xs text-gray-300 border cursor-pointer border-white/15 bg-white/[0.03]">
+                            <input v-model="avisoConfirmado" type="checkbox" class="mt-0.5 accent-fnGold" />
+                            <span>
+                                Confirmo que quiero mandar este correo a los {{ avisoDestinatarios }} inscrito(s) de
+                                {{ avisoEvento?.name }}.
+                            </span>
+                        </label>
+
+                        <div
+                            v-if="avisoMensaje"
+                            class="flex items-start gap-3 p-3 text-sm"
+                            :class="avisoOk ? 'border border-fnEmerald/50 bg-fnEmerald/10 text-fnEmerald' : 'border border-fnCrimson/50 bg-fnCrimson/10 text-fnCrimson'"
+                        >
+                            <i class="text-lg ph-fill shrink-0" :class="avisoOk ? 'ph-check-circle' : 'ph-warning-circle'"></i>
+                            <span class="break-words">{{ avisoMensaje }}</span>
+                        </div>
+
+                        <div class="flex flex-col gap-3 pt-2 sm:flex-row">
+                            <button
+                                type="submit"
+                                class="flex-1 sem-btn"
+                                :class="avisoEnviando || !avisoConfirmado ? 'sem-btn-disabled' : 'sem-btn-primary'"
+                                :disabled="avisoEnviando || !avisoConfirmado"
+                            >
+                                <span class="relative z-10 flex items-center justify-center gap-2">
+                                    <span v-if="avisoEnviando" class="sem-spinner"></span>
+                                    <i v-else class="ph-bold ph-paper-plane-tilt"></i>
+                                    {{ avisoEnviando ? 'Enviando correos…' : 'Enviar aviso' }}
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                class="px-6 py-4 text-xs font-bold tracking-widest text-gray-400 uppercase transition-colors border border-white/15 hover:text-white hover:border-white/40 disabled:opacity-40"
+                                :disabled="avisoEnviando"
+                                @click="cerrarAviso"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </Teleport>
+
         <RankitContactWidget origen="Landing Semanales" />
 </div>
 </template>
