@@ -574,30 +574,26 @@ class TournamentParserController extends Controller
             $fileContent = file_get_contents($file->getRealPath());
             $fileName = uniqid() . '_' . $file->getClientOriginalName();
 
-            // 1. ANALYZE-SUMMARY (Obtener SessionID)
-            $summaryResponse = Http::timeout(60)
-                ->attach('file', $fileContent, $fileName)
-                ->post('http://62.72.3.139:5138/api/FortniteParser/analyze-summary');
-
-            $sessionID = null;
-            if ($summaryResponse->successful()) {
-                $summaryData = $summaryResponse->json();
-                $sessionID = $summaryData['matchId'] ?? null;
-            }
-
-            if ($sessionID) $sessionID = strtoupper($sessionID);
-
-            // 2. ANALYZE (Stats completas)
+            // ANALYZE (stats completas + SessionID en una sola llamada).
+            // Antes se llamaba primero a analyze-summary solo por el matchId, pero
+            // cada llamada parsea el replay completo (~25s) y las dos juntas se
+            // pasaban del timeout del proxy (504).
             $analyzeResponse = Http::timeout(120)
                 ->attach('file', $fileContent, $fileName)
                 ->post('http://62.72.3.139:5138/api/FortniteParser/analyze', [
                     'mode' => $mode,
-                    'rulesJson' => '' 
+                    'rulesJson' => ''
                 ]);
 
             if (!$analyzeResponse->successful()) throw new \Exception("Error en Analyze: " . $analyzeResponse->body());
 
             $data = $analyzeResponse->json();
+
+            // La API devuelve "UnknownSession" cuando el replay no trae GameSessionId;
+            // se trata como ausente para caer al fallback por firma de contenido.
+            $sessionID = $data['matchId'] ?? null;
+            if ($sessionID === 'UnknownSession') $sessionID = null;
+            if ($sessionID) $sessionID = strtoupper($sessionID);
 
             DB::beginTransaction();
 
