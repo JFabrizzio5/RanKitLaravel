@@ -666,9 +666,13 @@ class TournamentParserController extends Controller
             foreach ($players as $p) {
                 if (($p['isBot'] ?? false) || ($p['playerName'] ?? '') === 'Unknown') continue;
 
-                $rank = $p['leaderboardRank'] ?? 0;
+                // Posición REAL en la partida, igual que en team_match_stats.
+                // Antes se usaba leaderboardRank (el lugar en la tabla ordenada por
+                // puntos), lo que hacía circular el cálculo: quien iba primero por
+                // puntos se llevaba el bonus de 1er lugar aunque no hubiera ganado.
+                $rank = $p['rank'] ?? ($p['leaderboardRank'] ?? 999);
                 $kills = $p['kills'] ?? 0;
-                
+
                 $calculatedPoints = $this->calculateScore($rank, $kills, $scoringFormat, $this->getModeName($mode));
 
                 DB::table('player_match_stats')->insert([
