@@ -64,7 +64,7 @@ class CatalogoPlanes
     {
         return array_values(array_filter([
             config('cashier.secret') ? 'stripe' : null,
-            config('planes.mercadopago.access_token') ? 'mercadopago' : null,
+            config('planes.mercadopago.activo') && config('planes.mercadopago.access_token') ? 'mercadopago' : null,
         ]));
     }
 

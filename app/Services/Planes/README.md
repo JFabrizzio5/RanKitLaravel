@@ -2,6 +2,8 @@
 
 Sin plan vigente no se entra a los paneles de organizador: Fortnite (`/admin/*`), LoL/Valorant (`/lol`), fútbol (`/football`) ni al selector de juego. Se manda a `/planes` para pagar.
 
+**Por ahora solo se cobra con Stripe (tarjeta).** Mercado Pago está programado pero apagado: `/planes` lo muestra como "Próximamente". Para prenderlo: `MERCADOPAGO_ACTIVO=true` y `MERCADOPAGO_ACCESS_TOKEN`.
+
 | Plan | Qué da | Cobro |
 |---|---|---|
 | **Base** | 2 torneos en 30 días | Pago único (Stripe: tarjeta u OXXO · Mercado Pago: tarjeta, OXXO, SPEI, saldo) |

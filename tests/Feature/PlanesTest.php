@@ -256,7 +256,7 @@ it('Mercado Pago: el regreso del pago activa el plan', function () {
 });
 
 it('Mercado Pago: pagar abre Checkout Pro con el precio calculado', function () {
-    config(['planes.mercadopago.access_token' => 'APP_USR-prueba']);
+    config(['planes.mercadopago.access_token' => 'APP_USR-prueba', 'planes.mercadopago.activo' => true]);
     $user = organizador();
     Http::fake(['api.mercadopago.com/checkout/preferences' => Http::response([
         'init_point' => 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=1',
@@ -267,6 +267,17 @@ it('Mercado Pago: pagar abre Checkout Pro con el precio calculado', function () 
 
     Http::assertSent(fn ($r) => $r['items'][0]['unit_price'] == 214
         && str_starts_with($r['external_reference'], "rankit:{$user->id}:base:"));
+});
+
+it('Mercado Pago queda apagado aunque haya token, salvo MERCADOPAGO_ACTIVO', function () {
+    config(['planes.mercadopago.access_token' => 'APP_USR-prueba', 'cashier.secret' => 'sk_test_x']);
+    expect(app(CatalogoPlanes::class)->pasarelasDisponibles())->toBe(['stripe']);
+
+    $this->actingAs(organizador())->from('/planes')->post('/planes/base/pagar/mercadopago')
+        ->assertSessionHasErrors('pago');
+
+    config(['planes.mercadopago.activo' => true]);
+    expect(app(CatalogoPlanes::class)->pasarelasDisponibles())->toBe(['stripe', 'mercadopago']);
 });
 
 it('no deja pagar con una pasarela sin credenciales', function () {

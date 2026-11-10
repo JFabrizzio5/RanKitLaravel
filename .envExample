@@ -68,6 +68,8 @@ CASHIER_CURRENCY=mxn
 CASHIER_CURRENCY_LOCALE=es_MX
 
 # Planes de organizador (app/Services/Planes/README.md)
+# Mercado Pago está apagado ("Próximamente"); true + token para prenderlo
+MERCADOPAGO_ACTIVO=false
 MERCADOPAGO_ACCESS_TOKEN=
 MERCADOPAGO_WEBHOOK_SECRET=
 # Neto que debe quedar después de comisiones (el precio se calcula solo)

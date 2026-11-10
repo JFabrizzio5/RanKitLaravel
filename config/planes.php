@@ -57,7 +57,10 @@ return [
         'plan' => 'pro',
     ],
 
+    // Apagado: por ahora solo se cobra con Stripe y /planes muestra Mercado
+    // Pago como "Próximamente". Para prenderlo: MERCADOPAGO_ACTIVO=true + token.
     'mercadopago' => [
+        'activo' => (bool) env('MERCADOPAGO_ACTIVO', false),
         'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
         'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
     ],

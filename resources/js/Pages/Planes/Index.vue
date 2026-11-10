@@ -70,12 +70,12 @@ const aviso = computed(() => {
 })
 
 const nombrePasarela: Record<string, string> = {
-  stripe: 'Tarjeta u OXXO',
+  stripe: 'Pagar con tarjeta',
   mercadopago: 'Mercado Pago',
 }
 
 function etiquetaBoton(p: Plan, pasarela: string) {
-  if (p.clave === 'pro' && pasarela === 'stripe') return 'Tarjeta (se renueva sola)'
+  if (p.clave === 'pro' && pasarela === 'stripe') return 'Suscribirme con tarjeta'
   return nombrePasarela[pasarela]
 }
 
@@ -159,8 +159,8 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
               <li class="flex gap-3"><i class="ph ph-check text-neon mt-0.5"></i> Fortnite, LoL/Valorant y fútbol</li>
               <li class="flex gap-3"><i class="ph ph-check text-neon mt-0.5"></i> Replays, tabla en vivo y widgets para OBS</li>
               <li class="flex gap-3 text-gray-500"><i class="ph ph-info mt-0.5"></i>
-                <span v-if="p.recurrente">Con tarjeta se cobra cada mes hasta que lo canceles. Con Mercado Pago es un pago único por {{ p.dias }} días.</span>
-                <span v-else>Pago único: tarjeta, OXXO o transferencia SPEI.</span>
+                <span v-if="p.recurrente">Se cobra con tarjeta cada mes hasta que lo canceles.</span>
+                <span v-else>Pago único con tarjeta.</span>
               </li>
             </ul>
 
@@ -177,6 +177,14 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
                 @click="pagar(p.clave, pasarela)"
               >
                 {{ enviando === `${p.clave}-${pasarela}` ? 'Abriendo pago…' : etiquetaBoton(p, pasarela) }}
+              </button>
+              <button
+                v-if="!pasarelas.includes('mercadopago')"
+                type="button"
+                disabled
+                class="w-full py-3 text-xs font-bold tracking-wider uppercase border border-dashed border-gray-300 dark:border-gray-700 text-gray-400 cursor-not-allowed"
+              >
+                Mercado Pago · Próximamente
               </button>
             </div>
             <a v-else :href="waVentas" target="_blank" rel="noopener" class="block mt-8 py-3 text-center text-xs font-bold tracking-wider uppercase border border-gray-300 dark:border-gray-700 hover:border-black dark:hover:border-white">
