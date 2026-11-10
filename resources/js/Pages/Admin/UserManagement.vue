@@ -8,6 +8,14 @@ interface UserItem {
     email: string
     role: string
     created_at: string
+    plan: {
+        exento: boolean
+        activo: boolean
+        ilimitado: boolean
+        torneos_restantes: number | null
+        vence: string | null
+        renueva: boolean
+    } | null
 }
 
 interface PaginationLink {
@@ -85,6 +93,37 @@ function roleLabel(role: string) {
     return 'Usuario'
 }
 
+// --- PLAN DE ORGANIZADOR (alta manual: transferencia, cortesía) ---
+const loadingPlan = ref<number | null>(null)
+
+function otorgarPlan(user: UserItem, plan: 'base' | 'pro') {
+    const dias = prompt(`¿Cuántos días de plan ${plan === 'pro' ? 'Gestor Pro' : 'Base'} para ${user.email}?`, '30')
+    if (!dias) return
+    loadingPlan.value = user.id
+    router.post(route('admin.users.plan.grant', { user: user.id }), { plan, dias: Number(dias) }, {
+        preserveScroll: true,
+        onFinish: () => { loadingPlan.value = null },
+    })
+}
+
+function revocarPlan(user: UserItem) {
+    if (!confirm(`¿Terminar ya el plan de ${user.email}? Se le cierra el panel.`)) return
+    loadingPlan.value = user.id
+    router.delete(route('admin.users.plan.revoke', { user: user.id }), {
+        preserveScroll: true,
+        onFinish: () => { loadingPlan.value = null },
+    })
+}
+
+function planLabel(plan: UserItem['plan']) {
+    if (!plan) return 'Sin plan'
+    if (plan.exento) return 'Ilimitado (exento)'
+    if (!plan.activo) return 'Sin plan'
+    const vence = plan.vence ? formatDate(plan.vence) : ''
+    if (plan.ilimitado) return `Pro · vence ${vence}${plan.renueva ? ' (renueva)' : ''}`
+    return `Base · ${plan.torneos_restantes} libres · vence ${vence}`
+}
+
 function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' })
 }
@@ -151,13 +190,14 @@ function formatDate(dateStr: string) {
                             <th class="text-left px-4 py-3 text-[10px] font-bold uppercase text-gray-500 tracking-widest">Nombre</th>
                             <th class="text-left px-4 py-3 text-[10px] font-bold uppercase text-gray-500 tracking-widest">Email</th>
                             <th class="text-left px-4 py-3 text-[10px] font-bold uppercase text-gray-500 tracking-widest">Rol</th>
+                            <th class="text-left px-4 py-3 text-[10px] font-bold uppercase text-gray-500 tracking-widest">Plan</th>
                             <th class="text-left px-4 py-3 text-[10px] font-bold uppercase text-gray-500 tracking-widest">Registro</th>
                             <th class="text-right px-4 py-3 text-[10px] font-bold uppercase text-gray-500 tracking-widest">Acción</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="users.data.length === 0">
-                            <td colspan="5" class="text-center py-12 text-gray-400 text-xs font-bold uppercase">
+                            <td colspan="6" class="text-center py-12 text-gray-400 text-xs font-bold uppercase">
                                 No se encontraron usuarios.
                             </td>
                         </tr>
@@ -171,6 +211,14 @@ function formatDate(dateStr: string) {
                                 <span :class="roleBadgeClass(u.role)" class="px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                                     {{ roleLabel(u.role) }}
                                 </span>
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <span :class="u.plan?.activo ? 'text-emerald-500' : 'text-gray-500'" class="font-bold">{{ planLabel(u.plan) }}</span>
+                                <div v-if="!u.plan?.exento" class="flex gap-1 mt-1">
+                                    <button @click="otorgarPlan(u, 'base')" :disabled="loadingPlan === u.id" class="px-2 py-0.5 text-[10px] font-bold uppercase border rounded border-gray-500/40 hover:border-[var(--rankit-neon)] disabled:opacity-40">+ Base</button>
+                                    <button @click="otorgarPlan(u, 'pro')" :disabled="loadingPlan === u.id" class="px-2 py-0.5 text-[10px] font-bold uppercase border rounded border-gray-500/40 hover:border-[var(--rankit-neon)] disabled:opacity-40">+ Pro</button>
+                                    <button v-if="u.plan?.activo" @click="revocarPlan(u)" :disabled="loadingPlan === u.id" class="px-2 py-0.5 text-[10px] font-bold uppercase border rounded border-red-500/40 text-red-400 hover:bg-red-500 hover:text-white disabled:opacity-40">Quitar</button>
+                                </div>
                             </td>
                             <td class="px-4 py-3 text-xs text-gray-500">{{ formatDate(u.created_at) }}</td>
                             <td class="px-4 py-3 text-right">

@@ -64,6 +64,19 @@ VITE_APP_NAME="${APP_NAME}"
 STRIPE_KEY=your-stripe-key
 STRIPE_SECRET=your-stripe-secret
 STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
+CASHIER_CURRENCY=mxn
+CASHIER_CURRENCY_LOCALE=es_MX
+
+# Planes de organizador (app/Services/Planes/README.md)
+MERCADOPAGO_ACCESS_TOKEN=
+MERCADOPAGO_WEBHOOK_SECRET=
+# Neto que debe quedar después de comisiones (el precio se calcula solo)
+PLAN_BASE_NETO=200
+PLAN_PRO_NETO=800
+# Nunca se les acaba el plan (además de los superadmin)
+PLANES_EXENTOS=18jangel18@gmail.com,josephfabrizizo@gmail.com
+# Días de Gestor Pro gratis para los admins que ya tenían torneos al desplegar (0 = nada)
+PLANES_CORTESIA_DIAS=30
 
 POINTS_SERVICE_URL=http://localhost:8011
 POINTS_SERVICE_WS_URL=ws://localhost:8011

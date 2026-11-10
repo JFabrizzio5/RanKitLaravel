@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import RankitContactWidget from '@/Components/RankitContactWidget.vue'
 
@@ -8,6 +8,8 @@ const props = defineProps<{
   canRegister?: boolean
   laravelVersion: string
   phpVersion: string
+  // Salen de config/planes.php (neto + comisión de la pasarela).
+  precios?: { base: number; pro: number }
 }>()
 
 /**
@@ -210,7 +212,7 @@ const t = computed(() => {
       hire: {
         title: 'Contratar',
         subtitle: 'Así lo activamos',
-        intro: 'Todavía no cobramos en línea dentro de Rankit. Para contratar hablamos contigo, revisamos tu caso y activamos el plan a mano — normalmente el mismo día.',
+        intro: 'Base y Gestor Pro se pagan en línea y se activan al momento. Para Empresas o un plan a la medida hablamos contigo, revisamos tu caso y lo activamos — normalmente el mismo día.',
         planLabel: 'Plan elegido',
         step1Title: 'Escríbenos por Instagram',
         step1Desc: 'La vía más rápida: DM a @rankit.pro. Ahí resolvemos dudas y te pasamos los datos de pago.',
@@ -421,7 +423,7 @@ const t = computed(() => {
       hire: {
         title: 'Get started',
         subtitle: 'How we activate it',
-        intro: 'We do not charge online inside Rankit yet. To sign up we talk to you, review your case and activate the plan manually — usually the same day.',
+        intro: 'Base and Gestor Pro are paid online and activate instantly. For Enterprise or a custom plan we talk to you, review your case and activate it — usually the same day.',
         planLabel: 'Selected plan',
         step1Title: 'Message us on Instagram',
         step1Desc: 'Fastest route: DM @rankit.pro. We answer questions there and send you the payment details.',
@@ -517,8 +519,9 @@ function alPresionarEscape(e: KeyboardEvent) {
 
 /**
  * CONTRATACIÓN
- * Todavía no hay cobro en línea: el botón de cada plan abre un modal con las
- * tres vías reales para contratar (IG de Rankit, WhatsApp de ventas y CometaX).
+ * Base y Gestor Pro se pagan en línea en /planes (Stripe o Mercado Pago).
+ * "Hablar con ventas" y Empresas abren el modal con las vías de contacto
+ * (IG de Rankit, WhatsApp de ventas y CometaX).
  */
 const WA_VENTAS = '525532351392'
 const IG_RANKIT = 'https://instagram.com/rankit.pro'
@@ -538,6 +541,15 @@ function imagenFallback(e: Event, ruta: string) {
 
 const modalContratar = ref(false)
 const planElegido = ref('Gestor Pro')
+
+const dinero = (n: number) => '$' + n.toLocaleString('es-MX')
+const precioBase = computed(() => dinero(props.precios?.base ?? 214))
+const precioPro = computed(() => dinero(props.precios?.pro ?? 839))
+
+// /planes pide sesión: si no la hay, Laravel manda al login y regresa ahí.
+function irAPlanes() {
+  router.visit(route('planes.index'))
+}
 
 function abrirContratar(plan: string) {
   planElegido.value = plan
@@ -1222,12 +1234,12 @@ onUnmounted(() => {
           <div class="brutal-card p-8 h-min bg-white dark:bg-[#080808]">
             <h3 class="text-2xl font-bold text-gray-700 uppercase font-display dark:text-gray-300">Base</h3>
             <div class="flex items-baseline mt-4 mb-6">
-              <span class="text-4xl font-black text-black dark:text-white">$250</span>
+              <span class="text-4xl font-black text-black dark:text-white">{{ precioBase }}</span>
               <span class="ml-2 font-mono text-sm text-gray-500">MXN / {{ t.pricing.period }}</span>
             </div>
             <button
               class="w-full py-3 mb-8 text-xs font-bold tracking-wider text-black uppercase transition border border-gray-300 hover:border-black dark:border-gray-700 dark:hover:border-white dark:text-white"
-              @click="abrirContratar('Base')"
+              @click="irAPlanes"
             >
               {{ t.pricing.btnStart }}
             </button>
@@ -1248,12 +1260,12 @@ onUnmounted(() => {
             </div>
             <h3 class="text-3xl font-bold text-black uppercase font-display dark:text-white">Gestor Pro</h3>
             <div class="flex items-baseline mt-4 mb-6">
-              <span class="text-5xl font-black text-black dark:text-white">$800</span>
+              <span class="text-5xl font-black text-black dark:text-white">{{ precioPro }}</span>
               <span class="ml-2 font-mono text-sm text-gray-500">MXN / {{ t.pricing.period }}</span>
             </div>
             <button
               class="w-full bg-neon hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black text-black font-bold py-4 uppercase text-xs tracking-wider transition mb-8 shadow-[0_0_20px_var(--rankit-neon)]"
-              @click="abrirContratar('Gestor Pro')"
+              @click="irAPlanes"
             >
               {{ t.pricing.btnPro }}
             </button>

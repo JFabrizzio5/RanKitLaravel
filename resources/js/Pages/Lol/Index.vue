@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Head, Link, useForm, router } from '@inertiajs/vue3'
+import PlanCupo from '@/Components/PlanCupo.vue'
 
 const props = defineProps<{
   tournaments: any[]
@@ -340,6 +341,8 @@ function swissConfigLabel(t: any) {
                   </div>
                 </div>
               </div>
+
+              <PlanCupo :error="(form.errors as Record<string, string>).plan" />
 
               <!-- Actions -->
               <div class="flex gap-3 pt-2">

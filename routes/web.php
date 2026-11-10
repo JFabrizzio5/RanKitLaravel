@@ -12,6 +12,8 @@ use App\Http\Controllers\TournamentController; // Dashboard Viejo
 use App\Http\Controllers\ProfilePageController; // Rankit
 use App\Http\Controllers\LolTournamentController; // LoL / Valorant
 use App\Http\Controllers\FootballController; // Futbol
+use App\Http\Controllers\PlanesController; // Planes de organizador
+use App\Http\Controllers\MercadoPagoWebhookController;
 
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -42,11 +44,14 @@ Route::get('/debug-role', function (\Illuminate\Http\Request $request) {
 
 // --- PAGINA DE INICIO ---
 Route::get('/', function () {
+    $catalogo = app(\App\Services\Planes\CatalogoPlanes::class);
+
     return Inertia::render('Inicio', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
+        'precios' => ['base' => $catalogo->precio('base'), 'pro' => $catalogo->precio('pro')],
     ]);
 })->name('Inicio');
 
@@ -138,14 +143,33 @@ Route::middleware(['auth'])->group(function () {
 // --- SELECTOR DE JUEGO ---
 Route::get('/game-selector', function () {
     return Inertia::render('GameSelector');
-})->middleware('auth')->name('game.selector');
+})->middleware(['auth', 'plan.organizador'])->name('game.selector');
+
+// --- PLANES DE ORGANIZADOR (cobro en línea) ---
+// Sin plan vigente no se entra a los paneles (middleware plan.organizador).
+Route::middleware('auth')->prefix('planes')->name('planes.')->group(function () {
+    Route::get('/', [PlanesController::class, 'index'])->name('index');
+    Route::post('/{plan}/pagar/{pasarela}', [PlanesController::class, 'pagar'])
+        ->whereIn('plan', ['base', 'pro'])
+        ->whereIn('pasarela', ['stripe', 'mercadopago'])
+        ->middleware('throttle:10,1')
+        ->name('pagar');
+    Route::get('/retorno/stripe', [PlanesController::class, 'retornoStripe'])->name('retorno.stripe');
+    Route::get('/retorno/mercadopago', [PlanesController::class, 'retornoMercadoPago'])->name('retorno.mercadopago');
+    Route::post('/renovacion/cancelar', [PlanesController::class, 'cancelarRenovacion'])->name('renovacion.cancelar');
+    Route::post('/renovacion/reanudar', [PlanesController::class, 'reanudarRenovacion'])->name('renovacion.reanudar');
+});
+// Notificaciones de Mercado Pago (las de Stripe las recibe Cashier en /stripe/webhook).
+Route::post('/mercadopago/webhook', MercadoPagoWebhookController::class)
+    ->middleware('throttle:120,1')
+    ->name('mercadopago.webhook');
 
 // --- LoL / VALORANT TORNEOS ---
 Route::get('/league', function () {
     return Inertia::render('RankitLeague');
 })->name('league');
 
-Route::middleware('auth')->prefix('lol')->name('lol.')->group(function () {
+Route::middleware(['auth', 'plan.organizador'])->prefix('lol')->name('lol.')->group(function () {
     Route::get('/',                               [LolTournamentController::class, 'index'])->name('index');
     Route::post('/',                              [LolTournamentController::class, 'store'])->name('store');
     Route::get('/{id}',                           [LolTournamentController::class, 'show'])->name('show');
@@ -172,7 +196,7 @@ Route::get('/lol/{id}/widget-data', [LolTournamentController::class, 'widgetData
 Route::get('/lol/{id}/ver',         [LolTournamentController::class, 'publicView'])->name('lol.public.view');
 
 // --- FUTBOL TORNEOS ---
-Route::middleware('auth')->prefix('football')->name('football.')->group(function () {
+Route::middleware(['auth', 'plan.organizador'])->prefix('football')->name('football.')->group(function () {
     Route::get('/',                               [FootballController::class, 'index'])->name('index');
     Route::post('/',                              [FootballController::class, 'store'])->name('store');
     Route::get('/{id}',                           [FootballController::class, 'show'])->name('show');
@@ -218,7 +242,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // --- PANEL ADMIN JANGEL ---
-    Route::prefix('admin')->group(function () {
+    // Solo con plan vigente (o exentos: superadmin y config planes.exentos).
+    Route::prefix('admin')->middleware('plan.organizador')->group(function () {
         // Vista Principal
         Route::get('/jangel', [TournamentParserController::class, 'index'])->name('jangel.indexdos');
         
@@ -288,6 +313,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
             Route::put('/users/{user}/role', [AdminUserController::class, 'updateRole'])->name('admin.users.role');
             Route::delete('/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
+            Route::post('/users/{user}/plan', [AdminUserController::class, 'otorgarPlan'])->name('admin.users.plan.grant');
+            Route::delete('/users/{user}/plan', [AdminUserController::class, 'revocarPlan'])->name('admin.users.plan.revoke');
         });
     });
 });

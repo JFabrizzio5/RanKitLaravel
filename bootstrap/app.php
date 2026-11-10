@@ -18,6 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'superadmin' => \App\Http\Middleware\SuperAdmin::class,
+            'plan.organizador' => \App\Http\Middleware\RequierePlanOrganizador::class,
+        ]);
+
+        // Las pasarelas no mandan token CSRF (se validan por firma).
+        $middleware->validateCsrfTokens(except: [
+            'stripe/*',
+            'mercadopago/webhook',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

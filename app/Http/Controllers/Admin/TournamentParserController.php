@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use App\Services\Planes\PlanOrganizador;
+use App\Services\Planes\SinCupoDeTorneos;
 
 class TournamentParserController extends Controller
 {
@@ -323,7 +325,13 @@ class TournamentParserController extends Controller
             $data['slug'] = Str::slug($request->name);
         }
 
-        DB::table('tournaments')->insert($data);
+        // Se descuenta del plan del organizador en la misma transacción.
+        try {
+            app(PlanOrganizador::class)->crearTorneo($user, 'fortnite', fn () => DB::table('tournaments')->insertGetId($data));
+        } catch (SinCupoDeTorneos $e) {
+            return back()->withErrors(['plan' => $e->getMessage()]);
+        }
+
         return redirect()->route('jangel.indexdos')->with('success', 'Torneo creado con éxito');
     }
 

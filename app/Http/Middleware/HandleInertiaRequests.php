@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Planes\PlanOrganizador;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -34,6 +35,8 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // Plan de organizador: si entra al admin y cuántos torneos le quedan.
+            'plan' => fn () => app(PlanOrganizador::class)->resumen($request->user()),
         ];
     }
 }

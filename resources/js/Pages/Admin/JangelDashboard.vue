@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3'
 import Modal from '@/Components/Modal.vue'
+import PlanCupo from '@/Components/PlanCupo.vue'
 import axios from 'axios'
 
 // --- TIPOS Y INTERFACES ---
@@ -1492,6 +1493,8 @@ const sendMatchCode = async (matchId: number) => {
                         </div>
                     </div>
                 </div>
+
+                <PlanCupo :error="(formCreateTournament.errors as Record<string, string>).plan" />
 
                 <div class="flex gap-2 pt-2">
                     <button @click="showCreateModal = false" class="flex-1 py-3 text-xs font-bold uppercase border border-gray-300 dark:border-gray-700">Cancelar</button>

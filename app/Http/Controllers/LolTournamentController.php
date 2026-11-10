@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Inertia\Inertia;
+use App\Services\Planes\PlanOrganizador;
+use App\Services\Planes\SinCupoDeTorneos;
 
 class LolTournamentController extends Controller
 {
@@ -291,7 +293,7 @@ class LolTournamentController extends Controller
         $isSwiss = $format === 'swiss_elimination';
         $isLeague = $format === 'league';
 
-        DB::table('lol_test_tournaments')->insert([
+        $datos = [
             'user_id'                    => auth()->id(),
             'name'                       => $request->name,
             'game'                       => $request->game,
@@ -306,7 +308,14 @@ class LolTournamentController extends Controller
             'league_points_loss'         => $isLeague ? ($request->league_points_loss ?? 0) : 0,
             'created_at'                 => now(),
             'updated_at'                 => now(),
-        ]);
+        ];
+
+        // Se descuenta del plan del organizador en la misma transacción.
+        try {
+            app(PlanOrganizador::class)->crearTorneo(auth()->user(), 'lol', fn () => DB::table('lol_test_tournaments')->insertGetId($datos));
+        } catch (SinCupoDeTorneos $e) {
+            return back()->withErrors(['plan' => $e->getMessage()]);
+        }
 
         return back()->with('success', 'Torneo creado.');
     }
