@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Inertia\Inertia;
+use App\Services\Planes\PlanOrganizador;
+use App\Services\Planes\SinCupoDeTorneos;
 
 class FootballController extends Controller
 {
@@ -175,7 +177,7 @@ class FootballController extends Controller
             'format' => 'required|in:elimination,league',
         ]);
         
-        $id = DB::table('football_tournaments')->insertGetId([
+        $datos = [
             'user_id' => auth()->id(),
             'name' => $request->name,
             'game' => 'football',
@@ -186,7 +188,14 @@ class FootballController extends Controller
             'elimination_teams' => $request->elimination_teams ?? 4,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+
+        // Se descuenta del plan del organizador en la misma transacción.
+        try {
+            $id = app(PlanOrganizador::class)->crearTorneo(auth()->user(), 'football', fn () => DB::table('football_tournaments')->insertGetId($datos));
+        } catch (SinCupoDeTorneos $e) {
+            return back()->withErrors(['plan' => $e->getMessage()]);
+        }
         return redirect()->route('football.show', $id);
     }
 

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Planes\PlanOrganizador;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -26,6 +28,9 @@ class AdminUserController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(15)
             ->withQueryString();
+
+        $planes = app(PlanOrganizador::class);
+        $users->getCollection()->each(fn (User $u) => $u->setAttribute('plan', $planes->resumen($u)));
 
         return Inertia::render('Admin/UserManagement', [
             'users'  => $users,
@@ -71,5 +76,37 @@ class AdminUserController extends Controller
         $user->update(['role' => $request->role]);
 
         return back()->with('success', 'Rol actualizado.');
+    }
+
+    /**
+     * Activa un plan a mano (pago por transferencia, cortesía, reposición).
+     * Queda registrado como proveedor "manual" con quién lo dio.
+     */
+    public function otorgarPlan(Request $request, User $user, PlanOrganizador $planes)
+    {
+        $datos = $request->validate([
+            'plan' => ['required', 'in:base,pro'],
+            'dias' => ['required', 'integer', 'min:1', 'max:366'],
+        ]);
+
+        $planes->registrarPago(
+            userId: $user->id,
+            plan: $datos['plan'],
+            proveedor: 'manual',
+            referencia: 'manual:'.Str::uuid(),
+            monto: 0,
+            fin: now()->addDays((int) $datos['dias']),
+            notas: 'Otorgado por '.$request->user()->email,
+        );
+
+        return back()->with('success', 'Plan activado.');
+    }
+
+    /** Termina ya los planes vigentes del usuario. */
+    public function revocarPlan(User $user, PlanOrganizador $planes)
+    {
+        $planes->revocarTodo($user);
+
+        return back()->with('success', 'Plan terminado.');
     }
 }

@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PlanCupo from '@/Components/PlanCupo.vue';
 import { ref } from 'vue';
 
 const props = defineProps({
@@ -102,6 +103,8 @@ const submit = () => {
                             <option value="league">Liga (Todos contra Todos)</option>
                         </select>
                     </div>
+
+                    <PlanCupo :error="form.errors.plan" />
 
                     <div class="pt-4 flex justify-end gap-3">
                         <button type="button" @click="showModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancelar</button>
