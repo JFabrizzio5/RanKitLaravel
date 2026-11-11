@@ -176,3 +176,7 @@ it('sirve robots.txt con el sitemap y las rutas bloqueadas', function () {
 it('ya no truena /tournaments: manda a la sección de torneos', function () {
     $this->get('/tournaments')->assertRedirect('/torneos');
 });
+
+it('sirve /favicon.ico (en el hosting la raíz no es public/)', function () {
+    $this->get('/favicon.ico')->assertOk()->assertHeader('Content-Type', 'image/x-icon');
+});
