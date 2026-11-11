@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import EstadoInscripcion from '@/Components/EstadoInscripcion.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import type { TorneoInscrito } from '@/types/inscripciones';
 
 const props = defineProps<{
-    misTorneos: any[];
+    // Inscripciones del jugador ya resueltas por MisInscripciones (misma lista que /mis-torneos).
+    misTorneos: TorneoInscrito[];
     torneosPublicos: any[];
 }>();
 
@@ -86,7 +89,7 @@ const dynamicLeagueTournaments = computed(() => {
                             Gestiona tus torneos, explora ligas públicas y compite al más alto nivel. Todo tu ecosistema competitivo en un solo lugar.
                         </p>
                     </div>
-                    <div class="shrink-0 flex gap-4" v-if="!($page.props.plan as any)?.activo">
+                    <div class="shrink-0 flex gap-4" v-if="!($page.props.plan as any)?.administra">
                         <Link :href="route('planes.index')" class="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-sm rounded hover:bg-gray-200 transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.2)]" style="transform: skewX(-10deg);">
                             <span style="transform: skewX(10deg);" class="block flex items-center gap-2">
                                 <i class="ph-bold ph-trophy"></i> ORGANIZA TU TORNEO
@@ -96,7 +99,8 @@ const dynamicLeagueTournaments = computed(() => {
                     <div class="shrink-0 flex gap-4" v-else>
                         <Link href="/game-selector" class="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-sm rounded hover:bg-gray-200 transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.2)]" style="transform: skewX(-10deg);">
                             <span style="transform: skewX(10deg);" class="block flex items-center gap-2">
-                                <i class="ph-bold ph-plus"></i> CREAR TORNEO
+                                <template v-if="($page.props.plan as any)?.activo"><i class="ph-bold ph-plus"></i> CREAR TORNEO</template>
+                                <template v-else><i class="ph-bold ph-squares-four"></i> MI PANEL</template>
                             </span>
                         </Link>
                     </div>
@@ -192,26 +196,20 @@ const dynamicLeagueTournaments = computed(() => {
                             <p class="text-xs text-gray-500 uppercase font-bold tracking-widest mt-1">Donde estás compitiendo</p>
                         </div>
                         <div class="flex-1 h-px bg-white/5 ml-4"></div>
+                        <Link :href="route('mis-torneos')" class="shrink-0 text-[10px] font-bold text-gray-400 uppercase tracking-widest hover:text-[var(--rankit-neon)] transition-colors flex items-center gap-2">
+                            Ver todos <i class="ph-bold ph-arrow-right"></i>
+                        </Link>
                     </div>
-                    
+
+                    <!-- Solo los primeros: la lista viene con los próximos arriba; el resto está en /mis-torneos -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div v-for="t in misTorneos" :key="t.id" class="bg-gradient-to-br from-[#1a0a2e] to-[#0a0414] border border-purple-500/20 p-6 rounded hover:border-purple-500/50 transition-colors flex flex-col justify-between">
+                        <div v-for="t in misTorneos.slice(0, 3)" :key="t.id" class="bg-gradient-to-br from-[#1a0a2e] to-[#0a0414] border border-purple-500/20 p-6 rounded hover:border-purple-500/50 transition-colors flex flex-col justify-between">
                             <div>
-                                <h3 class="text-lg font-bold text-white uppercase font-display italic tracking-wide mb-2">{{ t.name }}</h3>
-                                
-                                <div class="grid grid-cols-2 gap-2 my-4">
-                                    <div class="bg-black/30 p-2 rounded text-center">
-                                        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Partidas</div>
-                                        <div class="text-lg font-black text-white font-chakra">0</div>
-                                    </div>
-                                    <div class="bg-black/30 p-2 rounded text-center">
-                                        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Win Rate</div>
-                                        <div class="text-lg font-black text-white font-chakra">0%</div>
-                                    </div>
-                                </div>
+                                <h3 class="text-lg font-bold text-white uppercase font-display italic tracking-wide mb-3">{{ t.nombre }}</h3>
+                                <EstadoInscripcion :estado="t.estado" compacto oscuro class="mb-4" />
                             </div>
-                            <Link :href="`/t/${t.id}`" class="inline-block text-center bg-white text-black font-bold text-xs py-2 px-4 uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all rounded w-full">
-                                Ver Mi Posición
+                            <Link :href="t.url" class="inline-block text-center bg-white text-black font-bold text-xs py-2 px-4 uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all rounded w-full">
+                                {{ t.proximo ? 'Ver torneo' : 'Ver resultados' }}
                             </Link>
                         </div>
                     </div>

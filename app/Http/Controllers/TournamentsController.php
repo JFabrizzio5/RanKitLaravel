@@ -10,8 +10,80 @@ use Illuminate\Http\Response as HttpResponse;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use App\Support\Seo;
 class TournamentsController extends Controller
 {
+    /**
+     * /tournaments (enlace viejo, también en la barra de Semanales): ahora
+     * hay listado propio en /torneos.
+     */
+    public function index(): \Illuminate\Http\RedirectResponse
+    {
+        return redirect('/torneos', 301);
+    }
+
+    /**
+     * /torneos: todos los torneos públicos para que un jugador encuentre dónde
+     * entrar. Sin privados (van por código) y sin las fechas hijas de un torneo
+     * seriado (se ven dentro del principal). Nunca manda access_code.
+     */
+    public function lista(): Response
+    {
+        $torneos = [];
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('tournaments')) {
+            $inscritos = \Illuminate\Support\Facades\Schema::hasTable('tournament_registrations')
+                ? DB::table('tournament_registrations')->select('tournament_id', DB::raw('count(*) as total'))->groupBy('tournament_id')->pluck('total', 'tournament_id')
+                : collect();
+            $partidas = \Illuminate\Support\Facades\Schema::hasTable('tournament_matches')
+                ? DB::table('tournament_matches')->select('tournament_id', DB::raw('count(*) as total'))->groupBy('tournament_id')->pluck('total', 'tournament_id')
+                : collect();
+            $ahora = Carbon::now();
+
+            $torneos = DB::table('tournaments')
+                ->where(fn ($q) => $q->whereNull('is_private')->orWhere('is_private', false))
+                ->whereNull('parent_tournament_id')
+                ->orderByDesc('created_at')
+                ->limit(300)
+                ->get()
+                ->map(function ($t) use ($inscritos, $partidas, $ahora) {
+                    $inicio = !empty($t->start_date ?? null) ? Carbon::parse($t->start_date) : null;
+                    $estado = ($t->registration_status ?? '') === 'open'
+                        ? 'abierto'
+                        : ($inicio && $inicio->isAfter($ahora) ? 'proximo' : 'jugado');
+
+                    return [
+                        'id' => (int) $t->id,
+                        'nombre' => (string) $t->name,
+                        'url' => '/t/' . ($t->slug ?: $t->id),
+                        'imagen' => !empty($t->banner_image) ? asset('public/' . $t->banner_image) : null,
+                        'logo' => !empty($t->logo_image ?? null) ? asset('public/' . $t->logo_image) : null,
+                        'estado' => $estado,
+                        'fecha' => $inicio?->toIso8601String(),
+                        'fecha_texto' => $t->date_label ?? null,
+                        'gratis' => (bool) ($t->is_free ?? false),
+                        'precio' => $t->ticket_price ?? null,
+                        'inscritos' => (int) ($inscritos[$t->id] ?? 0),
+                        'partidas' => (int) ($partidas[$t->id] ?? 0),
+                        'creado' => $t->created_at,
+                    ];
+                })
+                // Primero lo que se puede jugar: abiertos, luego próximos, luego el resto.
+                ->sortBy(fn ($t) => ['abierto' => 0, 'proximo' => 1, 'jugado' => 2][$t['estado']])
+                ->values()
+                ->all();
+        }
+
+        $catalogo = app(\App\Services\Planes\CatalogoPlanes::class);
+
+        return Inertia::render('Torneos/Index', [
+            'torneos' => $torneos,
+            'precioBase' => $catalogo->precio('base'),
+            'precioPro' => $catalogo->precio('pro'),
+            'seo' => Seo::pagina('torneos'),
+        ]);
+    }
+
     /**
      * Muestra el detalle de un torneo (/tournaments/{id})
      */
@@ -91,6 +163,7 @@ if ($user) {
             'prizeDistribution' => $prizeDistribution,
             'targetDate'        => $targetDate,
             'totalPoints' => $totalPoints,
+            'seo'               => Seo::torneo($dbTournament),
         ]);
     }
 }

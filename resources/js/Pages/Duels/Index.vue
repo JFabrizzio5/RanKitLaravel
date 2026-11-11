@@ -141,11 +141,8 @@ onMounted(() => {
 </script>
 
 <template>
+    <!-- Título, description y Open Graph salen del servidor (prop seo, App\Support\Seo). -->
     <Head title="1v1 y Wagers | Rankit">
-        <meta
-            name="description"
-            content="Cobro de inscripciones dentro de la plataforma, duelos 1v1 con bolsa y wagers entre equipos. Lo que viene en Rankit para organizadores, streamers y negocios."
-        />
         <link
             href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Archivo:wght@300;400;600;800&display=swap"
             rel="stylesheet"

@@ -1,0 +1,9 @@
+/* Reglas que necesitan las animaciones en cualquier página (todas las propuestas). */
+
+/* La itálica se sale de su caja: la máscara de SplitText necesita aire o corta las letras. */
+.linea-mask { padding: 0.04em 0.14em 0.06em; margin: -0.04em -0.14em -0.06em; }
+
+/* Mientras arranca el hero, lo que entra con la intro no se ve.
+   Si el JS falla, se muestra igual a los 3 s. */
+.preparando [data-intro] { visibility: hidden; animation: mostrar-intro 0s 3s forwards; }
+@keyframes mostrar-intro { to { visibility: visible; } }

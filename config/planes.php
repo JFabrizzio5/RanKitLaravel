@@ -36,6 +36,16 @@ return [
         ],
     ],
 
+    // Cada torneo creado con un plan se puede seguir administrando (replays,
+    // resultados, tabla) estos días después de crearlo, aunque el plan venza
+    // antes. Crear otro sí pide plan vigente. 0 = el panel se cierra al vencer.
+    'gracia_torneo_dias' => (int) env('PLANES_GRACIA_TORNEO_DIAS', 30),
+
+    // Con cuántos días de anticipación se avisa (correo una vez y aviso en la
+    // app) que se van a perder tickets sin usar o que termina un Gestor Pro
+    // que no se renueva. 0 = sin avisos.
+    'aviso_vencimiento_dias' => (int) env('PLANES_AVISO_VENCIMIENTO_DIAS', 3),
+
     // Comisión por cobro exitoso (cobro inmediato, tarjeta nacional). El IVA se
     // aplica sobre la comisión, no sobre el precio.
     'comisiones' => [

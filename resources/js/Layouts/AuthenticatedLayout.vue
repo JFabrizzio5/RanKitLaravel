@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { Link, usePage, Head } from '@inertiajs/vue3';
-import Dropdown from '@/Components/Dropdown.vue';
-import DropdownLink from '@/Components/DropdownLink.vue';
-import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
+import MenuCuenta from '@/Components/MenuCuenta.vue';
+import AvisoVencimiento from '@/Components/AvisoVencimiento.vue';
 
 // --- Lógica de Usuario (Breeze) ---
-const showingNavigationDropdown = ref(false);
 const page = usePage();
 const user = computed(() => page.props.auth?.user || null);
 
@@ -76,77 +74,13 @@ onMounted(() => {
                             </div>
                     </div>
 
-                    <div class="hidden gap-4 sm:flex sm:items-center sm:ms-6">
-                        
-                        <button @click="toggleTheme" class="p-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-[var(--rankit-neon)] dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700">
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <button @click="toggleTheme" class="p-2 text-gray-500 transition-colors border border-transparent rounded-lg hover:text-[var(--rankit-neon)] dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700" aria-label="Cambiar tema">
                             <i v-if="isDark" class="text-xl ph-fill ph-sun"></i>
                             <i v-else class="text-xl ph-fill ph-moon"></i>
                         </button>
 
-                        <div class="relative ms-3">
-                            <Dropdown align="right" width="48">
-                                <template #trigger>
-                                    <span class="inline-flex rounded-md">
-                                        <button
-                                            type="button"
-                                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold tracking-wider text-black uppercase transition duration-150 ease-in-out bg-white border border-gray-200 rounded-md dark:text-white dark:bg-[#0a0a0a] dark:border-gray-700 hover:border-[var(--rankit-neon)] focus:outline-none"
-                                        >
-                                            {{ user?.name }}
-                                            <i class="ph-bold ph-caret-down"></i>
-                                        </button>
-                                    </span>
-                                </template>
-
-                                <template #content>
-                                    <div class="p-1">
-                                        <DropdownLink :href="route('profile.edit')">
-                                            <span class="flex items-center gap-2"><i class="ph ph-user"></i> Profile</span>
-                                        </DropdownLink>
-                                        <DropdownLink :href="route('logout')" method="post" as="button">
-                                            <span class="flex items-center gap-2 text-red-500"><i class="ph ph-sign-out"></i> Log Out</span>
-                                        </DropdownLink>
-                                    </div>
-                                </template>
-                            </Dropdown>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center -me-2 sm:hidden">
-                        <button
-                            @click="showingNavigationDropdown = !showingNavigationDropdown"
-                            class="inline-flex items-center justify-center p-2 text-gray-400 transition duration-150 ease-in-out rounded-md hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-900 focus:outline-none"
-                        >
-                            <svg class="w-6 h-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-                                <path
-                                    :class="{ hidden: showingNavigationDropdown, inline: !showingNavigationDropdown }"
-                                    stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"
-                                />
-                                <path
-                                    :class="{ hidden: !showingNavigationDropdown, inline: showingNavigationDropdown }"
-                                    stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"
-                                />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div :class="{ block: showingNavigationDropdown, hidden: !showingNavigationDropdown }" class="sm:hidden border-b border-gray-700 bg-[#050505]">
-                <div class="pt-2 pb-3 space-y-1">
-                    <ResponsiveNavLink :href="route('dashboard')" :active="route().current('dashboard')">
-                        Dashboard
-                    </ResponsiveNavLink>
-                </div>
-
-                <div class="pt-4 pb-1 border-t border-gray-700">
-                    <div class="px-4">
-                        <div class="text-base font-medium text-white">{{ user?.name }}</div>
-                        <div class="text-sm font-medium text-gray-400">{{ user?.email }}</div>
-                    </div>
-
-                    <div class="mt-3 space-y-1">
-                        <ResponsiveNavLink :href="route('profile.edit')"> Profile </ResponsiveNavLink>
-                        <ResponsiveNavLink :href="route('logout')" method="post" as="button"> Log Out </ResponsiveNavLink>
+                        <MenuCuenta v-if="user" />
                     </div>
                 </div>
             </div>
@@ -167,6 +101,8 @@ onMounted(() => {
                 </div>
             </div>
         </main>
+
+        <AvisoVencimiento v-if="user" />
     </div>
 </template>
 

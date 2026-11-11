@@ -37,6 +37,9 @@ class PlanesController extends Controller
             'resultado' => $request->query('pago'),
             'cancelado' => $request->boolean('cancelado'),
             'motivo' => $request->query('motivo'),
+            // Desde el menú de la cuenta: qué tarjeta resaltar ("mas" = otro pase Base).
+            'quiero' => in_array($request->query('quiero'), ['mas', 'pro'], true) ? $request->query('quiero') : null,
+            'graciaDias' => (int) config('planes.gracia_torneo_dias', 0),
         ]);
     }
 
@@ -45,18 +48,23 @@ class PlanesController extends Controller
         $user = $request->user();
 
         if (!$this->catalogo->existe($plan) || !in_array($pasarela, $this->catalogo->pasarelasDisponibles(), true)) {
-            return back()->withErrors(['pago' => 'Ese método de pago no está disponible.']);
+            return $this->errorDePago(['pago' => 'Ese método de pago no está disponible.']);
         }
 
         $resumen = $this->planes->resumen($user);
         if ($resumen['exento']) {
-            return back()->withErrors(['pago' => 'Tu cuenta no necesita plan: tiene torneos ilimitados.']);
+            return $this->errorDePago(['pago' => 'Tu cuenta no necesita plan: tiene torneos ilimitados.']);
         }
         if ($resumen['ilimitado'] && $resumen['renueva']) {
-            return back()->withErrors(['pago' => 'Ya tienes Gestor Pro y se renueva solo cada mes.']);
+            return $this->errorDePago(['pago' => 'Ya tienes Gestor Pro y se renueva solo cada mes.']);
         }
         if ($resumen['ilimitado'] && $plan === 'base') {
-            return back()->withErrors(['pago' => 'Ya tienes torneos ilimitados con Gestor Pro.']);
+            return $this->errorDePago(['pago' => 'Ya tienes torneos ilimitados con Gestor Pro.']);
+        }
+        // Con la renovación cancelada la suscripción sigue viva hasta fin de mes:
+        // otra compra abriría una segunda suscripción y se cobrarían las dos.
+        if ($plan === 'pro' && collect($resumen['periodos'])->contains(fn (array $p) => $p['suscripcion'])) {
+            return $this->errorDePago(['pago' => 'Ya tienes una suscripción a Gestor Pro: reanuda la renovación en vez de pagar otra.']);
         }
 
         try {
@@ -66,7 +74,7 @@ class PlanesController extends Controller
         } catch (Throwable $e) {
             Log::error('Planes: no se pudo iniciar el cobro', ['pasarela' => $pasarela, 'plan' => $plan, 'error' => $e->getMessage()]);
 
-            return back()->withErrors(['pago' => 'No pudimos abrir el pago. Intenta de nuevo en un momento.']);
+            return $this->errorDePago(['pago' => 'No pudimos abrir el pago. Intenta de nuevo en un momento.']);
         }
 
         // Inertia::location hace la redirección completa a la pasarela.
@@ -139,5 +147,15 @@ class PlanesController extends Controller
         }
 
         return back();
+    }
+
+    /**
+     * Los cobros también se abren desde el menú de la cuenta, el perfil y el
+     * panel ("Recargar"); los errores se muestran en /planes, que es donde
+     * se leen, y no en la página de donde vino.
+     */
+    private function errorDePago(array $errores)
+    {
+        return redirect()->route('planes.index')->withErrors($errores);
     }
 }

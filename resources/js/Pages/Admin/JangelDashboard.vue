@@ -71,6 +71,9 @@ const isJangel = computed(() => {
     return user.role === 'admin' || user.role === 'superadmin' || ['jangel@ejemplo.com', 'admin@jangel.pro', '18jangel18@gmail.com'].includes(user.email);
 });
 
+// Igual que User::isSuperAdmin(): /admin/users solo deja pasar a superadmin (403 al resto).
+const esSuperAdmin = computed(() => user.role === 'superadmin' || user.email === '18jangel18@gmail.com');
+
 // --- THEME & UTILS ---
 const isDark = ref(true);
 
@@ -228,6 +231,21 @@ const formCreateTournament = useForm({
 const formBanner = useForm({
     banner: null as File | null,
 });
+
+// Logo del torneo: sale abajo del widget de OBS junto al de rankit.pro.
+const formLogo = useForm({
+    logo: null as File | null,
+});
+const subirLogo = (e: Event) => {
+    const archivo = (e.target as HTMLInputElement).files?.[0];
+    if (!archivo || !selectedTournament.value) return;
+    formLogo.logo = archivo;
+    formLogo.post(route('jangel.tournament.logo', selectedTournament.value.id), {
+        forceFormData: true,
+        onSuccess: () => { formLogo.reset(); alert('✅ Logo del torneo actualizado. Ya sale en el widget.'); },
+        onError: (err) => alert('Error al subir el logo: ' + JSON.stringify(err)),
+    });
+};
 
 // --- CANCHAS (PITCHES) STATE ---
 interface Pitch {
@@ -789,7 +807,8 @@ const handleAppealFileUpload = (event: Event) => {
 const submitAppeal = () => {
     if (!formAppeal.replay || !selectedTournament.value) return;
     // Usamos ID del torneo en ruta
-    formAppeal.post(route('tournament.appeal', selectedTournament.value.id), {
+    // 'tournament.appeal' no existe (Ziggy tronaba al enviar); la ruta real es jangel.match.appeal.
+    formAppeal.post(route('jangel.match.appeal', selectedTournament.value.id), {
         onProgress: (progress) => { uploadProgress.value = progress?.percentage || 0; },
         onSuccess: () => {
             showAppealModal.value = false;
@@ -985,7 +1004,7 @@ const sendMatchCode = async (matchId: number) => {
     </div>
 
     <!-- Navbar -->
-    <nav class="fixed z-50 flex items-center justify-between w-full h-20 px-6 transition-all duration-300 border-b lg:px-12 backdrop-blur-md top-14 bg-white/90 border-gray-200 dark:bg-[#050505]/95 dark:border-white/10">
+    <nav class="fixed z-50 flex items-center justify-between w-full h-20 px-4 sm:px-6 transition-all duration-300 border-b lg:px-12 backdrop-blur-md top-14 bg-white/90 border-gray-200 dark:bg-[#050505]/95 dark:border-white/10">
       <Link href="/" class="flex items-center gap-3 cursor-pointer group">
         <svg class="w-8 h-8 text-black dark:text-white group-hover:text-[var(--rankit-neon)] transition-colors" viewBox="0 0 100 100" fill="none">
           <path d="M15 10 L40 10 L30 90 L5 90 Z" fill="currentColor" />
@@ -995,8 +1014,9 @@ const sendMatchCode = async (matchId: number) => {
         <span class="text-2xl italic font-bold tracking-tighter text-black uppercase font-display dark:text-white">Rankit</span>
       </Link>
 
-      <div class="flex items-center gap-4">
-        <Link :href="route('admin.users.index')" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-yellow-500 uppercase transition-all border rounded-lg border-yellow-500/20 hover:bg-yellow-500 hover:text-black hover:border-yellow-500">
+      <!-- En 375 px "Salir" quedaba fuera de la pantalla: menos espacio en móvil -->
+      <div class="flex items-center gap-2 sm:gap-4">
+        <Link v-if="esSuperAdmin" :href="route('admin.users.index')" class="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs font-bold text-yellow-500 uppercase transition-all border rounded-lg border-yellow-500/20 hover:bg-yellow-500 hover:text-black hover:border-yellow-500">
             <i class="text-lg ph-bold ph-users"></i>
             <span class="hidden sm:inline">Usuarios</span>
         </Link>
@@ -1006,12 +1026,12 @@ const sendMatchCode = async (matchId: number) => {
           <i v-else class="text-xl ph-fill ph-moon"></i>
         </button>
 
-        <Link :href="route('game.selector')" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-purple-500 uppercase transition-all border rounded-lg border-purple-500/20 hover:bg-purple-500 hover:text-white hover:border-purple-500">
+        <Link :href="route('game.selector')" class="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs font-bold text-purple-500 uppercase transition-all border rounded-lg border-purple-500/20 hover:bg-purple-500 hover:text-white hover:border-purple-500">
             <i class="text-lg ph-bold ph-game-controller"></i>
             <span class="hidden sm:inline">Juegos</span>
         </Link>
 
-        <Link :href="route('logout')" method="post" as="button" class="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-500 uppercase transition-all border rounded-lg border-red-500/20 hover:bg-red-500 hover:text-white hover:border-red-500 group">
+        <Link :href="route('logout')" method="post" as="button" class="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs font-bold text-red-500 uppercase transition-all border rounded-lg border-red-500/20 hover:bg-red-500 hover:text-white hover:border-red-500 group">
             <i class="text-lg ph-bold ph-sign-out"></i>
             <span class="hidden sm:inline">Salir</span>
         </Link>
@@ -1195,6 +1215,23 @@ const sendMatchCode = async (matchId: number) => {
               <button @click="copyGlobalObsLink" class="px-4 py-2 text-[10px] font-bold uppercase border hover:border-[var(--rankit-neon)] transition flex items-center justify-center gap-2 mx-auto text-black dark:text-white border-gray-300 dark:border-gray-600 bg-white dark:bg-black w-full">
                 <i class="ph ph-copy"></i> Copiar Link {{ searchQuery ? '(Filtrado)' : '(General)' }}
               </button>
+
+              <!-- Armar el widget con vista previa: tema, color, filas, título y logos -->
+              <a v-if="selectedTournament" :href="`/widget/obs/${selectedTournament.id}/personalizar`" target="_blank" rel="noopener"
+                 class="mt-2 px-4 py-2 text-[10px] font-bold uppercase text-white bg-[var(--rankit-neon)] hover:opacity-90 transition flex items-center justify-center gap-2 w-full">
+                <i class="ph ph-paint-brush"></i> Personalizar widget (colores, logos)
+              </a>
+            </div>
+
+            <!-- Logo del torneo para el pie del widget -->
+            <div class="p-3 border border-gray-300 border-dashed rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-black/20">
+              <div class="text-[10px] uppercase font-bold text-gray-500 mb-1">Logo del torneo</div>
+              <p class="mb-2 text-[10px] text-gray-500">Sale abajo del widget junto a rankit.pro. Mejor en PNG con fondo transparente.</p>
+              <label class="px-4 py-2 text-[10px] font-bold uppercase border hover:border-[var(--rankit-neon)] transition flex items-center justify-center gap-2 text-black dark:text-white border-gray-300 dark:border-gray-600 bg-white dark:bg-black w-full cursor-pointer"
+                     :class="{ 'opacity-50 pointer-events-none': formLogo.processing }">
+                <i class="ph ph-image"></i> {{ formLogo.processing ? 'Subiendo…' : 'Subir logo' }}
+                <input type="file" accept="image/png,image/webp,image/jpeg" class="hidden" @change="subirLogo" />
+              </label>
             </div>
           </div>
 

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Admin\TournamentParserController;
+use App\Support\EsquemaInscripciones;
+use App\Support\Seo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -61,11 +63,11 @@ class SemanalesController extends Controller
     ];
 
     /** Bolsa de cada semanal: base y la que aplica si se llena el lobby. */
-    private const PREMIO_BASE  = 250;
-    private const PREMIO_LLENO = 500;
+    public const PREMIO_BASE  = 250;
+    public const PREMIO_LLENO = 500;
 
     /** Jugadores que tiene que haber para que la bolsa suba a PREMIO_LLENO. */
-    private const CUPO_LLENO = 100;
+    public const CUPO_LLENO = 100;
 
     /** Cache local de columnas ya verificadas (evita golpear el information_schema de más). */
     private array $colCache = [];
@@ -111,6 +113,9 @@ class SemanalesController extends Controller
                     $table->string('epic_id')->nullable();
                 });
             }
+
+            // La inscripción se liga a la cuenta (user_id), no solo al correo.
+            EsquemaInscripciones::asegurar();
 
             $this->colCache = []; // Se agregaron columnas: invalidamos el cache.
         } catch (\Throwable $e) {
@@ -530,6 +535,7 @@ class SemanalesController extends Controller
                 'ownerEmail'   => null,
                 'canRegister'  => false,
                 'errorMessage' => $errorMessage,
+                'seo'          => Seo::pagina('semanales'),
             ]);
         }
 
@@ -609,6 +615,7 @@ class SemanalesController extends Controller
             'errorMessage' => $errorMessage,
             // Habilita las acciones de administración en la página (avisar cambio de fecha).
             'isAdmin'      => $this->userIsAdmin(),
+            'seo'          => Seo::pagina('semanales'),
         ]);
     }
 
@@ -748,7 +755,7 @@ class SemanalesController extends Controller
                 $fila['epic_id'] = $epicId;
             }
 
-            DB::table('tournament_registrations')->insert($fila);
+            DB::table('tournament_registrations')->insert(EsquemaInscripciones::conUsuario($fila, $user));
         } catch (\Throwable $e) {
             Log::warning('[Semanales] No se pudo guardar la inscripción: ' . $e->getMessage());
 

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
-import { Head, Link, router, usePage } from '@inertiajs/vue3'
-import { computed, ref } from 'vue'
+import TarjetaPlan from '@/Components/TarjetaPlan.vue'
+import { Head, router, usePage } from '@inertiajs/vue3'
+import { computed, onMounted, ref } from 'vue'
+import { fechaLarga, usePlan } from '@/Composables/usePlan'
 
 type Plan = {
   clave: 'base' | 'pro'
@@ -12,31 +14,19 @@ type Plan = {
   recurrente: boolean
 }
 
-type Resumen = {
-  exento: boolean
-  activo: boolean
-  ilimitado: boolean
-  plan: 'base' | 'pro' | null
-  torneos_restantes: number | null
-  vence: string | null
-  renueva: boolean
-  periodos: { id: number; plan: string; proveedor: string; limite: number | null; usados: number; vence: string; renueva: boolean; suscripcion: string | null }[]
-}
-
 const props = defineProps<{
   planes: Plan[]
   pasarelas: ('stripe' | 'mercadopago')[]
   resultado: 'activo' | 'pendiente' | 'fallido' | 'revocado' | null
   cancelado: boolean
   motivo: string | null
+  quiero: 'mas' | 'pro' | null
+  graciaDias: number
 }>()
 
 const page = usePage()
-const plan = computed(() => page.props.plan as Resumen | null)
 const errorPago = computed(() => (page.props.errors as Record<string, string>)?.pago)
-
-// Suscripción de Stripe vigente (la única que se puede cancelar o reanudar).
-const suscripcion = computed(() => plan.value?.periodos.find((p) => p.suscripcion) ?? null)
+const { plan, suscripcion, cupo, tieneBase } = usePlan()
 
 const enviando = ref<string | null>(null)
 
@@ -47,14 +37,8 @@ function pagar(clave: string, pasarela: string) {
   })
 }
 
-function cambiarRenovacion(renovar: boolean) {
-  if (!renovar && !confirm('Tu plan sigue activo hasta que termine el mes pagado y ya no se cobra otra vez. ¿Cancelar la renovación?')) return
-  router.post(route(renovar ? 'planes.renovacion.reanudar' : 'planes.renovacion.cancelar'), {}, { preserveScroll: true })
-}
-
-function fecha(iso: string | null) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
+function reanudar() {
+  router.post(route('planes.renovacion.reanudar'), {}, { preserveScroll: true })
 }
 
 const dinero = (n: number) => '$' + n.toLocaleString('es-MX')
@@ -65,19 +49,59 @@ const aviso = computed(() => {
   if (props.resultado === 'fallido') return { tono: 'error', texto: 'El pago no se completó. No se hizo ningún cargo; puedes intentarlo otra vez.' }
   if (props.resultado === 'revocado') return { tono: 'error', texto: 'Ese pago fue reembolsado, así que el plan ya no está activo.' }
   if (props.cancelado) return { tono: 'espera', texto: 'Cancelaste el pago. No se hizo ningún cargo.' }
+  if (props.motivo === 'sin-cupo' && tieneBase.value && cupo.value.restantes === 0) return { tono: 'espera', texto: 'Ya no tienes tickets de torneo. Recarga para crear más o sube a Gestor Pro para tener torneos ilimitados.' }
   if (props.motivo === 'sin-plan' && !plan.value?.activo) return { tono: 'espera', texto: 'Para crear y administrar torneos necesitas un plan activo.' }
   return null
 })
 
-const nombrePasarela: Record<string, string> = {
-  stripe: 'Pagar con tarjeta',
-  mercadopago: 'Mercado Pago',
+// Qué hace cada botón según el plan que ya tiene.
+type Boton = { texto: string; accion: 'pagar' | 'reanudar' | null }
+
+function boton(p: Plan, pasarela: string): Boton {
+  const enStripe = pasarela === 'stripe'
+  if (p.clave === 'base') {
+    if (plan.value?.ilimitado) return { texto: 'Ya tienes torneos ilimitados', accion: null }
+    if (tieneBase.value) return { texto: enStripe ? `Recargar ${p.torneos} tickets` : 'Mercado Pago', accion: 'pagar' }
+    return { texto: enStripe ? 'Pagar con tarjeta' : 'Mercado Pago', accion: 'pagar' }
+  }
+  if (suscripcion.value?.renueva) return { texto: 'Es tu plan actual', accion: null }
+  if (suscripcion.value) return { texto: 'Reanudar renovación', accion: 'reanudar' }
+  if (tieneBase.value) return { texto: enStripe ? 'Subir a Gestor Pro' : 'Mercado Pago', accion: 'pagar' }
+  return { texto: enStripe ? 'Suscribirme con tarjeta' : 'Mercado Pago', accion: 'pagar' }
 }
 
-function etiquetaBoton(p: Plan, pasarela: string) {
-  if (p.clave === 'pro' && pasarela === 'stripe') return 'Suscribirme con tarjeta'
-  return nombrePasarela[pasarela]
+function pulsar(p: Plan, pasarela: string) {
+  const b = boton(p, pasarela)
+  if (b.accion === 'pagar') pagar(p.clave, pasarela)
+  if (b.accion === 'reanudar') reanudar()
 }
+
+// Nota bajo los botones cuando ya hay un plan y conviene saber qué pasa al comprar.
+function nota(p: Plan): string {
+  const pl = plan.value
+  if (!pl?.activo || pl.exento) return ''
+  if (p.clave === 'base' && tieneBase.value) {
+    const n = cupo.value.restantes
+    const tienes = n === 0 ? 'No te quedan tickets' : `Tienes ${n} ${n === 1 ? 'ticket' : 'tickets'}`
+    return `${tienes}; con la recarga suman ${n + (p.torneos ?? 0)}. Los nuevos vencen en ${p.dias} días.`
+  }
+  if (p.clave === 'pro' && tieneBase.value) {
+    return 'Desde hoy tus torneos son ilimitados. Lo que te quedaba del pase Base no se reembolsa ni se descuenta.'
+  }
+  if (p.clave === 'pro' && pl.ilimitado && !suscripcion.value) {
+    return `Tu acceso Pro sigue hasta el ${fechaLarga(pl.vence)}. Si te suscribes ahora, el primer mes empieza hoy.`
+  }
+  if (p.clave === 'pro' && suscripcion.value && !suscripcion.value.renueva) {
+    return `Cancelaste la renovación: el plan termina el ${fechaLarga(suscripcion.value.vence)}. Reanúdala para no perderlo; no se cobra nada hoy.`
+  }
+  return ''
+}
+
+// Desde el menú de la cuenta: resalta y lleva a la tarjeta que pidió.
+const resaltada = computed(() => props.quiero === 'pro' ? 'pro' : props.quiero === 'mas' ? 'base' : null)
+onMounted(() => {
+  if (resaltada.value) document.getElementById(`plan-${resaltada.value}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+})
 
 const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola Rankit, quiero contratar un plan de organizador.')
 </script>
@@ -112,39 +136,11 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
         </div>
 
         <!-- Estado actual -->
-        <section v-if="plan?.activo" class="brutal-card p-6 mb-10 bg-white dark:bg-[#0a0a0a]">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div>
-              <p class="text-xs font-bold tracking-widest uppercase text-gray-500">Tu plan</p>
-              <p v-if="plan.exento" class="mt-1 text-2xl font-black uppercase font-display">Acceso ilimitado</p>
-              <template v-else>
-                <p class="mt-1 text-2xl font-black uppercase font-display">
-                  {{ plan.ilimitado ? 'Gestor Pro' : 'Base' }}
-                  <span class="text-neon">·</span>
-                  <span v-if="plan.ilimitado">torneos ilimitados</span>
-                  <span v-else>{{ plan.torneos_restantes }} {{ plan.torneos_restantes === 1 ? 'torneo disponible' : 'torneos disponibles' }}</span>
-                </p>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  <template v-if="plan.renueva">Se renueva el {{ fecha(plan.vence) }}.</template>
-                  <template v-else>Activo hasta el {{ fecha(plan.vence) }}.</template>
-                </p>
-                <button v-if="suscripcion && suscripcion.renueva" class="mt-2 text-xs font-bold uppercase tracking-wider text-gray-500 underline hover:text-red-500" @click="cambiarRenovacion(false)">
-                  Cancelar renovación
-                </button>
-                <button v-else-if="suscripcion" class="mt-2 text-xs font-bold uppercase tracking-wider text-neon underline" @click="cambiarRenovacion(true)">
-                  Reanudar renovación
-                </button>
-              </template>
-            </div>
-            <Link :href="route('game.selector')" class="btn-skew inline-block px-8 py-4 text-sm font-black tracking-widest text-white uppercase">
-              <span class="inline-block" style="transform: skewX(10deg);">Ir al panel</span>
-            </Link>
-          </div>
-        </section>
+        <TarjetaPlan v-if="plan?.activo || plan?.gracia_hasta" contexto="planes" class="mb-10" />
 
         <!-- Planes -->
         <div v-if="!plan?.exento" class="grid gap-8 md:grid-cols-2">
-          <article v-for="p in planes" :key="p.clave" class="brutal-card relative p-8 bg-white dark:bg-[#0a0a0a]" :class="{ 'border-neon': p.clave === 'pro' }">
+          <article v-for="p in planes" :id="`plan-${p.clave}`" :key="p.clave" class="brutal-card relative p-8 bg-white dark:bg-[#0a0a0a]" :class="{ 'border-neon': p.clave === 'pro', 'ring-2 ring-[var(--rankit-neon)] ring-offset-4 ring-offset-gray-50 dark:ring-offset-[#050505]': resaltada === p.clave }">
             <h2 class="text-2xl font-bold uppercase font-display">{{ p.nombre }}</h2>
             <div class="flex items-baseline mt-4">
               <span class="text-5xl font-black">{{ dinero(p.precio) }}</span>
@@ -153,7 +149,7 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
 
             <ul class="mt-6 space-y-3 text-sm text-gray-700 dark:text-gray-300">
               <li class="flex gap-3"><i class="ph ph-check text-neon mt-0.5"></i>
-                <span v-if="p.torneos">{{ p.torneos }} torneos durante {{ p.dias }} días</span>
+                <span v-if="p.torneos">{{ p.torneos }} tickets de torneo (1 ticket = 1 torneo) para usar en {{ p.dias }} días. Recarga cuando quieras.</span>
                 <span v-else>Torneos ilimitados</span>
               </li>
               <li class="flex gap-3"><i class="ph ph-check text-neon mt-0.5"></i> Fortnite, LoL/Valorant y fútbol</li>
@@ -169,14 +165,14 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
                 v-for="pasarela in pasarelas"
                 :key="pasarela"
                 type="button"
-                :disabled="enviando !== null || (p.clave === 'base' && plan?.ilimitado) || (p.clave === 'pro' && plan?.renueva)"
+                :disabled="enviando !== null || boton(p, pasarela).accion === null"
                 class="w-full py-3 text-xs font-bold tracking-wider uppercase transition border disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="pasarela === 'stripe'
                   ? 'bg-neon text-white border-transparent hover:shadow-[0_0_20px_var(--rankit-neon)]'
                   : 'border-gray-300 dark:border-gray-700 hover:border-black dark:hover:border-white'"
-                @click="pagar(p.clave, pasarela)"
+                @click="pulsar(p, pasarela)"
               >
-                {{ enviando === `${p.clave}-${pasarela}` ? 'Abriendo pago…' : etiquetaBoton(p, pasarela) }}
+                {{ enviando === `${p.clave}-${pasarela}` ? 'Abriendo pago…' : boton(p, pasarela).texto }}
               </button>
               <button
                 v-if="!pasarelas.includes('mercadopago')"
@@ -186,6 +182,7 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
               >
                 Mercado Pago · Próximamente
               </button>
+              <p v-if="nota(p)" class="pt-1 text-xs text-gray-500 dark:text-gray-400">{{ nota(p) }}</p>
             </div>
             <a v-else :href="waVentas" target="_blank" rel="noopener" class="block mt-8 py-3 text-center text-xs font-bold tracking-wider uppercase border border-gray-300 dark:border-gray-700 hover:border-black dark:hover:border-white">
               El pago en línea aún no está activo · escríbenos
@@ -195,7 +192,9 @@ const waVentas = 'https://wa.me/525532351392?text=' + encodeURIComponent('Hola R
 
         <p v-if="!plan?.exento" class="mt-8 text-xs text-gray-500 dark:text-gray-500 max-w-3xl">
           Cada torneo que creas cuenta para tu plan aunque después lo borres; las fases que genera "clasificar a la siguiente ronda" no cuentan.
-          Si el plan vence, el panel se cierra pero las páginas públicas de tus torneos siguen visibles.
+          <template v-if="graciaDias > 0">Cada torneo lo puedes seguir administrando {{ graciaDias }} días después de crearlo aunque tu plan venza antes; para crear otro sí necesitas plan vigente.</template>
+          <template v-else>Si el plan vence, el panel se cierra.</template>
+          Las páginas públicas de tus torneos siguen visibles siempre.
         </p>
       </div>
     </div>

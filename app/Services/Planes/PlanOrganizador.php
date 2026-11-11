@@ -7,6 +7,7 @@ use App\Models\User;
 use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -85,7 +86,39 @@ class PlanOrganizador
             return false;
         }
 
-        return $this->esExento($user) || $this->periodosVigentes($user)->isNotEmpty();
+        return $this->esExento($user)
+            || $this->periodosVigentes($user)->isNotEmpty()
+            || $this->graciaHasta($user) !== null;
+    }
+
+    /**
+     * Hasta cuándo puede seguir administrando sus torneos sin plan vigente:
+     * el último torneo creado con un plan (no reembolsado) + gracia_torneo_dias.
+     * Null si no hay gracia. Así un torneo creado el día 29 del pase no se
+     * queda sin panel al día siguiente.
+     */
+    public function graciaHasta(User $user): ?Carbon
+    {
+        $dias = (int) config('planes.gracia_torneo_dias', 0);
+        if ($dias <= 0) {
+            return null;
+        }
+
+        self::asegurarTablas();
+
+        $ultimo = DB::table('plan_period_tournaments as t')
+            ->join('plan_periods as p', 'p.id', '=', 't.plan_period_id')
+            ->where('t.user_id', $user->id)
+            ->whereNull('p.revoked_at')
+            ->max('t.created_at');
+
+        if (!$ultimo) {
+            return null;
+        }
+
+        $hasta = Carbon::parse($ultimo)->addDays($dias);
+
+        return $hasta->isFuture() ? $hasta : null;
     }
 
     /** @return \Illuminate\Support\Collection<int, PlanPeriod> */
@@ -113,6 +146,10 @@ class PlanOrganizador
             return [
                 'exento' => true,
                 'activo' => true,
+                'administra' => true,
+                'gracia_hasta' => null,
+                'recarga' => null,
+                'por_vencer' => null,
                 'ilimitado' => true,
                 'plan' => null,
                 'torneos_restantes' => null,
@@ -128,9 +165,21 @@ class PlanOrganizador
             ->reject(fn (PlanPeriod $p) => $p->esIlimitado())
             ->sum(fn (PlanPeriod $p) => max(0, $p->tournaments_limit - $p->usados()));
 
+        // Solo importa cuando ya no tiene plan: con plan vigente entra de todos modos.
+        $gracia = $periodos->isEmpty() ? $this->graciaHasta($user) : null;
+
         return [
             'exento' => false,
             'activo' => $periodos->isNotEmpty(),
+            'administra' => $periodos->isNotEmpty() || $gracia !== null,
+            'gracia_hasta' => $gracia?->toIso8601String(),
+            // Tickets sin usar o Gestor Pro que se pierden pronto (aviso del front).
+            'por_vencer' => ($aviso = $this->porVencer($periodos)) ? Arr::except($aviso, 'periodos') : null,
+            // Lo que da y cuesta un pase Base: el botón "Recargar" del front.
+            'recarga' => [
+                'tickets' => (int) $this->catalogo->plan('base')['torneos'],
+                'precio' => $this->catalogo->precio('base'),
+            ],
             'ilimitado' => $ilimitado,
             'plan' => $ilimitado ? 'pro' : ($periodos->isNotEmpty() ? 'base' : null),
             'torneos_restantes' => $ilimitado ? null : $restantes,
@@ -148,6 +197,65 @@ class PlanOrganizador
                 'suscripcion' => $p->provider_subscription_id,
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * Qué se le va a vencer en los próximos `aviso_vencimiento_dias`:
+     *  - tickets sin usar de pases Base que terminan pronto, o
+     *  - el Gestor Pro, si termina pronto y no se renueva (cortesía,
+     *    renovación cancelada, pase de Mercado Pago).
+     * No avisa de tickets que se pierden mientras tenga ilimitados más allá
+     * de esa fecha. Devuelve también los ids de los periodos para no repetir
+     * el correo (ver AvisosVencimiento).
+     *
+     * @param  \Illuminate\Support\Collection<int, PlanPeriod>  $periodos  vigentes del usuario
+     * @return array{tickets: int|null, vence: string, dias: int, periodos: int[]}|null
+     */
+    public function porVencer($periodos): ?array
+    {
+        $dias = (int) config('planes.aviso_vencimiento_dias', 0);
+        if ($dias <= 0 || $periodos->isEmpty()) {
+            return null;
+        }
+
+        $limite = now()->addDays($dias);
+        $finIlimitado = $periodos->filter(fn (PlanPeriod $p) => $p->esIlimitado())->max('ends_at');
+
+        $pases = $periodos->filter(fn (PlanPeriod $p) => !$p->esIlimitado()
+            && $p->ends_at <= $limite
+            && $p->usados() < $p->tournaments_limit
+            && (!$finIlimitado || $finIlimitado <= $p->ends_at));
+
+        if ($pases->isNotEmpty()) {
+            $vence = $pases->min('ends_at');
+
+            return [
+                'tickets' => (int) $pases->sum(fn (PlanPeriod $p) => $p->tournaments_limit - $p->usados()),
+                'vence' => $vence->toIso8601String(),
+                'dias' => $this->diasHasta($vence),
+                'periodos' => $pases->pluck('id')->values()->all(),
+            ];
+        }
+
+        $ilimitados = $periodos->filter(fn (PlanPeriod $p) => $p->esIlimitado());
+        if ($finIlimitado && $finIlimitado <= $limite && !$ilimitados->contains(fn (PlanPeriod $p) => $p->renews)) {
+            return [
+                'tickets' => null,
+                'vence' => $finIlimitado->toIso8601String(),
+                'dias' => $this->diasHasta($finIlimitado),
+                'periodos' => $ilimitados->pluck('id')->values()->all(),
+            ];
+        }
+
+        return null;
+    }
+
+    /** Días de calendario en CDMX: lo que vence pasado mañana dice "en 2 días". */
+    private function diasHasta(Carbon $fecha): int
+    {
+        $zona = 'America/Mexico_City';
+
+        return (int) max(0, now($zona)->startOfDay()->diffInDays($fecha->copy()->timezone($zona)->startOfDay()));
     }
 
     /**
@@ -185,7 +293,7 @@ class PlanOrganizador
                 ?? $periodos->first(fn (PlanPeriod $p) => $p->tieneCupo());
 
             if (!$periodo) {
-                throw new SinCupoDeTorneos('Ya usaste los torneos de tu plan. Compra otro pase o cámbiate a Gestor Pro.');
+                throw new SinCupoDeTorneos('Ya no tienes tickets de torneo. Recarga o cámbiate a Gestor Pro.');
             }
 
             $id = (int) $crear();

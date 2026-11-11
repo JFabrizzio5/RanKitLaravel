@@ -46,6 +46,7 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
+        // Si venía de "Contratar" en la landing, regresa a /planes con su plan.
+        return redirect()->intended(route('dashboard', absolute: false));
     }
 }

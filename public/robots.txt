@@ -1,2 +1,11 @@
 User-agent: *
-Disallow:
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /planes
+Disallow: /profile
+Disallow: /api
+# La tabla en vivo de /t/{id} se carga de /api/live/{id}/data: sin esto
+# Google ve la página del torneo sin la tabla.
+Allow: /api/live/
+
+Sitemap: https://rankit.pro/sitemap.xml
