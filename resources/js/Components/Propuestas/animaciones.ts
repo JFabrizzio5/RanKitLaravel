@@ -75,7 +75,9 @@ function tareasDeclarativas(raiz: HTMLElement): (() => void)[] {
   // Letras que suben desde atrás de una máscara (títulos de sección).
   cada('[data-anim="letras"]', (el) => {
     SplitText.create(el, {
-      type: 'lines,chars', mask: 'lines', linesClass: 'linea', autoSplit: true,
+      // words: cada palabra queda junta. Solo con chars el navegador podía partir una palabra
+      // entre dos letras cuando no cabía ("PREGUNTA / S" en celular).
+      type: 'lines,words,chars', mask: 'lines', linesClass: 'linea', autoSplit: true,
       onSplit: (s) => gsap.from(s.chars, { yPercent: 115, duration: 1, ease: 'expo.out', stagger: 0.022, scrollTrigger: alEntrar(el) }),
     })
   })

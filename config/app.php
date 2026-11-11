@@ -13,7 +13,8 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    // Si el .env no trae APP_NAME, que diga Rankit y no Laravel (sale en correos y títulos).
+    'name' => env('APP_NAME', 'Rankit'),
 
     /*
     |--------------------------------------------------------------------------
