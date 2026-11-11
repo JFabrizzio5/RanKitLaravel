@@ -1,776 +1,1149 @@
-<script setup>
-import { Head, Link } from "@inertiajs/vue3";
-import { ref, onMounted, nextTick } from "vue";
-import axios from "axios";
+<script setup lang="ts">
+/**
+ * RANKIT PRO LEAGUE (/league)
+ *
+ * Página plana y para lectores jóvenes: qué es, cómo entrar en 3 pasos, cuándo
+ * es lo próximo y la tabla de posiciones. Lo demás (reglas de cada fase,
+ * calculadora de premios, otros torneos) va más abajo o dentro de acordeones.
+ *
+ * Datos: GET /api/league/standings (TournamentParserController@getSerializedStandings)
+ * devuelve [{ tournament: <fila completa de `tournaments`>, standings: [...] }].
+ * Los puntos no vienen en la respuesta: se calculan como eliminaciones ×
+ * scoring_format.kill_points (10 por defecto), igual que hacía la versión anterior.
+ */
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import axios from 'axios';
 
-// ---- SPA Navigation ----
-const activeView = ref("home");
+/* ------------------------------------------------------------------ */
+/* Tipos de /api/league/standings                                      */
+/* ------------------------------------------------------------------ */
 
-const navigate = (view) => {
-    activeView.value = view;
-    nextTick(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
-};
+interface TorneoLiga {
+    id: number;
+    name: string;
+    slug?: string | null;
+    is_private?: boolean | number | string | null;
+    registration_status?: string | null; // open | closed | disabled
+    scoring_format?: string | { kill_points?: number | string } | null;
+    // Columnas que agrega SemanalesController; pueden no existir.
+    start_date?: string | null;
+    date_label?: string | null;
+}
 
-// ---- League Standings ----
-const allSerializedTournaments = ref([]);
-const activeTournamentIndex = ref(0);
-const loading = ref(true);
+interface FilaTabla {
+    player_name: string | null;
+    total_kills: number | string | null;
+    total_damage: number | string | null;
+    matches_played: number | string | null;
+    best_placement?: number | string | null;
+}
 
-const selectTournament = (index) => {
-    activeTournamentIndex.value = index;
-};
+interface BloqueLiga {
+    tournament: TorneoLiga;
+    standings: FilaTabla[] | null;
+}
 
-// ---- Carousel ----
-const selectedWeek = ref(1);
+interface Fase {
+    num: number;
+    semana: string;
+    titulo: string;
+    lema: string;
+    color: string;
+    icono: string;
+    poster: string;
+    resumen: string;
+    pase: string;
+    reglas: string[];
+}
 
-const scrollCarousel = (direction) => {
-    const carousel = document.getElementById('league-carousel');
-    if (carousel) carousel.scrollBy({ left: direction * 360, behavior: 'smooth' });
-};
+/* ------------------------------------------------------------------ */
+/* Contenido fijo                                                      */
+/* ------------------------------------------------------------------ */
 
-const leagueData = {
-    1: {
-        badge: "Fase Inicial", title: "SEMANA 1",
-        desc_short: "El inicio de la liga regular. Compite en el primer corte gratuito o aprovecha el tier Premium para asegurar tu cupo.",
-        color: "text-fnBrightPurple", borderColor: "border-fnBrightPurple",
-        poster: "/public/league/clasificatorio-1.png",
-        desc1: "<p>Las primeras 3 partidas son <strong class='text-white'>GRATIS</strong> para buscar clasificación. Con el Upgrade Premium, juegas <strong class='text-white'>2 partidas extras (5 en total)</strong> y participas por el pozo de dinero semanal.</p><p>El lobby es privado. Prohibido el teaming. Formato Solos.</p>",
-        desc2: "<p>Hay dos cortes de clasificación:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li>✔ <strong>Corte Free (1-3):</strong> Top 10% general avanza.</li><li>👑 <strong>Corte Premium (4-5):</strong> Top 10% de pago avanza.</li></ul>"
+const FASES: Fase[] = [
+    {
+        num: 1,
+        semana: 'Semana 1',
+        titulo: 'Clasificatorio 1',
+        lema: 'Fase inicial',
+        color: '#9b30ff',
+        icono: 'ph-flag-banner',
+        poster: '/public/league/clasificatorio-1.png',
+        resumen: '3 partidas gratis para clasificar. Con Premium juegas 2 más y peleas por el premio de la semana.',
+        pase: 'Pasa el Top 10% Free y el Top 10% Pro',
+        reglas: [
+            'Las primeras 3 partidas son gratis.',
+            'Con el Upgrade Premium juegas 2 partidas extra (5 en total) y participas por el pozo de dinero semanal.',
+            'Lobby privado y formato Solos. Prohibido el teaming.',
+            'Corte Free (partidas 1 a 3): avanza el Top 10% general.',
+            'Corte Premium (partidas 4 y 5): avanza el Top 10% de quienes pagaron.',
+        ],
     },
-    2: {
-        badge: "Segunda Oportunidad", title: "SEMANA 2",
-        desc_short: "Misma modalidad, nueva tabla de puntos. Segundo llamado para el Top 10%.",
-        color: "text-fnEmerald", borderColor: "border-fnEmerald",
-        poster: "/public/league/clasificatorio-2.png",
-        desc1: "<p>Mismo formato de Battle Royale Clásico en Solos. 3 partidas gratis + 2 Premium.</p>",
-        desc2: "<ul class='space-y-2 mt-2 text-sm text-gray-300'><li>✔ <strong>Corte Free (1-3):</strong> Top 10% avanza.</li><li>👑 <strong>Corte Premium (4-5):</strong> Top 10% de pago avanza.</li></ul>"
+    {
+        num: 2,
+        semana: 'Semana 2',
+        titulo: 'Clasificatorio 2',
+        lema: 'Segunda oportunidad',
+        color: '#00b074',
+        icono: 'ph-arrows-clockwise',
+        poster: '/public/league/clasificatorio-2.png',
+        resumen: 'Mismo formato que la semana 1, con tabla de puntos nueva. Otra oportunidad de entrar al Top 10%.',
+        pase: 'Pasa el Top 10% Free y el Top 10% Pro',
+        reglas: [
+            'Battle Royale Clásico en Solos, igual que la semana 1.',
+            '3 partidas gratis + 2 Premium.',
+            'Corte Free (partidas 1 a 3): avanza el Top 10%.',
+            'Corte Premium (partidas 4 y 5): avanza el Top 10% de quienes pagaron.',
+        ],
     },
-    3: {
-        badge: "La Última Vida", title: "REPECHAJE",
-        desc_short: "4 partidas: 2 BR Clásico + 2 Reload. Solo 8 tickets de clasificación en juego.",
-        color: "text-fnCrimson", borderColor: "border-fnCrimson",
-        poster: "/public/league/repechaje.png",
-        desc1: "<p>Filtro final de versatilidad: <strong class='text-white'>4 partidas exactas</strong> (2 BR + 2 Reload).</p>",
-        desc2: "<p>8 pases a la final:</p><ul class='space-y-2 mt-2 text-sm text-gray-300'><li>🏆 Ganadores de cada partida (4)</li><li>📈 Top 3 pts totales (3)</li><li>💀 MVP Kills (1)</li></ul>"
+    {
+        num: 3,
+        semana: 'Semana 3',
+        titulo: 'Repechaje',
+        lema: 'La última vida',
+        color: '#d7263d',
+        icono: 'ph-heartbeat',
+        poster: '/public/league/repechaje.png',
+        resumen: '4 partidas: 2 Battle Royale y 2 Recarga. Solo hay 8 pases a la final.',
+        pase: '8 pases: victorias, puntos y kills',
+        reglas: [
+            '4 partidas exactas: 2 Battle Royale + 2 Recarga.',
+            'Ganador de cada partida: 4 pases.',
+            'Top 3 en puntos totales: 3 pases.',
+            'MVP de kills (el que más eliminó y todavía no clasificaba): 1 pase.',
+        ],
     },
-    4: {
-        badge: "El Cierre Absoluto", title: "GRAN FINAL",
-        desc_short: "Solo los mejores. Top 15% de W1/W2 + ganadores del Repechaje.",
-        color: "text-fnGold", borderColor: "border-fnGold",
-        poster: "/public/league/gran-final.png",
-        desc1: "<p>Battle Royale Clásico. Lobbies privados stacked. 6 partidas. No hay suplentes.</p>",
-        desc2: "<p>El Mega Pozo se paga aquí. Además, el <strong class='text-white'>20% de toda la recaudación</strong> se sortea entre todos los participantes.</p>"
-    }
-};
+    {
+        num: 4,
+        semana: 'Semana 4',
+        titulo: 'Gran Final',
+        lema: 'El cierre absoluto',
+        color: '#f1c40f',
+        icono: 'ph-crown',
+        poster: '/public/league/gran-final.png',
+        resumen: 'Solo los mejores: el Top 15% de las semanas 1 y 2 más los que pasan del Repechaje.',
+        pase: 'Premios: 80% de la bolsa · 20% en sorteos',
+        reglas: [
+            'Battle Royale Clásico en lobbies privados.',
+            '6 partidas. No hay suplentes.',
+            'Aquí se paga el Mega Pozo.',
+            'La bolsa se reparte: 80% en premios para los campeones y 20% en sorteos entre todos los participantes.',
+            'Para los clasificados, entrar a la final no cuesta.',
+        ],
+    },
+];
 
-const currentWeekData = ref(leagueData[1]);
+const OTROS_TORNEOS = [
+    {
+        juego: 'Valorant',
+        nombre: 'DM Showdown',
+        descripcion: 'Deathmatch de todos contra todos. El jugador con más bajas tras 3 rondas gana la bolsa.',
+        entrada: '$5 USD',
+        color: '#f87171',
+    },
+    {
+        juego: 'League of Legends',
+        nombre: 'Rey ARAM',
+        descripcion: 'Duelos 1v1 oficiales. Primera sangre, 100 súbditos o primera torreta define al ganador.',
+        entrada: '$5 USD',
+        color: '#60a5fa',
+    },
+    {
+        juego: 'Rocket League',
+        nombre: 'Hoops 2v2',
+        descripcion: 'Bracket rápido de eliminación en la cancha de baloncesto. Domina el aire.',
+        entrada: '$10 USD',
+        color: '#22d3ee',
+    },
+    {
+        juego: 'Overwatch 2',
+        nombre: 'Copa Defensora',
+        descripcion: 'Arma tu escuadra de 5 (cola de roles) y domina los mapas en eliminación directa.',
+        entrada: '$15 USD',
+        color: '#fb923c',
+    },
+];
 
-const selectWeek = (weekNum) => {
-    selectedWeek.value = weekNum;
-    currentWeekData.value = leagueData[weekNum];
-    // Scroll carousel card into view on mobile
-    nextTick(() => {
-        const card = document.getElementById(`card-w${weekNum}`);
-        if (card && window.innerWidth < 768) {
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+const MEDALLAS = [
+    { nombre: 'oro', fondo: '#f5c518', texto: '#1a1300' },
+    { nombre: 'plata', fondo: '#c7ccd4', texto: '#111418' },
+    { nombre: 'bronce', fondo: '#cd7f32', texto: '#1a0e02' },
+];
+
+const INSTAGRAM = 'https://instagram.com/rankit.pro';
+const FILAS_INICIALES = 10;
+
+const SECCIONES = [
+    { href: '#como-entrar', texto: 'Cómo entrar', icono: 'ph-sign-in' },
+    { href: '#tabla', texto: 'Tabla', icono: 'ph-list-numbers' },
+    { href: '#fases', texto: 'Fases', icono: 'ph-flag-checkered' },
+    { href: '#premios', texto: 'Premios', icono: 'ph-coins' },
+    { href: '#otros', texto: 'Otros torneos', icono: 'ph-game-controller' },
+];
+
+/* ------------------------------------------------------------------ */
+/* Utilidades                                                          */
+/* ------------------------------------------------------------------ */
+
+const formatoNumero = new Intl.NumberFormat('es-MX');
+const fmt = (n: number) => formatoNumero.format(n);
+
+function num(valor: unknown): number {
+    const n = Number(valor);
+    return Number.isFinite(n) ? n : 0;
+}
+
+function esVerdadero(valor: unknown): boolean {
+    return valor === true || valor === 1 || valor === '1' || valor === 'true';
+}
+
+/** "Rankit Pro League - Clasificatorio 1 (v0.1)" → "Clasificatorio 1" */
+function nombreCorto(nombre: string | null | undefined): string {
+    const original = (nombre ?? '').trim();
+    const limpio = original
+        .replace(/^rankit\s*\.?\s*pro\s*league\s*[-–—:·]\s*/i, '')
+        .replace(/\s*\(v[\d.]+\)\s*$/i, '')
+        .trim();
+    return limpio || original || 'Torneo';
+}
+
+function faseDe(t: TorneoLiga | null | undefined): Fase | null {
+    if (!t) return null;
+    const texto = `${t.slug ?? ''} ${t.name ?? ''}`.toLowerCase();
+    let numero = 0;
+    if (/clasificatorio[\s-]*1/.test(texto)) numero = 1;
+    else if (/clasificatorio[\s-]*2/.test(texto)) numero = 2;
+    else if (texto.includes('repechaje')) numero = 3;
+    else if (texto.includes('final')) numero = 4;
+    return FASES.find((f) => f.num === numero) ?? null;
+}
+
+function puntosPorKill(t: TorneoLiga | null | undefined): number {
+    let formato: unknown = t?.scoring_format ?? null;
+    if (typeof formato === 'string') {
+        try {
+            formato = JSON.parse(formato);
+        } catch {
+            formato = null;
         }
-    });
-};
+    }
+    const kp = Number((formato as { kill_points?: unknown } | null)?.kill_points);
+    return Number.isFinite(kp) && kp > 0 ? kp : 10;
+}
 
-// ---- Prize Pool Calculator ----
-const inputPlayers = ref(50);
-const inputPrice = ref(10);
+function fechaDe(t: TorneoLiga): Date | null {
+    if (!t.start_date) return null;
+    const d = new Date(String(t.start_date).replace(' ', 'T'));
+    return Number.isNaN(d.getTime()) ? null : d;
+}
 
-const prizeTotal = ref(0);
-const prizeWeekly = ref(0);
-const prizeFinal = ref(0);
-const prizeGiveaways = ref(0);
+function textoFecha(t: TorneoLiga): string | null {
+    if (t.date_label && String(t.date_label).trim()) return String(t.date_label).trim();
+    const d = fechaDe(t);
+    if (!d) return null;
+    const conHora = d.getHours() !== 0 || d.getMinutes() !== 0;
+    const opciones: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+    if (conHora) {
+        opciones.hour = 'numeric';
+        opciones.minute = '2-digit';
+    }
+    const texto = new Intl.DateTimeFormat('es-MX', opciones).format(d);
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
 
-const updatePrize = () => {
-    const total = inputPlayers.value * inputPrice.value;
-    prizeTotal.value = total;
-    prizeWeekly.value = Math.round(total * 0.40);
-    prizeFinal.value = Math.round(total * 0.40);
-    prizeGiveaways.value = Math.round(total * 0.20);
-};
+function ocultarImagen(e: Event) {
+    const img = e.target as HTMLImageElement | null;
+    if (img) img.style.display = 'none';
+}
 
-// ---- Registration Tier ----
-const selectedTier = ref('free');
+/* ------------------------------------------------------------------ */
+/* Sesión y menú                                                       */
+/* ------------------------------------------------------------------ */
 
-onMounted(async () => {
-    updatePrize();
+const page = usePage();
+const usuario = computed(() => page.props.auth?.user ?? null);
+
+const menuAbierto = ref(false);
+const botonMenu = ref<HTMLButtonElement | null>(null);
+
+function cerrarMenu() {
+    menuAbierto.value = false;
+}
+
+function alPresionarTecla(e: KeyboardEvent) {
+    if (e.key === 'Escape' && menuAbierto.value) {
+        menuAbierto.value = false;
+        botonMenu.value?.focus();
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabla de posiciones                                                 */
+/* ------------------------------------------------------------------ */
+
+const torneos = ref<BloqueLiga[]>([]);
+const cargando = ref(true);
+const hayError = ref(false);
+const indiceActivo = ref(0);
+const busqueda = ref('');
+const verTodos = ref(false);
+
+/** Ordenados por fase (Clasificatorio 1 → Gran Final); los que no se reconocen van al final. */
+const torneosOrdenados = computed(() =>
+    torneos.value
+        .map((bloque, i) => ({ bloque, i, orden: faseDe(bloque.tournament)?.num ?? 99 }))
+        .sort((a, b) => a.orden - b.orden || a.i - b.i)
+        .map((x) => x.bloque),
+);
+
+const bloqueActivo = computed<BloqueLiga | null>(() => torneosOrdenados.value[indiceActivo.value] ?? null);
+const puntosKillActivo = computed(() => puntosPorKill(bloqueActivo.value?.tournament));
+
+const filas = computed(() =>
+    (bloqueActivo.value?.standings ?? []).map((f, i) => ({
+        lugar: i + 1,
+        nombre: f.player_name || 'Desconocido',
+        partidas: num(f.matches_played),
+        kills: num(f.total_kills),
+        dano: num(f.total_damage),
+        puntos: num(f.total_kills) * puntosKillActivo.value,
+    })),
+);
+
+const textoBusqueda = computed(() => busqueda.value.trim().toLowerCase());
+
+const filasFiltradas = computed(() =>
+    textoBusqueda.value ? filas.value.filter((f) => f.nombre.toLowerCase().includes(textoBusqueda.value)) : filas.value,
+);
+
+const filasVisibles = computed(() =>
+    textoBusqueda.value || verTodos.value ? filasFiltradas.value : filasFiltradas.value.slice(0, FILAS_INICIALES),
+);
+
+function elegirTorneo(i: number) {
+    indiceActivo.value = i;
+    busqueda.value = '';
+    verTodos.value = false;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lo próximo                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 1) el torneo con fecha (start_date) más cercana desde hoy;
+ * 2) si ninguno tiene fecha, el primero con inscripciones abiertas;
+ * 3) si no, el primero que todavía no tiene partidas jugadas.
+ */
+const proximo = computed<BloqueLiga | null>(() => {
+    const lista = torneosOrdenados.value;
+    if (!lista.length) return null;
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const conFecha = lista
+        .map((b) => ({ b, fecha: fechaDe(b.tournament) }))
+        .filter((x): x is { b: BloqueLiga; fecha: Date } => x.fecha !== null && x.fecha >= hoy)
+        .sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+    if (conFecha.length) return conFecha[0].b;
+
+    return (
+        lista.find((b) => b.tournament.registration_status === 'open') ??
+        lista.find((b) => !b.standings || b.standings.length === 0) ??
+        null
+    );
+});
+
+const faseProxima = computed(() => faseDe(proximo.value?.tournament));
+const fechaProxima = computed(() => (proximo.value ? textoFecha(proximo.value.tournament) : null));
+const proximoAbierto = computed(() => proximo.value?.tournament.registration_status === 'open');
+const proximoPrivado = computed(() => esVerdadero(proximo.value?.tournament.is_private));
+const puntosKillGeneral = computed(() => puntosPorKill(proximo.value?.tournament ?? torneosOrdenados.value[0]?.tournament));
+
+const textoBotonProximo = computed(() => {
+    if (proximoAbierto.value) return 'Inscribirme';
+    if (proximoPrivado.value) return 'Ver la final';
+    return 'Ver el torneo';
+});
+
+/* ------------------------------------------------------------------ */
+/* Calculadora de la bolsa                                             */
+/* ------------------------------------------------------------------ */
+
+const jugadoresPremium = ref(50);
+const precioPase = ref(10);
+
+const bolsaTotal = computed(() => jugadoresPremium.value * precioPase.value);
+const bolsaSemanal = computed(() => Math.round(bolsaTotal.value * 0.4));
+const bolsaFinal = computed(() => Math.round(bolsaTotal.value * 0.4));
+const bolsaSorteos = computed(() => Math.round(bolsaTotal.value * 0.2));
+
+/* ------------------------------------------------------------------ */
+/* Carga de datos                                                      */
+/* ------------------------------------------------------------------ */
+
+async function cargarTabla() {
+    cargando.value = true;
+    hayError.value = false;
     try {
         const res = await axios.get('/api/league/standings');
-        allSerializedTournaments.value = res.data;
+        if (!Array.isArray(res.data)) throw new Error('Respuesta inesperada de /api/league/standings');
+        torneos.value = (res.data as BloqueLiga[]).filter((b) => b && b.tournament);
+
+        // Abrimos la última fase que ya tiene jugadores (la "tabla actual").
+        const ordenados = torneosOrdenados.value;
+        let elegido = -1;
+        ordenados.forEach((b, i) => {
+            if (b.standings && b.standings.length > 0) elegido = i;
+        });
+        if (elegido < 0 && proximo.value) elegido = ordenados.indexOf(proximo.value);
+        elegirTorneo(Math.max(elegido, 0));
     } catch (e) {
         console.error(e);
+        hayError.value = true;
     } finally {
-        loading.value = false;
+        cargando.value = false;
     }
+}
+
+onMounted(() => {
+    // Iconos Phosphor por CDN (mismo patrón que Inicio.vue y Semanales).
+    if (!document.querySelector('script[src="https://unpkg.com/@phosphor-icons/web"]')) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/@phosphor-icons/web';
+        script.async = true;
+        document.head.appendChild(script);
+    }
+    window.addEventListener('keydown', alPresionarTecla);
+    cargarTabla();
+});
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', alPresionarTecla);
 });
 </script>
 
 <template>
-    <Head title="Rankit.Pro | League" />
-    <div class="font-sans min-h-screen flex flex-col justify-between overflow-x-hidden bg-[#030108] text-[#e2e8f0]">
-        
+    <Head title="Rankit Pro League" />
 
-    <!-- Navbar Premium Ultra Clean -->
-    <nav class="border-b border-white/5 bg-fnDark/80 backdrop-blur-xl sticky top-0 z-50 px-4 sm:px-8 py-4 transition-all">
-        <div class="max-w-7xl mx-auto flex justify-between items-center">
-            
-            <div class="flex items-center gap-3">
-                <img src="/public/league/logo.png" alt="Logo Rankit Pro" class="w-10 h-10 sm:w-12 sm:h-12 object-contain">
-                <div class="flex flex-col">
-                    <span class="font-block text-2xl sm:text-3xl tracking-wide text-white uppercase italic leading-none">
-                        RANKIT<span class="text-fnBrightPurple">.PRO</span>
+    <div class="min-h-screen overflow-x-clip bg-[#0a0a0a] font-sans text-gray-300">
+        <!-- ============================ NAVEGACIÓN ============================ -->
+        <nav aria-label="Principal" class="sticky top-0 z-40 border-b border-white/10 bg-[#0a0a0a]">
+            <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
+                <Link :href="route('Inicio')" class="foco flex min-w-0 items-center gap-2 rounded-lg">
+                    <img
+                        src="/public/league/logo.png"
+                        alt=""
+                        width="36"
+                        height="36"
+                        class="h-9 w-9 shrink-0 object-contain"
+                        @error="ocultarImagen"
+                    />
+                    <span class="font-display text-lg font-bold uppercase leading-none text-white">
+                        Rankit<span class="text-[var(--rankit-neon)]">.Pro</span>
+                        <span class="mt-0.5 block text-[11px] font-semibold tracking-[0.2em] text-gray-400">League</span>
                     </span>
-                    <span class="text-[9px] text-fnBrightPurple font-chakra font-bold tracking-[0.3em] uppercase ml-1 mt-1">Official League</span>
+                    <span class="sr-only">(ir al inicio de Rankit)</span>
+                </Link>
+
+                <!-- Escritorio -->
+                <div class="hidden items-center gap-1 lg:flex">
+                    <a
+                        v-for="s in SECCIONES"
+                        :key="s.href"
+                        :href="s.href"
+                        class="foco rounded-lg px-3 py-2 text-sm font-semibold text-gray-300 hover:bg-white/5 hover:text-white"
+                    >
+                        {{ s.texto }}
+                    </a>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <Link
+                        v-if="usuario"
+                        :href="route('dashboard')"
+                        class="foco hidden min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-gray-300 hover:text-white lg:inline-flex"
+                    >
+                        Mi cuenta
+                    </Link>
+                    <Link
+                        v-else
+                        :href="route('login')"
+                        class="foco hidden min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-gray-300 hover:text-white lg:inline-flex"
+                    >
+                        Entrar
+                    </Link>
+                    <a
+                        href="#como-entrar"
+                        class="foco hidden min-h-11 items-center rounded-xl bg-[var(--rankit-neon)] px-5 font-display text-sm font-bold uppercase tracking-wide text-white hover:bg-[#a300db] lg:inline-flex"
+                    >
+                        ¡Quiero jugar!
+                    </a>
+
+                    <!-- Botón del menú móvil -->
+                    <button
+                        ref="botonMenu"
+                        type="button"
+                        class="foco inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/15 px-4 text-sm font-semibold text-white lg:hidden"
+                        aria-controls="menu-liga"
+                        :aria-expanded="menuAbierto ? 'true' : 'false'"
+                        @click="menuAbierto = !menuAbierto"
+                    >
+                        <i class="ph-bold text-xl" :class="menuAbierto ? 'ph-x' : 'ph-list'" aria-hidden="true"></i>
+                        {{ menuAbierto ? 'Cerrar' : 'Menú' }}
+                    </button>
                 </div>
             </div>
 
-            <div class="hidden lg:flex space-x-8 font-chakra font-bold uppercase tracking-widest text-xs">
-                <button @click="navigate('home')" id="nav-home" class="nav-link text-white transition-colors hover:text-white">INICIO</button>
-                <button @click="navigate('league')" id="nav-league" class="nav-link text-gray-500 transition-colors hover:text-white">RANKIT.PRO LEAGUE</button>
-                <button @click="navigate('others')" id="nav-others" class="nav-link text-gray-500 transition-colors hover:text-white">OTROS TORNEOS</button>
-                <button @click="navigate('simulator')" id="nav-simulator" class="nav-link text-gray-500 transition-colors hover:text-white">PREMIOS</button>
-                <a href="#" @click.prevent="navigate('register')" id="nav-register" class="nav-link text-gray-500 transition-colors hover:text-white">CLASIFICACIÓN</a>
+            <!-- Menú móvil -->
+            <div
+                v-show="menuAbierto"
+                id="menu-liga"
+                class="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-white/10 bg-[#0a0a0a] lg:hidden"
+            >
+                <div class="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3 sm:px-6">
+                    <a
+                        v-for="s in SECCIONES"
+                        :key="s.href"
+                        :href="s.href"
+                        class="foco flex min-h-12 items-center gap-3 rounded-lg px-3 text-base font-semibold text-gray-200 hover:bg-white/5"
+                        @click="cerrarMenu"
+                    >
+                        <i class="ph-bold text-xl text-[var(--rankit-neon)]" :class="s.icono" aria-hidden="true"></i>
+                        {{ s.texto }}
+                    </a>
+                    <div class="my-2 border-t border-white/10"></div>
+                    <Link
+                        :href="route('Inicio')"
+                        class="foco flex min-h-12 items-center gap-3 rounded-lg px-3 text-base font-semibold text-gray-200 hover:bg-white/5"
+                        @click="cerrarMenu"
+                    >
+                        <i class="ph-bold ph-house text-xl text-gray-400" aria-hidden="true"></i>
+                        Inicio de Rankit
+                    </Link>
+                    <Link
+                        v-if="usuario"
+                        :href="route('dashboard')"
+                        class="foco flex min-h-12 items-center gap-3 rounded-lg px-3 text-base font-semibold text-gray-200 hover:bg-white/5"
+                        @click="cerrarMenu"
+                    >
+                        <i class="ph-bold ph-user-circle text-xl text-gray-400" aria-hidden="true"></i>
+                        Mi cuenta
+                    </Link>
+                    <template v-else>
+                        <Link
+                            :href="route('login')"
+                            class="foco flex min-h-12 items-center gap-3 rounded-lg px-3 text-base font-semibold text-gray-200 hover:bg-white/5"
+                            @click="cerrarMenu"
+                        >
+                            <i class="ph-bold ph-sign-in text-xl text-gray-400" aria-hidden="true"></i>
+                            Entrar
+                        </Link>
+                        <Link
+                            :href="route('register')"
+                            class="foco mt-1 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--rankit-neon)] px-4 font-display text-base font-bold uppercase tracking-wide text-white hover:bg-[#a300db]"
+                            @click="cerrarMenu"
+                        >
+                            Crear cuenta gratis
+                        </Link>
+                    </template>
+                </div>
             </div>
+        </nav>
 
-            <div>
-                <a href="#" @click.prevent="navigate('register')" class="fn-btn inline-block bg-white text-black px-8 py-2.5 hover:bg-gray-200 transition-colors group relative overflow-hidden">
-                    <span class="block font-chakra font-bold text-sm uppercase tracking-widest relative z-10">
-                        COMPETIR AHORA
-                    </span>
-                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]"></div>
-                </a>
-            </div>
-        </div>
-        
-        <!-- Móvil -->
-        <div class="flex lg:hidden justify-around mt-4 pt-4 border-t border-white/5 text-[10px] font-chakra font-bold uppercase tracking-wider text-gray-500">
-            <button @click="navigate('home')" class="hover:text-white transition-colors"><i class="fa-solid fa-house block text-center mb-1 text-base"></i>Inicio</button>
-            <button @click="navigate('league')" class="hover:text-white transition-colors"><i class="fa-solid fa-trophy block text-center mb-1 text-base"></i>League</button>
-            <button @click="navigate('others')" class="hover:text-white transition-colors"><i class="fa-solid fa-gamepad block text-center mb-1 text-base"></i>Otros</button>
-            <button @click="navigate('simulator')" class="hover:text-white transition-colors"><i class="fa-solid fa-coins block text-center mb-1 text-base"></i>Premios</button>
-            <a href="#" @click.prevent="navigate('register')" class="hover:text-white transition-colors text-center"><i class="fa-solid fa-list-ol block text-center mb-1 text-base"></i>Clasific.</a>
-        </div>
-    </nav>
-
-    <main class="max-w-7xl mx-auto px-4 sm:px-8 py-12 flex-grow w-full relative z-10">
-
-        <!-- ================= PÁGINA 1: INICIO ================= -->
-        <section id="view-home" class="view-section" v-show="activeView === 'home'">
-            <div class="max-w-6xl mx-auto space-y-8 relative z-10 my-12 lg:my-24">
-                
-                <!-- Badge Elegante -->
-                <div class="inline-flex items-center gap-3 border border-white/10 bg-white/5 px-4 py-1.5 rounded-full backdrop-blur-sm mb-6">
-                    <span class="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]"></span>
-                    <span class="text-xs font-chakra font-bold text-gray-300 uppercase tracking-widest">ECOSISTEMA COMPETITIVO OFICIAL • SOLOS</span>
+        <main class="mx-auto max-w-6xl px-4 sm:px-6">
+            <!-- ============================== INICIO ============================== -->
+            <section id="inicio" class="grid scroll-mt-20 gap-6 py-10 sm:py-14 lg:grid-cols-[1.2fr_1fr] lg:items-center lg:gap-10">
+                <div>
+                    <p class="text-sm font-bold uppercase tracking-wider text-gray-400">
+                        Liga oficial · Fortnite · Solos
+                    </p>
+                    <h1 class="mt-3 break-words font-display text-4xl font-bold uppercase leading-none text-white sm:text-6xl">
+                        Rankit <span class="text-[var(--rankit-neon)]">Pro</span> League
+                    </h1>
+                    <p class="mt-4 max-w-xl text-lg leading-relaxed text-gray-300">
+                        La liga de Fortnite en Solos: juegas, sumas puntos por cada eliminación y los mejores llegan a la
+                        <strong class="text-white">Gran Final</strong>.
+                    </p>
+                    <div class="mt-6 flex flex-col gap-3 sm:flex-row">
+                        <a
+                            href="#como-entrar"
+                            class="foco inline-flex min-h-14 items-center justify-center gap-2 rounded-xl bg-[var(--rankit-neon)] px-7 font-display text-lg font-bold uppercase tracking-wide text-white hover:bg-[#a300db]"
+                        >
+                            <i class="ph-bold ph-game-controller text-2xl" aria-hidden="true"></i>
+                            ¡Quiero jugar!
+                        </a>
+                        <a
+                            href="#tabla"
+                            class="foco inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/20 px-7 font-display text-lg font-bold uppercase tracking-wide text-white hover:bg-white/5"
+                        >
+                            <i class="ph-bold ph-list-numbers text-2xl" aria-hidden="true"></i>
+                            Ver la tabla
+                        </a>
+                    </div>
                 </div>
 
-                <!-- Tipografía colosal, limpia y épica -->
-                <div class="font-block text-[5rem] sm:text-[8rem] lg:text-[11rem] leading-[0.8] tracking-tight text-white uppercase italic mb-10">
-                    <div>GESTIONA.</div>
-                    <div class="text-gray-500">COMPITE.</div>
-                    <div class="gradient-text-epic">ESCALA.</div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-16 mt-20 items-center">
-                    <div class="space-y-8">
-                        <p class="text-gray-300 text-xl font-light leading-relaxed">
-                            Rankit.Pro redefine el competitivo en <strong class="text-white font-semibold">Solitario</strong>. Un circuito de 4 semanas diseñado para filtrar a los verdaderos monstruos mecánicos y tácticos de la isla.
+                <!-- Lo próximo -->
+                <div id="proximo" class="scroll-mt-20 rounded-2xl border border-white/10 bg-[#111111] p-5 sm:p-6">
+                    <p class="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-gray-400">
+                        <i class="ph-bold ph-calendar-blank text-lg text-[var(--rankit-neon)]" aria-hidden="true"></i>
+                        Lo próximo
+                    </p>
+
+                    <div v-if="cargando" class="mt-4 flex items-center gap-3 text-gray-300" role="status">
+                        <span
+                            class="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-[var(--rankit-neon)] motion-reduce:animate-none"
+                            aria-hidden="true"
+                        ></span>
+                        Buscando la próxima fecha…
+                    </div>
+
+                    <div v-else-if="hayError" class="mt-4">
+                        <p class="text-gray-300">No pudimos cargar la próxima fecha.</p>
+                        <button
+                            type="button"
+                            class="foco mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/20 px-5 font-semibold text-white hover:bg-white/5"
+                            @click="cargarTabla"
+                        >
+                            <i class="ph-bold ph-arrow-clockwise text-lg" aria-hidden="true"></i>
+                            Reintentar
+                        </button>
+                    </div>
+
+                    <div v-else-if="proximo" class="mt-4">
+                        <p v-if="faseProxima" class="flex items-center gap-2 text-sm font-semibold text-gray-300">
+                            <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: faseProxima.color }" aria-hidden="true"></span>
+                            {{ faseProxima.semana }} · {{ faseProxima.lema }}
                         </p>
-                        
-                        <div class="flex flex-col sm:flex-row gap-4">
-                            <a href="#" @click.prevent="navigate('register')" class="fn-btn inline-block bg-fnBrightPurple text-white px-10 py-5 hover:bg-purple-600 transition-all font-chakra font-bold tracking-widest uppercase text-base text-center shadow-glowPurple relative group overflow-hidden">
-                                <span class="relative z-10">¡INSCRIBETE AHORA!</span>
-                                <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]"></div>
-                            </a>
-                            <button @click="navigate('league')" class="fn-btn border border-white/20 bg-transparent text-white px-8 py-5 hover:bg-white/5 transition-all font-chakra font-bold tracking-widest uppercase text-sm">
-                                Descubrir Formato
+                        <h2 class="mt-1 font-display text-2xl font-bold uppercase text-white sm:text-3xl">
+                            {{ nombreCorto(proximo.tournament.name) }}
+                        </h2>
+                        <p class="mt-3 flex items-center gap-2 text-lg font-semibold text-white">
+                            <i class="ph-bold ph-clock text-xl text-gray-400" aria-hidden="true"></i>
+                            {{ fechaProxima ?? 'Fecha por anunciar' }}
+                        </p>
+                        <p v-if="!fechaProxima" class="mt-1 text-sm text-gray-400">
+                            Avisamos la fecha en
+                            <a :href="INSTAGRAM" target="_blank" rel="noopener noreferrer" class="foco rounded font-semibold text-white underline underline-offset-2">Instagram</a>.
+                        </p>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <span
+                                v-if="proximoAbierto"
+                                class="inline-flex items-center gap-1.5 rounded-full bg-[#0f2e22] px-3 py-1 text-sm font-semibold text-[#4ade80]"
+                            >
+                                <i class="ph-fill ph-check-circle" aria-hidden="true"></i> Inscripciones abiertas
+                            </span>
+                            <span
+                                v-else-if="proximo.tournament.registration_status === 'closed'"
+                                class="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-gray-300"
+                            >
+                                <i class="ph-fill ph-lock-simple" aria-hidden="true"></i> Inscripciones cerradas
+                            </span>
+                            <span
+                                v-if="proximoPrivado"
+                                class="inline-flex items-center gap-1.5 rounded-full bg-[#2e2606] px-3 py-1 text-sm font-semibold text-[#f5c518]"
+                            >
+                                <i class="ph-fill ph-crown" aria-hidden="true"></i> Solo clasificados
+                            </span>
+                        </div>
+                        <Link
+                            :href="route('public.tournament.show', proximo.tournament.id)"
+                            class="foco mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 font-display text-base font-bold uppercase tracking-wide text-black hover:bg-gray-200 sm:w-auto"
+                        >
+                            {{ textoBotonProximo }}
+                            <i class="ph-bold ph-arrow-right text-lg" aria-hidden="true"></i>
+                        </Link>
+                    </div>
+
+                    <div v-else-if="torneosOrdenados.length" class="mt-4">
+                        <h2 class="font-display text-2xl font-bold uppercase text-white">La temporada terminó</h2>
+                        <p class="mt-2 text-gray-300">Mira quién quedó arriba en la tabla.</p>
+                        <a
+                            href="#tabla"
+                            class="foco mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-5 font-display font-bold uppercase tracking-wide text-black hover:bg-gray-200"
+                        >
+                            Ver la tabla
+                        </a>
+                    </div>
+
+                    <div v-else class="mt-4">
+                        <h2 class="font-display text-2xl font-bold uppercase text-white">Muy pronto</h2>
+                        <p class="mt-2 text-gray-300">
+                            Estamos preparando la próxima liga. Avisamos en
+                            <a :href="INSTAGRAM" target="_blank" rel="noopener noreferrer" class="foco rounded font-semibold text-white underline underline-offset-2">Instagram</a>.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- =========================== CÓMO ENTRAR =========================== -->
+            <section id="como-entrar" class="scroll-mt-20 py-10 sm:py-14" aria-labelledby="titulo-como-entrar">
+                <h2 id="titulo-como-entrar" class="font-display text-3xl font-bold uppercase text-white">Cómo entrar</h2>
+                <p class="mt-2 text-gray-400">Solo son 3 pasos.</p>
+
+                <ol class="mt-6 grid gap-4 md:grid-cols-3">
+                    <li class="flex flex-col rounded-2xl border border-white/10 bg-[#111111] p-5">
+                        <div class="flex items-center gap-4">
+                            <span class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--rankit-neon)] text-[var(--rankit-neon)]">
+                                <i class="ph-bold ph-user-plus text-4xl" aria-hidden="true"></i>
+                            </span>
+                            <div>
+                                <p class="text-sm font-bold uppercase tracking-wider text-gray-400">Paso 1</p>
+                                <h3 class="font-display text-xl font-bold uppercase text-white">Crea tu cuenta</h3>
+                            </div>
+                        </div>
+                        <p class="mt-3 flex-1 text-gray-300">Es gratis. Con tu cuenta ves si ya quedaste inscrito.</p>
+                        <p v-if="usuario" class="mt-4 flex min-h-12 items-center gap-2 font-semibold text-[#4ade80]">
+                            <i class="ph-fill ph-check-circle text-2xl" aria-hidden="true"></i> Ya tienes cuenta
+                        </p>
+                        <Link
+                            v-else
+                            :href="route('register')"
+                            class="foco mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 px-5 font-semibold text-white hover:bg-white/5"
+                        >
+                            Crear cuenta
+                        </Link>
+                    </li>
+
+                    <li class="flex flex-col rounded-2xl border border-white/10 bg-[#111111] p-5">
+                        <div class="flex items-center gap-4">
+                            <span class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--rankit-neon)] text-[var(--rankit-neon)]">
+                                <i class="ph-bold ph-ticket text-4xl" aria-hidden="true"></i>
+                            </span>
+                            <div>
+                                <p class="text-sm font-bold uppercase tracking-wider text-gray-400">Paso 2</p>
+                                <h3 class="font-display text-xl font-bold uppercase text-white">Inscríbete</h3>
+                            </div>
+                        </div>
+                        <p class="mt-3 flex-1 text-gray-300">Entra a la fase con inscripciones abiertas y llena tus datos.</p>
+                        <Link
+                            v-if="proximo"
+                            :href="route('public.tournament.show', proximo.tournament.id)"
+                            class="foco mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 px-5 font-semibold text-white hover:bg-white/5"
+                        >
+                            Ir a {{ nombreCorto(proximo.tournament.name) }}
+                        </Link>
+                        <a
+                            v-else
+                            href="#proximo"
+                            class="foco mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 px-5 font-semibold text-white hover:bg-white/5"
+                        >
+                            Ver la próxima fecha
+                        </a>
+                    </li>
+
+                    <li class="flex flex-col rounded-2xl border border-white/10 bg-[#111111] p-5">
+                        <div class="flex items-center gap-4">
+                            <span class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--rankit-neon)] text-[var(--rankit-neon)]">
+                                <i class="ph-bold ph-crosshair text-4xl" aria-hidden="true"></i>
+                            </span>
+                            <div>
+                                <p class="text-sm font-bold uppercase tracking-wider text-gray-400">Paso 3</p>
+                                <h3 class="font-display text-xl font-bold uppercase text-white">Juega y suma</h3>
+                            </div>
+                        </div>
+                        <p class="mt-3 flex-1 text-gray-300">
+                            Cada eliminación vale {{ puntosKillGeneral }} puntos. Los mejores pasan a la siguiente fase.
+                        </p>
+                        <a
+                            href="#tabla"
+                            class="foco mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 px-5 font-semibold text-white hover:bg-white/5"
+                        >
+                            Ver la tabla
+                        </a>
+                    </li>
+                </ol>
+
+                <p class="mt-4 flex items-start gap-2 text-sm text-gray-400">
+                    <i class="ph-bold ph-info mt-0.5 text-base" aria-hidden="true"></i>
+                    ¿Eres menor de edad? Inscríbete con ayuda de un adulto, sobre todo si hay que pagar.
+                </p>
+            </section>
+
+            <!-- ======================= TABLA DE POSICIONES ======================= -->
+            <section id="tabla" class="scroll-mt-20 py-10 sm:py-14" aria-labelledby="titulo-tabla">
+                <h2 id="titulo-tabla" class="font-display text-3xl font-bold uppercase text-white">Tabla de posiciones</h2>
+                <p class="mt-2 text-gray-400">Los puntos se actualizan cuando termina cada partida.</p>
+
+                <div class="mt-6 rounded-2xl border border-white/10 bg-[#111111] p-4 sm:p-6">
+                    <!-- Cargando -->
+                    <div v-if="cargando" class="flex items-center justify-center gap-3 py-16 text-gray-300" role="status">
+                        <span
+                            class="h-8 w-8 shrink-0 animate-spin rounded-full border-4 border-white/20 border-t-[var(--rankit-neon)] motion-reduce:animate-none"
+                            aria-hidden="true"
+                        ></span>
+                        Cargando la tabla…
+                    </div>
+
+                    <!-- Error -->
+                    <div v-else-if="hayError" class="py-12 text-center" role="alert">
+                        <i class="ph-bold ph-wifi-slash text-4xl text-gray-400" aria-hidden="true"></i>
+                        <p class="mt-3 text-lg font-semibold text-white">No pudimos cargar la tabla.</p>
+                        <p class="mt-1 text-gray-400">Revisa tu internet e inténtalo otra vez.</p>
+                        <button
+                            type="button"
+                            class="foco mt-5 inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-6 font-display font-bold uppercase tracking-wide text-black hover:bg-gray-200"
+                            @click="cargarTabla"
+                        >
+                            <i class="ph-bold ph-arrow-clockwise text-lg" aria-hidden="true"></i>
+                            Reintentar
+                        </button>
+                    </div>
+
+                    <!-- Sin torneos -->
+                    <div v-else-if="torneosOrdenados.length === 0" class="py-12 text-center">
+                        <i class="ph-bold ph-trophy text-4xl text-gray-400" aria-hidden="true"></i>
+                        <p class="mt-3 text-lg font-semibold text-white">Aún no hay tablas de clasificación.</p>
+                        <p class="mt-1 text-gray-400">No hay torneos de la liga activos en este momento.</p>
+                    </div>
+
+                    <template v-else>
+                        <!-- Selector de fase -->
+                        <p id="etiqueta-fases" class="text-sm font-bold uppercase tracking-wider text-gray-400">Elige la fase</p>
+                        <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-labelledby="etiqueta-fases">
+                            <button
+                                v-for="(bloque, i) in torneosOrdenados"
+                                :key="bloque.tournament.id"
+                                type="button"
+                                class="foco min-h-14 rounded-xl border px-3 py-2 text-left"
+                                :class="
+                                    indiceActivo === i
+                                        ? 'border-[var(--rankit-neon)] bg-[var(--rankit-neon)] text-white'
+                                        : 'border-white/15 text-gray-200 hover:bg-white/5'
+                                "
+                                :aria-pressed="indiceActivo === i ? 'true' : 'false'"
+                                @click="elegirTorneo(i)"
+                            >
+                                <span class="block font-display text-base font-bold leading-tight">
+                                    {{ nombreCorto(bloque.tournament.name) }}
+                                </span>
+                                <span
+                                    v-if="faseDe(bloque.tournament)"
+                                    class="block text-xs font-semibold"
+                                    :class="indiceActivo === i ? 'text-white' : 'text-gray-400'"
+                                >
+                                    {{ faseDe(bloque.tournament)?.semana }}
+                                </span>
                             </button>
                         </div>
-                    </div>
 
-                    <!-- Cuadro Info menos saturado, más tech/vidrio -->
-                    <div class="premium-card p-10 relative overflow-hidden group">
-                        <div class="absolute top-0 right-0 w-32 h-32 bg-fnBrightPurple/20 blur-[50px] transition-all group-hover:bg-fnBrightPurple/40"></div>
-                        
-                        <h3 class="font-chakra font-bold italic text-2xl text-white mb-8 uppercase tracking-widest border-b border-white/10 pb-4">
-                            Reglas de Clasificación
-                        </h3>
-                        <ul class="space-y-8 text-sm text-gray-400 font-medium relative z-10">
-                            <li class="flex items-start gap-5">
-                                <div class="text-white text-xl"><i class="fa-solid fa-crosshairs"></i></div>
-                                <div>
-                                    <strong class="text-white block font-chakra text-lg uppercase tracking-wider mb-1">Cortes de Clasificación (Sem 1 y 2)</strong>
-                                    <span>Se evalúa en dos cortes: Las primeras 3 partidas gratis clasifican al <strong class="text-white">Top 10% general</strong>. Las partidas 4 y 5 (solo Premium) clasifican al <strong class="text-white">Top 10% exclusivo de pago</strong>.</span>
-                                </div>
-                            </li>
-                            <li class="flex items-start gap-5">
-                                <div class="text-white text-xl"><i class="fa-solid fa-ticket"></i></div>
-                                <div>
-                                    <strong class="text-white block font-chakra text-lg uppercase tracking-wider mb-1">Repechaje (Semana 3)</strong>
-                                    <span>Son 4 partidas (<strong class="text-white">2 Battle Royale y 2 Recarga</strong>). Clasifican: El ganador de cada partida, los 3 con mayor puntaje global, y el jugador con más kills que no haya clasificado aún.</span>
-                                </div>
-                            </li>
-                            <li class="flex items-start gap-5">
-                                <div class="text-white text-xl"><i class="fa-solid fa-sack-dollar"></i></div>
-                                <div>
-                                    <strong class="text-white block font-chakra text-lg uppercase tracking-wider mb-1">Final y Sorteos de Pozo</strong>
-                                    <span>En la Gran Final (Semana 4), el mega pozo acumulado se reparte: 80% para premiación a los campeones y 20% en sorteos para toda la comunidad participante.</span>
-                                </div>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ================= PÁGINA 2: LIGA PRINCIPAL ================= -->
-        <section id="view-league" class="view-section" v-show="activeView === 'league'">
-            <div class="text-center mb-16">
-                <h2 class="font-block text-5xl sm:text-7xl uppercase text-white tracking-wide mb-6">
-                    CIRCUITO <span class="text-gray-500">PRO</span>
-                </h2>
-                <p class="text-gray-400 text-base max-w-2xl mx-auto leading-relaxed font-light">
-                    Semanas 1 y 2 buscan consistencia. La Semana 3 busca adaptabilidad extrema. La Final corona al campeón absoluto. Todo en estricto formato Solitario.
-                </p>
-            </div>
-
-            <!-- Carrusel Épico de Pósters -->
-            <div class="relative w-full mb-16 group">
-                <button @click="scrollCarousel(-1)" class="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 z-30 bg-black/80 border border-white/20 text-white w-14 h-14 flex items-center justify-center rounded-full hover:bg-white hover:text-black transition-all hidden md:flex opacity-0 group-hover:opacity-100 backdrop-blur-md">
-                    <i class="fa-solid fa-chevron-left"></i>
-                </button>
-                <button @click="scrollCarousel(1)" class="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 z-30 bg-black/80 border border-white/20 text-white w-14 h-14 flex items-center justify-center rounded-full hover:bg-white hover:text-black transition-all hidden md:flex opacity-0 group-hover:opacity-100 backdrop-blur-md">
-                    <i class="fa-solid fa-chevron-right"></i>
-                </button>
-
-                <div id="league-carousel" class="flex gap-6 overflow-x-auto snap-x snap-mandatory hide-scrollbar py-8 px-4 items-center scroll-smooth">
-                    
-                    <!-- Póster Semana 1 -->
-                    <div @click="selectWeek(1)" id="card-w1" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 1 ? 'opacity-100 shadow-glowPurple' : 'opacity-75 hover:opacity-100']">
-                        <div class="noise-overlay"></div>
-                        <img src="/public/league/clasificatorio-1.png" alt="Póster de fase clasificatoria de la semana 1 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
-                        
-                        <div class="relative z-20 h-full flex flex-col p-8">
-                            <div class="flex justify-between items-start mb-auto">
-                                <span class="font-chakra font-bold text-white tracking-widest text-sm uppercase">SEMANA 01</span>
-                                <span class="bg-white/10 backdrop-blur-md border border-white/20 text-white text-[10px] px-2 py-1 uppercase font-bold"><i class="fa-solid fa-user mr-1"></i> Solos</span>
-                            </div>
-
-                            <div class="mt-auto">
-                                <div class="w-8 h-1 bg-fnBrightPurple mb-4 transition-all duration-300 group-hover:w-16"></div>
-                                <h3 class="font-block text-4xl text-white uppercase leading-[0.9] mb-3">BATTLE<br>ROYALE</h3>
-                                <p class="text-gray-400 text-xs font-chakra uppercase tracking-widest">Fase de Clasificación</p>
-                                
-                                <div class="mt-6 pt-6 border-t border-white/10">
-                                    <span class="block text-[10px] text-gray-500 font-chakra uppercase mb-1">Clasificación</span>
-                                    <span class="text-white text-sm font-bold uppercase">Top 10% Free / Top 10% Pro</span>
-                                </div>
+                        <!-- Buscador -->
+                        <div v-if="filas.length > 0" class="mt-5">
+                            <label for="buscar-jugador" class="text-sm font-bold uppercase tracking-wider text-gray-400">
+                                Busca tu nombre
+                            </label>
+                            <div class="relative mt-2">
+                                <i
+                                    class="ph-bold ph-magnifying-glass pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg text-gray-400"
+                                    aria-hidden="true"
+                                ></i>
+                                <input
+                                    id="buscar-jugador"
+                                    v-model="busqueda"
+                                    type="search"
+                                    autocomplete="off"
+                                    placeholder="Escribe tu nombre de jugador"
+                                    class="foco h-12 w-full rounded-xl border border-white/15 bg-[#0a0a0a] pl-11 pr-4 text-base text-white placeholder:text-gray-500 focus:border-[var(--rankit-neon)] focus:ring-0"
+                                />
                             </div>
                         </div>
-                        <div id="sel-w1" :class="['absolute inset-0 border border-fnBrightPurple transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 1 ? 'opacity-100' : 'opacity-0']"></div>
-                    </div>
 
-                    <!-- Póster Semana 2 -->
-                    <div @click="selectWeek(2)" id="card-w2" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 2 ? 'opacity-100 shadow-glowEmerald' : 'opacity-75 hover:opacity-100']">
-                        <div class="noise-overlay"></div>
-                        <img src="/public/league/clasificatorio-2.png" alt="Póster de segunda clasificatoria de la semana 2 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
-                        
-                        <div class="relative z-20 h-full flex flex-col p-8">
-                            <div class="flex justify-between items-start mb-auto">
-                                <span class="font-chakra font-bold text-white tracking-widest text-sm uppercase">SEMANA 02</span>
-                                <span class="bg-white/10 backdrop-blur-md border border-white/20 text-white text-[10px] px-2 py-1 uppercase font-bold"><i class="fa-solid fa-user mr-1"></i> Solos</span>
-                            </div>
-
-                            <div class="mt-auto">
-                                <div class="w-8 h-1 bg-fnEmerald mb-4 transition-all duration-300 group-hover:w-16"></div>
-                                <h3 class="font-block text-4xl text-white uppercase leading-[0.9] mb-3">BATTLE<br>ROYALE</h3>
-                                <p class="text-fnEmerald/90 text-xs font-chakra uppercase tracking-widest">Segunda Oportunidad</p>
-                                
-                                <div class="mt-6 pt-6 border-t border-white/10">
-                                    <span class="block text-[10px] text-gray-500 font-chakra uppercase mb-1">Clasificación</span>
-                                    <span class="text-white text-sm font-bold uppercase">Top 10% Free / Top 10% Pro</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="sel-w2" :class="['absolute inset-0 border border-fnEmerald transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 2 ? 'opacity-100' : 'opacity-0']"></div>
-                    </div>
-
-                    <!-- Póster Semana 3 (Repechaje) -->
-                    <div @click="selectWeek(3)" id="card-w3" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 3 ? 'opacity-100 shadow-glowCrimson' : 'opacity-75 hover:opacity-100']">
-                        <div class="noise-overlay"></div>
-                        <img src="/public/league/repechaje.png" alt="Póster de repechaje de la semana 3 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
-                        
-                        <div class="relative z-20 h-full flex flex-col p-8">
-                            <div class="flex justify-between items-start mb-auto">
-                                <span class="font-chakra font-bold text-white tracking-widest text-sm uppercase">SEMANA 03</span>
-                                <span class="bg-fnCrimson/10 backdrop-blur-md border border-fnCrimson/30 text-fnCrimson text-[10px] px-2 py-1 uppercase font-bold"><i class="fa-solid fa-bolt mr-1"></i> BR & RECARGA</span>
-                            </div>
-
-                            <div class="mt-auto">
-                                <div class="w-8 h-1 bg-fnCrimson mb-4 transition-all duration-300 group-hover:w-16"></div>
-                                <h3 class="font-block text-4xl text-white uppercase leading-[0.9] mb-3">REPECHAJE<br>ABSOLUTO</h3>
-                                <p class="text-fnCrimson/80 text-xs font-chakra uppercase tracking-widest">Doble Disciplina</p>
-                                
-                                <div class="mt-6 pt-6 border-t border-white/10">
-                                    <span class="block text-[10px] text-gray-500 font-chakra uppercase mb-1">Condición de Pase</span>
-                                    <span class="text-white text-xs font-bold uppercase leading-tight">Wins, Puntos y Kills</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="sel-w3" :class="['absolute inset-0 border border-fnCrimson transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 3 ? 'opacity-100' : 'opacity-0']"></div>
-                    </div>
-
-                    <!-- Póster Semana 4 (Final) -->
-                    <div @click="selectWeek(4)" id="card-w4" :class="['shrink-0 snap-center w-[85vw] max-w-[340px] h-[500px] bg-[#05020a] relative cursor-pointer transition-all duration-500 hover:-translate-y-3 group border border-white/10 rounded-lg overflow-hidden', selectedWeek === 4 ? 'opacity-100 shadow-glowGold' : 'opacity-75 hover:opacity-100']">
-                        <div class="noise-overlay"></div>
-                        <img src="/public/league/gran-final.png" alt="Póster de gran final de la semana 4 de Fortnite" class="absolute inset-0 w-full h-full object-cover opacity-75">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent z-10"></div>
-                        
-                        <div class="relative z-20 h-full flex flex-col p-8">
-                            <div class="flex justify-between items-start mb-auto">
-                                <span class="font-chakra font-bold text-fnGold tracking-widest text-sm uppercase">FINAL</span>
-                                <span class="bg-fnGold/10 backdrop-blur-md border border-fnGold/30 text-fnGold text-[10px] px-2 py-1 uppercase font-bold"><i class="fa-solid fa-trophy mr-1"></i> Solos</span>
-                            </div>
-
-                            <div class="mt-auto">
-                                <div class="w-8 h-1 bg-fnGold mb-4 transition-all duration-300 group-hover:w-16"></div>
-                                <h3 class="font-block text-4xl text-white uppercase leading-[0.9] mb-3">GRAN<br>FINAL</h3>
-                                <p class="text-fnGold/80 text-xs font-chakra uppercase tracking-widest">Custom Lobbies</p>
-                                
-                                <div class="mt-6 pt-6 border-t border-white/10 grid grid-cols-2 gap-4">
-                                    <div>
-                                        <span class="block text-[10px] text-gray-500 font-chakra uppercase mb-1">Pozo Base</span>
-                                        <span class="text-white text-sm font-bold uppercase">80% Bolsa</span>
-                                    </div>
-                                    <div>
-                                        <span class="block text-[10px] text-gray-500 font-chakra uppercase mb-1">Sorteos</span>
-                                        <span class="text-white text-sm font-bold uppercase">20% Bolsa</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="sel-w4" :class="['absolute inset-0 border border-fnGold transition-opacity duration-300 pointer-events-none z-30', selectedWeek === 4 ? 'opacity-100' : 'opacity-0']"></div>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Panel de detalles Premium (Menos cajas sólidas, tipografía abierta) -->
-            <div class="premium-card p-8 sm:p-12 relative overflow-hidden">
-                <div class="flex flex-col md:flex-row gap-12 relative z-10">
-                    
-                    <div class="md:w-1/3 border-r border-white/10 pr-8">
-                        <span :class="[currentWeekData.color, 'font-chakra font-bold text-xs uppercase tracking-widest mb-4 block']">{{ currentWeekData.badge }}</span>
-                        <h3 class="font-block text-4xl text-white uppercase leading-none mb-6">{{ currentWeekData.title }}</h3>
-                        <p class="text-gray-400 text-sm leading-relaxed mb-6">
-                            {{ currentWeekData.desc_short }}
+                        <p class="mt-5 text-sm text-gray-400">
+                            1 eliminación = {{ puntosKillActivo }} puntos
                         </p>
-                        <div class="pt-4 border-t border-white/10">
-                            <span class="text-[10px] font-chakra font-bold uppercase tracking-widest text-gray-500 mb-3 block">Póster de la fase</span>
-                            <img :src="currentWeekData.poster" alt="Póster oficial de la fase seleccionada" class="w-full rounded-md border border-white/10 bg-black/30 object-cover">
-                        </div>
-                    </div>
 
-                    <div class="md:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-8">
-                        <div>
-                            <h4 class="text-xs font-chakra font-bold uppercase tracking-widest text-gray-500 mb-4 border-b border-white/10 pb-2">Reglas de Emparejamiento</h4>
-                            <div class="text-gray-300 text-sm leading-relaxed space-y-3" v-html="currentWeekData.desc1">
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <h4 class="text-xs font-chakra font-bold uppercase tracking-widest text-gray-500 mb-4 border-b border-white/10 pb-2">Sistema de Clasificación</h4>
-                            <div class="text-gray-300 text-sm leading-relaxed space-y-3" v-html="currentWeekData.desc2">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tablas Seriadas (Clasificación Actual) -->
-            <div class="mt-20 max-w-6xl mx-auto">
-                <div class="text-center mb-12">
-                    <h2 class="font-block text-4xl sm:text-5xl uppercase text-white tracking-wide mb-4">
-                        CLASIFICACIÓN <span class="text-fnBrightPurple">ACTUAL</span>
-                    </h2>
-                    <p class="text-gray-400 text-sm max-w-2xl mx-auto font-chakra uppercase tracking-widest">
-                        Ranking en vivo de los torneos seriados de la liga.
-                    </p>
-                </div>
-
-                <div v-if="loading" class="text-center text-fnBrightPurple py-10 font-chakra uppercase tracking-widest font-bold animate-pulse">
-                    Cargando Clasificación...
-                </div>
-                
-                <div v-else-if="allSerializedTournaments.length === 0" class="text-center text-gray-500 py-10 font-chakra uppercase tracking-widest font-bold border border-gray-800 border-dashed rounded-xl">
-                    Aún no hay tablas de clasificación disponibles.
-                </div>
-
-                <div v-else class="space-y-16">
-                    <div v-for="(league, index) in allSerializedTournaments" :key="index" class="premium-card p-6 md:p-10 relative overflow-hidden">
-                        <h3 class="font-block text-3xl text-white uppercase italic mb-6 border-b border-white/10 pb-4">
-                            {{ league.tournament.name }}
-                        </h3>
-                        
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left font-chakra text-sm">
-                                <thead class="text-xs uppercase text-gray-500 border-b border-white/10">
+                        <!-- Tabla -->
+                        <div class="mt-2 overflow-hidden rounded-xl border border-white/10">
+                            <table class="w-full table-fixed text-left">
+                                <caption class="sr-only">
+                                    Tabla de posiciones de {{ nombreCorto(bloqueActivo?.tournament.name) }}
+                                </caption>
+                                <thead class="bg-[#161616] text-xs font-bold uppercase tracking-wider text-gray-400">
                                     <tr>
-                                        <th class="py-4 px-2">Pos</th>
-                                        <th class="py-4 px-2">Jugador</th>
-                                        <th class="py-4 px-2 text-center">Partidas</th>
-                                        <th class="py-4 px-2 text-center">Kills</th>
-                                        <th class="py-4 px-2 text-center">Daño</th>
+                                        <th scope="col" class="w-14 px-2 py-3 text-center sm:w-16 sm:px-3">
+                                            <span aria-hidden="true" class="sm:hidden">#</span>
+                                            <span class="sr-only sm:not-sr-only">Lugar</span>
+                                        </th>
+                                        <th scope="col" class="px-2 py-3 sm:px-3">Jugador</th>
+                                        <th scope="col" class="hidden w-24 px-3 py-3 text-right sm:table-cell">Partidas</th>
+                                        <th scope="col" class="hidden w-36 px-3 py-3 text-right sm:table-cell">Eliminaciones</th>
+                                        <th scope="col" class="hidden w-28 px-3 py-3 text-right md:table-cell">Daño</th>
+                                        <th scope="col" class="w-20 px-2 py-3 text-right sm:w-24 sm:px-3">Puntos</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="(player, pIdx) in league.standings" :key="player.player_name" class="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                        <td class="py-4 px-2 font-bold" :class="pIdx < 3 ? 'text-fnBrightPurple' : 'text-gray-400'">#{{ pIdx + 1 }}</td>
-                                        <td class="py-4 px-2 font-bold text-white uppercase">{{ player.player_name }}</td>
-                                        <td class="py-4 px-2 text-center text-gray-400">{{ player.matches_played }}</td>
-                                        <td class="py-4 px-2 text-center text-white font-bold">{{ player.total_kills || 0 }}</td>
-                                        <td class="py-4 px-2 text-center text-gray-400">{{ player.total_damage || 0 }}</td>
+                                    <tr
+                                        v-for="fila in filasVisibles"
+                                        :key="`${fila.lugar}-${fila.nombre}`"
+                                        class="border-t border-white/5"
+                                        :class="fila.lugar <= 3 ? 'bg-white/[0.04]' : ''"
+                                    >
+                                        <td class="px-2 py-3 text-center sm:px-3">
+                                            <span
+                                                v-if="fila.lugar <= 3"
+                                                class="inline-flex h-10 w-10 items-center justify-center rounded-full font-display text-lg font-bold"
+                                                :style="{ backgroundColor: MEDALLAS[fila.lugar - 1].fondo, color: MEDALLAS[fila.lugar - 1].texto }"
+                                            >
+                                                {{ fila.lugar }}<span class="sr-only">, medalla de {{ MEDALLAS[fila.lugar - 1].nombre }}</span>
+                                            </span>
+                                            <span
+                                                v-else
+                                                class="inline-flex h-10 w-10 items-center justify-center font-display text-lg font-bold text-gray-300"
+                                            >
+                                                {{ fila.lugar }}
+                                            </span>
+                                        </td>
+                                        <td class="px-2 py-3 sm:px-3">
+                                            <span class="block truncate font-bold text-white" :title="fila.nombre">{{ fila.nombre }}</span>
+                                            <!-- En móvil los datos extra van debajo del nombre -->
+                                            <span class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-400 sm:hidden">
+                                                <span>{{ fmt(fila.kills) }} elim.</span>
+                                                <span>{{ fmt(fila.partidas) }} partidas</span>
+                                                <span>{{ fmt(fila.dano) }} daño</span>
+                                            </span>
+                                        </td>
+                                        <td class="hidden px-3 py-3 text-right text-gray-300 sm:table-cell">{{ fmt(fila.partidas) }}</td>
+                                        <td class="hidden px-3 py-3 text-right text-gray-300 sm:table-cell">{{ fmt(fila.kills) }}</td>
+                                        <td class="hidden px-3 py-3 text-right text-gray-300 md:table-cell">{{ fmt(fila.dano) }}</td>
+                                        <td class="px-2 py-3 text-right font-display text-lg font-bold text-white sm:px-3">{{ fmt(fila.puntos) }}</td>
                                     </tr>
-                                    <tr v-if="!league.standings || league.standings.length === 0">
-                                        <td colspan="5" class="text-center py-8 text-gray-500 uppercase tracking-widest">Sin registros de partidas</td>
+
+                                    <tr v-if="filas.length === 0">
+                                        <td colspan="6" class="px-4 py-12 text-center text-gray-400">
+                                            Todavía no hay jugadores en esta fase. ¡Aquí saldrán cuando se juegue la primera partida!
+                                        </td>
+                                    </tr>
+                                    <tr v-else-if="filasFiltradas.length === 0">
+                                        <td colspan="6" class="px-4 py-12 text-center text-gray-400">
+                                            No encontramos a «{{ busqueda.trim() }}» en esta fase.
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                </div>
-            </div>
 
-        </section>
-
-        <!-- ================= PÁGINA 3: OTROS TORNEOS ================= -->
-        <section id="view-others" class="view-section" v-show="activeView === 'others'">
-            <div class="text-center mb-16">
-                <h2 class="font-block text-5xl sm:text-7xl uppercase text-white tracking-wide mb-6">
-                    EVENTOS <span class="text-gray-500">COMUNIDAD</span>
-                </h2>
-                <p class="text-gray-400 text-base max-w-2xl mx-auto leading-relaxed font-light">
-                    Torneos rápidos entre semana. Inscripciones bajas, bolsas de premio directas y acción garantizada en tus otros títulos favoritos.
-                </p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                
-                <div class="premium-card p-8 flex flex-col justify-between group h-[300px] relative overflow-hidden">
-                    <div class="absolute top-0 right-0 w-1 h-full bg-red-500 opacity-20 group-hover:opacity-100 transition-opacity"></div>
-                    <div>
-                        <span class="text-[10px] font-chakra font-bold uppercase text-red-400 mb-2 block tracking-widest">VALORANT</span>
-                        <h3 class="font-block text-2xl text-white mb-4 uppercase">DM Showdown</h3>
-                        <p class="text-gray-400 text-xs leading-relaxed">Deathmatch de todos contra todos. El jugador con más bajas tras 3 rondas gana la bolsa.</p>
-                    </div>
-                    <div class="pt-4 border-t border-white/10 flex items-center justify-between">
-                        <span class="text-xs text-white font-chakra font-bold">$5 USD Entrada</span>
-                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-red-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
-                    </div>
-                </div>
-
-                <div class="premium-card p-8 flex flex-col justify-between group h-[300px] relative overflow-hidden">
-                    <div class="absolute top-0 right-0 w-1 h-full bg-blue-500 opacity-20 group-hover:opacity-100 transition-opacity"></div>
-                    <div>
-                        <span class="text-[10px] font-chakra font-bold uppercase text-blue-400 mb-2 block tracking-widest">L. OF LEGENDS</span>
-                        <h3 class="font-block text-2xl text-white mb-4 uppercase">Rey ARAM</h3>
-                        <p class="text-gray-400 text-xs leading-relaxed">Duelos 1v1 oficiales. Primera sangre, 100 súbditos o primera torreta define al ganador.</p>
-                    </div>
-                    <div class="pt-4 border-t border-white/10 flex items-center justify-between">
-                        <span class="text-xs text-white font-chakra font-bold">$5 USD Entrada</span>
-                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-blue-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
-                    </div>
-                </div>
-
-                <div class="premium-card p-8 flex flex-col justify-between group h-[300px] relative overflow-hidden">
-                    <div class="absolute top-0 right-0 w-1 h-full bg-cyan-500 opacity-20 group-hover:opacity-100 transition-opacity"></div>
-                    <div>
-                        <span class="text-[10px] font-chakra font-bold uppercase text-cyan-400 mb-2 block tracking-widest">ROCKET LEAGUE</span>
-                        <h3 class="font-block text-2xl text-white mb-4 uppercase">Hoops 2v2</h3>
-                        <p class="text-gray-400 text-xs leading-relaxed">Bracket rápido de eliminación en la cancha de baloncesto. Domina el aire.</p>
-                    </div>
-                    <div class="pt-4 border-t border-white/10 flex items-center justify-between">
-                        <span class="text-xs text-white font-chakra font-bold">$10 USD Entrada</span>
-                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-cyan-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
-                    </div>
-                </div>
-
-                <div class="premium-card p-8 flex flex-col justify-between group h-[300px] relative overflow-hidden">
-                    <div class="absolute top-0 right-0 w-1 h-full bg-orange-500 opacity-20 group-hover:opacity-100 transition-opacity"></div>
-                    <div>
-                        <span class="text-[10px] font-chakra font-bold uppercase text-orange-400 mb-2 block tracking-widest">OVERWATCH 2</span>
-                        <h3 class="font-block text-2xl text-white mb-4 uppercase">Copa Defensora</h3>
-                        <p class="text-gray-400 text-xs leading-relaxed">Arma tu escuadra de 5 (Cola de roles) y domina los mapas en eliminación directa.</p>
-                    </div>
-                    <div class="pt-4 border-t border-white/10 flex items-center justify-between">
-                        <span class="text-xs text-white font-chakra font-bold">$15 USD Entrada</span>
-                        <a href="#" @click.prevent="navigate('register')" class="text-xs text-orange-400 hover:text-white transition-colors uppercase font-bold tracking-widest">Entrar</a>
-                    </div>
-                </div>
-
-            </div>
-        </section>
-
-        <!-- ================= PÁGINA 4: CALCULADORA ================= -->
-        <section id="view-simulator" class="view-section" v-show="activeView === 'simulator'">
-            <div class="text-center mb-16">
-                <h2 class="font-block text-5xl sm:text-7xl uppercase text-white tracking-wide mb-6">
-                    REPARTO <span class="text-gray-500">BOLSA</span>
-                </h2>
-                <p class="text-gray-400 text-base max-w-2xl mx-auto leading-relaxed font-light">
-                    Transparencia total. Proyecta el pozo de premios final y semanal basándote en la venta de pases Premium de la comunidad.
-                </p>
-            </div>
-
-            <div class="premium-card p-10 max-w-4xl mx-auto">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-                    
-                    <div class="space-y-10">
-                        <div>
-                            <div class="flex justify-between items-center font-chakra font-bold uppercase text-white mb-4 text-xs tracking-widest">
-                                <span>Usuarios Premium</span>
-                                <span class="text-white text-lg font-block">{{ inputPlayers }}</span>
-                            </div>
-                            <input type="range" v-model.number="inputPlayers" @input="updatePrize" min="20" max="500" class="w-full h-1 bg-white/20 appearance-none cursor-pointer accent-white">
+                        <div v-if="!textoBusqueda && filas.length > FILAS_INICIALES" class="mt-4 text-center">
+                            <button
+                                type="button"
+                                class="foco inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/20 px-6 font-semibold text-white hover:bg-white/5"
+                                @click="verTodos = !verTodos"
+                            >
+                                <i class="ph-bold text-lg" :class="verTodos ? 'ph-caret-up' : 'ph-caret-down'" aria-hidden="true"></i>
+                                {{ verTodos ? `Ver solo el top ${FILAS_INICIALES}` : `Ver los ${fmt(filas.length)} jugadores` }}
+                            </button>
                         </div>
 
-                        <div>
-                            <div class="flex justify-between items-center font-chakra font-bold uppercase text-white mb-4 text-xs tracking-widest">
-                                <span>Costo Pase Upgrade</span>
-                                <span class="text-white text-lg font-block">${{ inputPrice }}</span>
-                            </div>
-                            <input type="range" v-model.number="inputPrice" @input="updatePrize" min="5" max="30" step="5" class="w-full h-1 bg-white/20 appearance-none cursor-pointer accent-white">
+                        <!-- Inscribirse a la fase elegida -->
+                        <div
+                            v-if="bloqueActivo"
+                            class="mt-6 flex flex-col items-start gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <p class="text-gray-300">
+                                ¿Quieres competir en
+                                <strong class="text-white">{{ nombreCorto(bloqueActivo.tournament.name) }}</strong>?
+                            </p>
+                            <Link
+                                :href="route('public.tournament.show', bloqueActivo.tournament.id)"
+                                class="foco inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--rankit-neon)] px-6 font-display font-bold uppercase tracking-wide text-white hover:bg-[#a300db] sm:w-auto"
+                            >
+                                <i class="ph-bold ph-ticket text-lg" aria-hidden="true"></i>
+                                Inscríbete aquí
+                            </Link>
                         </div>
-
-                        <div class="border-l border-white/20 pl-6 text-sm text-gray-400 space-y-4 font-light">
-                            <div class="flex justify-between"><span>Premios Semanales:</span> <strong class="text-white">40%</strong></div>
-                            <div class="flex justify-between"><span>Mega Pozo Final:</span> <strong class="text-white">40%</strong></div>
-                            <div class="flex justify-between"><span>Sorteos Comunidad:</span> <strong class="text-white">20%</strong></div>
-                        </div>
-                    </div>
-
-                    <div class="border border-white/10 bg-black/40 p-10 text-center relative flex flex-col justify-center h-full">
-                        <span class="text-[10px] text-gray-500 font-chakra font-bold uppercase tracking-widest block mb-2">Recaudación Estimada</span>
-                        <span class="font-block text-6xl text-white tracking-tight block mb-12">${{ prizeTotal.toLocaleString() }}</span>
-                        
-                        <div class="grid grid-cols-3 gap-2">
-                            <div class="text-center">
-                                <span class="text-[9px] text-gray-500 font-chakra uppercase block mb-1">Semanales</span>
-                                <strong class="text-sm font-block text-white">${{ prizeWeekly.toLocaleString() }}</strong>
-                            </div>
-                            <div class="text-center border-x border-white/10">
-                                <span class="text-[9px] text-gray-500 font-chakra uppercase block mb-1">Bolsa Final</span>
-                                <strong class="text-sm font-block text-white">${{ prizeFinal.toLocaleString() }}</strong>
-                            </div>
-                            <div class="text-center">
-                                <span class="text-[9px] text-gray-500 font-chakra uppercase block mb-1">Sorteos</span>
-                                <strong class="text-sm font-block text-white">${{ prizeGiveaways.toLocaleString() }}</strong>
-                            </div>
-                        </div>
-                    </div>
-
+                    </template>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <!-- ================= PÁGINA 5: CLASIFICACIÓN (ANTES REGISTRO) ================= -->
-        <section id="view-register" class="view-section" v-show="activeView === 'register'">
-            <div class="text-center mb-16">
-                <h2 class="font-block text-5xl sm:text-7xl uppercase text-white tracking-wide mb-6">
-                    TABLA DE <span class="text-[var(--rankit-neon)]">CLASIFICACIÓN</span>
-                </h2>
-                <p class="text-gray-400 text-base max-w-2xl mx-auto leading-relaxed font-light">
-                    Sigue en tiempo real las posiciones del torneo. Solo los mejores asegurarán su lugar en la Gran Final.
-                </p>
-            </div>
+            <!-- ============================== FASES ============================== -->
+            <section id="fases" class="scroll-mt-20 py-10 sm:py-14" aria-labelledby="titulo-fases">
+                <h2 id="titulo-fases" class="font-display text-3xl font-bold uppercase text-white">Las 4 fases</h2>
+                <p class="mt-2 text-gray-400">Son 4 semanas, todo en Solos. Cada fase te acerca a la Gran Final.</p>
 
-            <div class="max-w-5xl mx-auto bg-black/40 border border-white/10 p-6 sm:p-10 rounded-xl">
-                <!-- Selector de Torneos Seriados -->
-                <div v-if="!loading && allSerializedTournaments.length > 0" class="flex flex-wrap justify-center gap-4 mb-8">
-                    <button 
-                        v-for="(item, index) in allSerializedTournaments" 
-                        :key="index"
-                        @click="selectTournament(index)"
-                        :class="[
-                            'px-6 py-2 rounded-full font-chakra font-bold text-[11px] uppercase tracking-widest transition-all',
-                            activeTournamentIndex === index 
-                                ? 'bg-[var(--rankit-neon)] text-black shadow-[0_0_15px_rgba(var(--rankit-neon-rgb),0.5)]' 
-                                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                        ]"
+                <ol class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <li
+                        v-for="fase in FASES"
+                        :key="fase.num"
+                        class="flex flex-col rounded-2xl border border-white/10 border-t-4 bg-[#111111] p-5"
+                        :style="{ borderTopColor: fase.color }"
                     >
-                        {{ item.tournament.name }}
-                    </button>
-                </div>
+                        <div class="flex items-center gap-3">
+                            <i class="ph-fill text-3xl" :class="fase.icono" :style="{ color: fase.color }" aria-hidden="true"></i>
+                            <p class="text-sm font-bold uppercase tracking-wider text-gray-400">{{ fase.semana }}</p>
+                        </div>
+                        <h3 class="mt-3 font-display text-2xl font-bold uppercase leading-tight text-white">{{ fase.titulo }}</h3>
+                        <p class="text-sm font-semibold text-gray-400">{{ fase.lema }}</p>
+                        <p class="mt-3 flex-1 text-gray-300">{{ fase.resumen }}</p>
+                        <p class="mt-3 text-sm font-semibold text-white">{{ fase.pase }}</p>
 
-                <!-- Loading State -->
-                <div v-if="loading" class="flex justify-center items-center py-20">
-                    <div class="w-10 h-10 border-4 border-white/20 border-t-[var(--rankit-neon)] rounded-full animate-spin"></div>
-                </div>
+                        <details class="group mt-4 border-t border-white/10 pt-2">
+                            <summary
+                                class="foco flex min-h-12 cursor-pointer list-none items-center justify-between rounded-lg font-semibold text-white [&::-webkit-details-marker]:hidden"
+                            >
+                                Ver reglas
+                                <i class="ph-bold ph-caret-down text-lg transition-transform group-open:rotate-180" aria-hidden="true"></i>
+                            </summary>
+                            <ul class="mt-2 space-y-2 text-sm text-gray-300">
+                                <li v-for="(regla, r) in fase.reglas" :key="r" class="flex gap-2">
+                                    <i class="ph-bold ph-check mt-0.5 shrink-0" :style="{ color: fase.color }" aria-hidden="true"></i>
+                                    <span>{{ regla }}</span>
+                                </li>
+                            </ul>
+                            <img
+                                :src="fase.poster"
+                                :alt="`Póster de ${fase.titulo} (${fase.semana})`"
+                                loading="lazy"
+                                class="mt-4 w-full rounded-xl border border-white/10 object-cover"
+                                @error="ocultarImagen"
+                            />
+                        </details>
+                    </li>
+                </ol>
+            </section>
 
-                <!-- Leaderboard Table -->
-                <div v-else-if="allSerializedTournaments.length > 0" class="overflow-x-auto custom-scrollbar">
-                    <table class="w-full text-left border-collapse min-w-[600px]">
-                        <thead>
-                            <tr class="border-b border-white/10 text-[10px] font-bold text-gray-500 uppercase tracking-widest font-chakra">
-                                <th class="py-4 px-4">#</th>
-                                <th class="py-4 px-4">Jugador</th>
-                                <th class="py-4 px-4 text-center">Partidas Jugadas</th>
-                                <th class="py-4 px-4 text-center">Eliminaciones</th>
-                                <th class="py-4 px-4 text-center text-[var(--rankit-neon)]">Total Pts</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(player, index) in allSerializedTournaments[activeTournamentIndex]?.standings" :key="index" class="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                <td class="py-4 px-4 text-white font-black font-chakra">
-                                    <span :class="{'text-yellow-400': index === 0, 'text-gray-300': index === 1, 'text-yellow-600': index === 2}">
-                                        {{ index + 1 }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-4">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-400">
-                                            {{ player.player_name ? player.player_name.charAt(0).toUpperCase() : '?' }}
-                                        </div>
-                                        <span class="text-white font-bold uppercase tracking-wider font-chakra">{{ player.player_name || 'Desconocido' }}</span>
-                                    </div>
-                                </td>
-                                <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.matches_played || 0 }}</td>
-                                <td class="py-4 px-4 text-center text-gray-400 font-chakra">{{ player.total_kills || 0 }}</td>
-                                <td class="py-4 px-4 text-center text-white font-black text-lg font-chakra">{{ (player.total_kills * 10) || 0 }}</td>
-                            </tr>
-                            <tr v-if="!allSerializedTournaments[activeTournamentIndex]?.standings || allSerializedTournaments[activeTournamentIndex].standings.length === 0">
-                                <td colspan="5" class="py-12 text-center text-gray-500 font-bold uppercase tracking-widest text-xs">
-                                    No hay jugadores clasificados para este torneo aún.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div v-else class="py-16 text-center text-gray-500 font-bold uppercase tracking-widest text-sm border border-white/5 border-dashed rounded-xl">
-                    No hay torneos seriados activos en este momento.
-                </div>
+            <!-- ============================= PREMIOS ============================= -->
+            <section id="premios" class="scroll-mt-20 py-10 sm:py-14" aria-labelledby="titulo-premios">
+                <h2 id="titulo-premios" class="font-display text-3xl font-bold uppercase text-white">¿Cuánto se reparte?</h2>
+                <p class="mt-2 max-w-2xl text-gray-400">
+                    Los pases Premium llenan la bolsa de premios. Mueve las barras para ver cuánto se juntaría.
+                </p>
 
-                <!-- Botón para ir a inscribirse al torneo seleccionado -->
-                <div v-if="!loading && allSerializedTournaments.length > 0" class="mt-10 text-center">
-                    <div class="text-xs text-gray-500 uppercase font-bold tracking-widest mb-4 font-chakra">
-                        ¿Quieres competir en <span class="text-white">{{ allSerializedTournaments[activeTournamentIndex]?.tournament?.name }}</span>?
+                <div class="mt-6 grid gap-4 lg:grid-cols-2">
+                    <div class="rounded-2xl border border-white/10 bg-[#111111] p-5 sm:p-6">
+                        <div>
+                            <div class="flex items-center justify-between gap-3">
+                                <label for="jugadores-premium" class="font-semibold text-white">Jugadores Premium</label>
+                                <span class="font-display text-2xl font-bold text-white">{{ fmt(jugadoresPremium) }}</span>
+                            </div>
+                            <input
+                                id="jugadores-premium"
+                                v-model.number="jugadoresPremium"
+                                type="range"
+                                min="20"
+                                max="500"
+                                class="foco mt-2 h-10 w-full cursor-pointer accent-[var(--rankit-neon)]"
+                            />
+                        </div>
+                        <div class="mt-5">
+                            <div class="flex items-center justify-between gap-3">
+                                <label for="precio-pase" class="font-semibold text-white">Precio del pase Upgrade</label>
+                                <span class="font-display text-2xl font-bold text-white">${{ fmt(precioPase) }}</span>
+                            </div>
+                            <input
+                                id="precio-pase"
+                                v-model.number="precioPase"
+                                type="range"
+                                min="5"
+                                max="30"
+                                step="5"
+                                class="foco mt-2 h-10 w-full cursor-pointer accent-[var(--rankit-neon)]"
+                            />
+                        </div>
                     </div>
-                    <a
-                        :href="`/t/${allSerializedTournaments[activeTournamentIndex]?.tournament?.id}`"
-                        class="inline-flex items-center gap-3 px-10 py-4 bg-[var(--rankit-neon)] text-black font-black uppercase tracking-widest text-sm hover:bg-white transition-all font-chakra"
-                        style="clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%)"
-                    >
-                        <i class="ph-bold ph-ticket text-lg"></i>
-                        Inscríbete Aquí
-                        <i class="ph-bold ph-arrow-right text-lg"></i>
-                    </a>
-                    <p class="text-[10px] text-gray-600 uppercase tracking-widest mt-3">Inscripciones y resultados en tiempo real</p>
+
+                    <div class="rounded-2xl border border-white/10 bg-[#111111] p-5 sm:p-6" aria-live="polite">
+                        <p class="text-sm font-bold uppercase tracking-wider text-gray-400">Bolsa estimada</p>
+                        <p class="mt-1 font-display text-5xl font-bold text-white">${{ fmt(bolsaTotal) }}</p>
+                        <div class="mt-5 grid gap-3 sm:grid-cols-3">
+                            <div class="rounded-xl border border-white/10 p-4">
+                                <p class="text-sm text-gray-400">40% · Premios de cada semana</p>
+                                <p class="mt-1 font-display text-2xl font-bold text-white">${{ fmt(bolsaSemanal) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-white/10 p-4">
+                                <p class="text-sm text-gray-400">40% · Mega Pozo de la final</p>
+                                <p class="mt-1 font-display text-2xl font-bold text-white">${{ fmt(bolsaFinal) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-white/10 p-4">
+                                <p class="text-sm text-gray-400">20% · Sorteos para todos</p>
+                                <p class="mt-1 font-display text-2xl font-bold text-white">${{ fmt(bolsaSorteos) }}</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+            </section>
+
+            <!-- ========================== OTROS TORNEOS ========================== -->
+            <section id="otros" class="scroll-mt-20 py-10 sm:py-14" aria-labelledby="titulo-otros">
+                <h2 id="titulo-otros" class="font-display text-3xl font-bold uppercase text-white">Otros torneos</h2>
+
+                <Link
+                    :href="route('semanales.index')"
+                    class="foco mt-6 flex items-center gap-4 rounded-2xl border border-white/10 bg-[#111111] p-5 hover:border-white/30"
+                >
+                    <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 border-[#00e5ff] text-[#00e5ff]">
+                        <i class="ph-bold ph-calendar-star text-3xl" aria-hidden="true"></i>
+                    </span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block font-display text-xl font-bold uppercase text-white">Semanales</span>
+                        <span class="block text-gray-300">Torneos gratis con premios cada semana. No cuentan para la liga.</span>
+                    </span>
+                    <i class="ph-bold ph-arrow-right shrink-0 text-2xl text-white" aria-hidden="true"></i>
+                </Link>
+
+                <details class="group mt-4 rounded-2xl border border-white/10 bg-[#111111] px-5">
+                    <summary
+                        class="foco flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 rounded-lg font-semibold text-white [&::-webkit-details-marker]:hidden"
+                    >
+                        Torneos rápidos en otros juegos
+                        <i class="ph-bold ph-caret-down text-lg transition-transform group-open:rotate-180" aria-hidden="true"></i>
+                    </summary>
+                    <p class="text-sm text-gray-400">
+                        Torneos rápidos entre semana: inscripción baja y bolsa de premio directa.
+                    </p>
+                    <ul class="grid gap-3 pb-5 pt-4 sm:grid-cols-2">
+                        <li
+                            v-for="t in OTROS_TORNEOS"
+                            :key="t.nombre"
+                            class="rounded-xl border border-white/10 border-l-4 p-4"
+                            :style="{ borderLeftColor: t.color }"
+                        >
+                            <p class="text-xs font-bold uppercase tracking-wider" :style="{ color: t.color }">{{ t.juego }}</p>
+                            <h3 class="mt-1 font-display text-lg font-bold uppercase text-white">{{ t.nombre }}</h3>
+                            <p class="mt-1 text-sm text-gray-300">{{ t.descripcion }}</p>
+                            <div class="mt-3 flex items-center justify-between gap-2 text-sm">
+                                <span class="font-semibold text-white">Entrada: {{ t.entrada }}</span>
+                                <span class="rounded-full bg-white/10 px-3 py-1 font-semibold text-gray-300">Próximamente</span>
+                            </div>
+                        </li>
+                    </ul>
+                </details>
+            </section>
+        </main>
+
+        <!-- ============================== PIE ============================== -->
+        <footer class="mt-6 border-t border-white/10 px-4 py-10 text-center sm:px-6">
+            <div class="flex flex-col items-center justify-center gap-3 sm:flex-row">
+                <a
+                    :href="INSTAGRAM"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="foco inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/15 px-5 font-semibold text-white hover:bg-white/5"
+                >
+                    <i class="ph-bold ph-instagram-logo text-xl" aria-hidden="true"></i>
+                    @rankit.pro
+                </a>
+                <a
+                    href="#inicio"
+                    class="foco inline-flex min-h-12 items-center gap-2 rounded-xl px-5 font-semibold text-gray-300 hover:text-white"
+                >
+                    <i class="ph-bold ph-arrow-up text-xl" aria-hidden="true"></i>
+                    Volver arriba
+                </a>
             </div>
-        </section>
-
-    </main>
-
-    <!-- Footer Elegante -->
-    <footer class="border-t border-white/5 bg-[#010003] py-16 px-4 text-center relative z-10">
-        <div class="flex justify-center gap-8 text-lg text-gray-600 mb-8">
-            <a href="#" class="hover:text-white transition-colors"><i class="fa-brands fa-discord"></i></a>
-            <a href="#" class="hover:text-white transition-colors"><i class="fa-brands fa-twitter"></i></a>
-            <a href="https://www.instagram.com/rankit.pro/followers/mutualOnly" target="_blank" class="hover:text-white transition-colors"><i class="fa-brands fa-instagram"></i></a>
-            <a href="#" class="hover:text-white transition-colors"><i class="fa-brands fa-youtube"></i></a>
-        </div>
-        <p class="font-block text-sm text-gray-600 tracking-widest uppercase mb-4">&copy; 2026 RANKIT PRO LEAGUE.</p>
-        <p class="max-w-2xl mx-auto leading-relaxed text-[10px] text-gray-700">
-            Esta liga competitiva no está afiliada ni patrocinada por Epic Games. Todo el circuito es en formato solitario. Los pases Premium alimentan directamente las bolsas de premio semanales y la Gran Final. La Gran Final no tiene costo de inscripción para los clasificados.
-        </p>
-    </footer>
-
-
-
+            <p class="mt-6 font-display text-sm font-bold uppercase tracking-widest text-gray-400">&copy; 2026 Rankit Pro League</p>
+            <p class="mx-auto mt-3 max-w-2xl text-xs leading-relaxed text-gray-400">
+                Esta liga competitiva no está afiliada ni patrocinada por Epic Games. Todo el circuito es en formato solitario.
+                Los pases Premium alimentan directamente las bolsas de premio semanales y la Gran Final. La Gran Final no tiene
+                costo de inscripción para los clasificados.
+            </p>
+        </footer>
     </div>
 </template>
 
 <style scoped>
-
-        body {
-            background-color: #030108;
-            background-image: 
-                linear-gradient(180deg, rgba(3, 1, 8, 0.85) 0%, rgba(3, 1, 8, 0.93) 100%), 
-                url('https://s2.elespanol.com/2022/02/17/invertia/disruptores/ecosistema-startup/startups/650945168_221956806_1706x1280.jpg');
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
-            color: #e2e8f0;
-        }
-
-        /* Degradado metálico/neón sutil y elegante */
-        .gradient-text-epic {
-            background: linear-gradient(to bottom, #ffffff 0%, #d8b4fe 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 10px 20px rgba(155,48,255,0.2));
-        }
-
-        /* Botón de alto contraste */
-        .fn-btn {
-            clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .fn-skew { transform: skewX(-10deg); }
-        .fn-unskew { transform: skewX(10deg); }
-
-        /* SPA navigation */
-        .view-section {
-            
-            animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        
-
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Tarjetas Premium - Menos saturación, más cristal/borde sutil */
-        .premium-card {
-            background: rgba(10, 5, 20, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: all 0.4s ease;
-        }
-        .premium-card:hover {
-            border-color: rgba(255, 255, 255, 0.2);
-            transform: translateY(-5px);
-        }
-
-        /* Carrusel escondiendo scrollbar */
-        .hide-scrollbar::-webkit-scrollbar {  }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-        /* Efecto de ruido/grano fotográfico para fondos épicos */
-        .noise-overlay {
-            position: absolute;
-            inset: 0;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        /* Scrollbar elegante */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #030108; }
-        ::-webkit-scrollbar-thumb { background: #3b1c6b; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #9b30ff; }
-    
+/* Foco visible y de alto contraste en todo lo que se puede tocar o tabular. */
+.foco:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: 3px;
+}
 </style>

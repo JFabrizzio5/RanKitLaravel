@@ -455,11 +455,8 @@ onUnmounted(() => {
 </script>
 
 <template>
+    <!-- Título, description y Open Graph salen del servidor (prop seo, App\Support\Seo). -->
     <Head title="Semanales | Rankit">
-        <meta
-            name="description"
-            content="Semanales de Rankit: torneos promocionales con entrada GRATIS y premios en metálico cada semana. Cupo abierto para todos, inscripción en línea con Epic ID y WhatsApp; los códigos de partida llegan por correo."
-        />
         <meta
             name="keywords"
             content="semanales, torneo gratis, premios en metálico, rankit, esports, competencia semanal, inscripción gratuita"

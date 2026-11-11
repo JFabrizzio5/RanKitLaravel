@@ -2,10 +2,14 @@
 
 use App\Models\PlanPeriod;
 use App\Models\User;
+use App\Notifications\PlanPorVencer;
+use App\Services\Planes\AvisosVencimiento;
 use App\Services\Planes\CatalogoPlanes;
+use App\Services\Planes\PasarelaStripe;
 use App\Services\Planes\PlanOrganizador;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -464,3 +468,217 @@ it('la cortesía se apaga con PLANES_CORTESIA_DIAS=0', function () {
 
     expect(PlanPeriod::count())->toBe(0);
 });
+
+// ------------------------------------------------- subir de plan y cuenta
+
+function darPro(User $user, string $suscripcion, bool $renueva): PlanPeriod
+{
+    return app(PlanOrganizador::class)->registrarPago(
+        userId: $user->id,
+        plan: 'pro',
+        proveedor: 'stripe',
+        referencia: 'in_'.uniqid(),
+        monto: 839,
+        suscripcion: $suscripcion,
+        renueva: $renueva,
+    );
+}
+
+it('con un pase Base deja comprar otro pase o subir a Gestor Pro', function () {
+    config(['cashier.secret' => 'sk_test_x']);
+    $user = organizador();
+    darPlan($user);
+
+    $this->mock(PasarelaStripe::class, fn ($m) => $m->shouldReceive('iniciarCobro')->twice()->andReturn('https://checkout.stripe.com/c/prueba'));
+
+    $this->actingAs($user)->post('/planes/base/pagar/stripe')->assertRedirect('https://checkout.stripe.com/c/prueba');
+    $this->actingAs($user)->post('/planes/pro/pagar/stripe')->assertRedirect('https://checkout.stripe.com/c/prueba');
+});
+
+it('con la renovación cancelada no abre una segunda suscripción', function () {
+    config(['cashier.secret' => 'sk_test_x']);
+    $user = organizador();
+    darPro($user, 'sub_cancelada', renueva: false);
+
+    $this->actingAs($user)->from('/planes')->post('/planes/pro/pagar/stripe')
+        ->assertRedirect('/planes')
+        ->assertSessionHasErrors(['pago' => 'Ya tienes una suscripción a Gestor Pro: reanuda la renovación en vez de pagar otra.']);
+});
+
+it('/planes recibe qué tarjeta resaltar y descarta valores raros', function () {
+    $user = organizador();
+
+    $this->actingAs($user)->get('/planes?quiero=pro')
+        ->assertInertia(fn ($page) => $page->component('Planes/Index')->where('quiero', 'pro'));
+    $this->actingAs($user)->get('/planes?quiero=<script>')
+        ->assertInertia(fn ($page) => $page->where('quiero', null));
+});
+
+// ------------------------------------------------- gracia por torneo
+
+it('al vencer el plan sigue administrando sus torneos 30 días desde el último que creó', function () {
+    $user = organizador();
+    $periodo = darPlan($user, 'base');
+
+    $this->travelTo($periodo->ends_at->copy()->subDay());
+    crearTorneoFortnite($user, 'Del día 29')->assertSessionHasNoErrors();
+
+    // Venció el pase: entra a administrar, pero ya no crea.
+    $this->travelTo($periodo->ends_at->copy()->addMinute());
+    $this->actingAs($user)->get('/admin/jangel')->assertOk();
+    crearTorneoFortnite($user, 'Otro')->assertSessionHasErrors('plan');
+
+    $resumen = app(PlanOrganizador::class)->resumen($user);
+    expect($resumen['activo'])->toBeFalse()
+        ->and($resumen['administra'])->toBeTrue()
+        ->and($resumen['gracia_hasta'])->not->toBeNull();
+
+    // 30 días después de ese torneo se cierra.
+    $this->travelTo($periodo->ends_at->copy()->subDay()->addDays(30)->addMinute());
+    $this->actingAs($user)->get('/admin/jangel')->assertRedirect('/planes?motivo=sin-plan');
+});
+
+it('un pase reembolsado no deja gracia', function () {
+    $user = organizador();
+    darPlan($user, 'base', ref: 'pi_reembolsado');
+    crearTorneoFortnite($user)->assertSessionHasNoErrors();
+
+    app(PlanOrganizador::class)->revocarPago('pi_reembolsado');
+
+    $this->actingAs($user)->get('/admin/jangel')->assertRedirect('/planes?motivo=sin-plan');
+});
+
+it('con PLANES_GRACIA_TORNEO_DIAS=0 el panel se cierra al vencer', function () {
+    config(['planes.gracia_torneo_dias' => 0]);
+    $user = organizador();
+    $periodo = darPlan($user, 'base');
+    crearTorneoFortnite($user)->assertSessionHasNoErrors();
+
+    $this->travelTo($periodo->ends_at->copy()->addMinute());
+    $this->actingAs($user)->get('/admin/jangel')->assertRedirect('/planes?motivo=sin-plan');
+});
+
+// ------------------------------------------------------------- tickets
+
+it('el resumen trae cuántos tickets y cuánto cuesta una recarga', function () {
+    $resumen = app(PlanOrganizador::class)->resumen(organizador());
+
+    expect($resumen['recarga'])->toBe(['tickets' => 2, 'precio' => 214]);
+    expect(app(PlanOrganizador::class)->resumen(organizador(['email' => 'josephfabrizizo@gmail.com']))['recarga'])->toBeNull();
+});
+
+it('recargar desde el menú o el panel muestra los errores en /planes', function () {
+    $this->actingAs(organizador())->from('/admin/jangel')->post('/planes/base/pagar/stripe')
+        ->assertRedirect('/planes')
+        ->assertSessionHasErrors('pago');
+});
+
+// ------------------------------------------------- avisos de vencimiento
+
+it('avisa de tickets sin usar que vencen en los próximos 3 días', function () {
+    $planes = app(PlanOrganizador::class);
+    $user = organizador();
+    darPlan($user, 'base', dias: 2);
+    crearTorneoFortnite($user)->assertSessionHasNoErrors();
+
+    $aviso = $planes->resumen($user)['por_vencer'];
+    expect($aviso['tickets'])->toBe(1)
+        ->and($aviso['dias'])->toBe(2)
+        ->and($aviso)->not->toHaveKey('periodos');
+
+    // Lejos de vencer o ya sin tickets: nada.
+    expect($planes->resumen(tap(organizador(), fn ($u) => darPlan($u, 'base', dias: 10)))['por_vencer'])->toBeNull();
+    $gastado = organizador();
+    darPlan($gastado, 'base', dias: 2);
+    crearTorneoFortnite($gastado, 'A');
+    crearTorneoFortnite($gastado, 'B');
+    expect($planes->resumen($gastado)['por_vencer'])->toBeNull();
+});
+
+it('avisa del Gestor Pro que termina sin renovarse, no del que se renueva', function () {
+    $planes = app(PlanOrganizador::class);
+
+    $cortesia = organizador();
+    darPlan($cortesia, 'pro', dias: 2);
+    expect($planes->resumen($cortesia)['por_vencer'])->toMatchArray(['tickets' => null, 'dias' => 2]);
+
+    $suscrito = organizador();
+    $p = darPro($suscrito, 'sub_renueva', renueva: true);
+    $p->update(['ends_at' => now()->addDays(2)]);
+    expect($planes->resumen($suscrito)['por_vencer'])->toBeNull();
+});
+
+it('no avisa de tickets que se pierden si tiene Gestor Pro después', function () {
+    $user = organizador();
+    darPlan($user, 'base', dias: 2);
+    darPlan($user, 'pro', dias: 30);
+
+    expect(app(PlanOrganizador::class)->resumen($user)['por_vencer'])->toBeNull();
+});
+
+it('manda el correo de vencimiento una sola vez por periodo', function () {
+    Notification::fake();
+    $user = organizador();
+    darPlan($user, 'base', dias: 2);
+    $exento = organizador(['email' => 'josephfabrizizo@gmail.com']);
+    darPlan($exento, 'base', dias: 2);
+
+    expect(app(AvisosVencimiento::class)->enviar())->toBe(1);
+    expect(app(AvisosVencimiento::class)->enviar())->toBe(0);
+
+    Notification::assertSentToTimes($user, PlanPorVencer::class, 1);
+    Notification::assertNotSentTo($exento, PlanPorVencer::class);
+    Notification::assertSentTo($user, PlanPorVencer::class, fn (PlanPorVencer $n) => $n->tickets === 2
+        && str_contains($n->toMail($user)->subject, 'Tus tickets de Rankit vencen'));
+});
+
+it('una recarga nueva que también vence pronto vuelve a avisar', function () {
+    Notification::fake();
+    $user = organizador();
+    darPlan($user, 'base', dias: 2);
+    app(AvisosVencimiento::class)->enviar();
+
+    darPlan($user, 'base', dias: 3);
+    expect(app(AvisosVencimiento::class)->enviar())->toBe(1);
+    Notification::assertSentToTimes($user, PlanPorVencer::class, 2);
+});
+
+it('con PLANES_AVISO_VENCIMIENTO_DIAS=0 no avisa', function () {
+    Notification::fake();
+    config(['planes.aviso_vencimiento_dias' => 0]);
+    $user = organizador();
+    darPlan($user, 'base', dias: 1);
+
+    expect(app(PlanOrganizador::class)->resumen($user)['por_vencer'])->toBeNull();
+    $this->artisan('planes:avisar-vencimientos')->expectsOutput('Avisos enviados: 0')->assertSuccessful();
+    Notification::assertNothingSent();
+});
+
+it('el correo del Gestor Pro lleva a seguir con Pro y dice Rankit, no Laravel', function () {
+    $correo = (new PlanPorVencer(null, now()->addDay()->toIso8601String(), 1))->toMail(organizador(['name' => 'Ana López']));
+    // El <title> del layout sale de APP_NAME; lo visible es la plantilla propia.
+    $html = preg_replace('#<head>.*</head>#s', '', (string) $correo->render());
+
+    expect($correo->subject)->toContain('Tu Gestor Pro de Rankit termina')
+        ->and($correo->from[1])->toBe('Rankit')
+        ->and($html)->toContain('Hola, Ana')
+        ->and($html)->toContain('mañana')
+        ->and($html)->toContain('quiero=pro')
+        ->and($html)->not->toContain('Laravel');
+});
+
+it('Contratar sin sesión manda a crear cuenta y al registrarse regresa a /planes con el plan', function () {
+    $this->get('/contratar/pro')->assertRedirect(route('register'));
+    $this->post('/register', [
+        'name' => 'Nueva Org',
+        'email' => 'nueva@example.com',
+        'phone' => '5512345678',
+        'password' => 'password-segura-123',
+        'password_confirmation' => 'password-segura-123',
+    ])->assertRedirect(url('/planes?quiero=pro'));
+});
+
+it('Contratar con sesión va directo a /planes con la tarjeta resaltada', function () {
+    $this->actingAs(organizador())->get('/contratar/base')->assertRedirect('/planes?quiero=mas');
+});
+

@@ -1,0 +1,1 @@
+@import"https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@1,700&family=Archivo:wght@500;600;700;800&display=swap";html,body{background:transparent!important;overflow:hidden}.entrada{animation:entrada .5s cubic-bezier(.2,.8,.2,1) both}@keyframes entrada{0%{transform:translate(-16px);opacity:0}to{transform:none;opacity:1}}

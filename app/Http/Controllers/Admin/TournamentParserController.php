@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use App\Services\Planes\PlanOrganizador;
 use App\Services\Planes\SinCupoDeTorneos;
+use App\Support\EsquemaInscripciones;
 
 class TournamentParserController extends Controller
 {
@@ -47,6 +48,7 @@ class TournamentParserController extends Controller
                 $table->json('scoring_format')->nullable(); // Configuración de puntos JSON
                 $table->string('table_name')->nullable();
                 $table->string('banner_image')->nullable();
+                $table->string('logo_image')->nullable(); // Logo para el widget de OBS
                 $table->string('registration_status')->default('disabled'); // open, closed, disabled
                 $table->string('ticket_price')->nullable();
                 $table->timestamps();
@@ -75,6 +77,7 @@ class TournamentParserController extends Controller
                     $table->string('registration_status')->default('disabled');
                 }
                 if (!Schema::hasColumn('tournaments', 'ticket_price')) $table->string('ticket_price')->nullable();
+                if (!Schema::hasColumn('tournaments', 'logo_image')) $table->string('logo_image')->nullable();
              });
 
             // Asignar torneos huérfanos (sin user_id) al usuario jangel
@@ -165,8 +168,12 @@ class TournamentParserController extends Controller
                 $table->string('payment_status')->default('pending'); // pending, paid, rejected
                 $table->text('payment_notes')->nullable();
                 $table->unsignedBigInteger('confirmed_by_admin_id')->nullable();
+                // Cuenta de quien se inscribió con sesión (el correo del formulario puede ser otro).
+                $table->unsignedBigInteger('user_id')->nullable()->index();
                 $table->timestamps();
             });
+        } else {
+            EsquemaInscripciones::asegurar();
         }
 
         // 7. Seriación de Torneos (Clasificados)
@@ -339,11 +346,18 @@ class TournamentParserController extends Controller
     {
         $this->ensureDatabaseIsReady();
 
-        // Buscaremos solo los torneos que pertenezcan a la versión activa 'v0.1' de la liga
+        // Buscaremos solo los torneos que pertenezcan a la versión activa 'v0.1' de la liga.
+        // Endpoint público: solo las columnas que pinta /league. Con SELECT * salía
+        // el access_code de la Gran Final (privada) a cualquiera.
+        $columnas = array_values(array_filter(
+            ['id', 'name', 'slug', 'is_private', 'registration_status', 'scoring_format', 'start_date', 'date_label'],
+            fn (string $c) => Schema::hasColumn('tournaments', $c)
+        ));
+
         $tournaments = DB::table('tournaments')
             ->where('is_serialized', true)
             ->where('slug', 'like', 'v0.1-rankit-league-%')
-            ->get();
+            ->get($columnas);
             
         $standings = [];
         
@@ -446,6 +460,43 @@ class TournamentParserController extends Controller
         ]);
 
         return back()->with('success', 'Imagen del torneo actualizada.');
+    }
+
+    /**
+     * Logo del torneo: sale abajo del widget de OBS junto al de Rankit.
+     * PNG o WebP con fondo transparente se ven mejor; SVG no (puede llevar scripts).
+     */
+    public function uploadLogo(Request $request, $id)
+    {
+        $this->ensureDatabaseIsReady();
+        $tournament = $this->getTournamentIfOwner($id);
+        if (!$tournament) return back()->with('error', 'Permiso denegado.');
+
+        $request->validate(['logo' => 'required|image|mimes:png,webp,jpg,jpeg|max:2048']);
+
+        $file = $request->file('logo');
+        $filename = 'logo_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
+
+        $destination = public_path('torneos');
+        if (!file_exists($destination)) {
+            mkdir($destination, 0755, true);
+        }
+
+        if (!empty($tournament->logo_image)) {
+            $oldPath = public_path($tournament->logo_image);
+            if (file_exists($oldPath)) {
+                unlink($oldPath);
+            }
+        }
+
+        $file->move($destination, $filename);
+
+        DB::table('tournaments')->where('id', $id)->update([
+            'logo_image' => 'torneos/' . $filename,
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Logo del torneo actualizado.');
     }
 
     public function storeScheduledMatch(Request $request, $tournamentId) {
@@ -1175,7 +1226,7 @@ class TournamentParserController extends Controller
             return response()->json(['success' => false, 'message' => 'Ya existe un registro con estos datos para este torneo.'], 400);
         }
 
-        DB::table('tournament_registrations')->insert([
+        DB::table('tournament_registrations')->insert(EsquemaInscripciones::conUsuario([
             'tournament_id' => $id,
             'player_name' => $request->player_name,
             'email' => $email,
@@ -1184,7 +1235,7 @@ class TournamentParserController extends Controller
             'payment_status' => 'pending',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ], $user));
 
         $tournament = DB::table('tournaments')->where('id', $id)->first();
         if ($tournament) {
@@ -1597,7 +1648,7 @@ class TournamentParserController extends Controller
             return back()->with('error', 'Ya estás registrado en este torneo.');
         }
 
-        DB::table('tournament_registrations')->insert([
+        DB::table('tournament_registrations')->insert(EsquemaInscripciones::conUsuario([
             'tournament_id' => $request->tournament_id,
             'name' => $user->name,
             'email' => $user->email,
@@ -1607,7 +1658,7 @@ class TournamentParserController extends Controller
             'payment_status' => 'pending', // Pagos manuales
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ], $user));
         
         return back()->with('success', 'Registro exitoso (Pendiente de pago).');
     }

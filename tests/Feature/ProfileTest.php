@@ -12,74 +12,54 @@ test('profile page is displayed', function () {
     $response->assertOk();
 });
 
-test('profile information can be updated', function () {
+test('actualiza nombre y teléfono; el teléfono se guarda solo con dígitos', function () {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->patch('/profile', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
-
-    $response
+    $this->actingAs($user)
+        ->patch('/profile', ['name' => 'Test User', 'phone' => '(55) 1234-5678'])
         ->assertSessionHasNoErrors()
         ->assertRedirect('/profile');
 
     $user->refresh();
-
-    $this->assertSame('Test User', $user->name);
-    $this->assertSame('test@example.com', $user->email);
-    $this->assertNull($user->email_verified_at);
+    expect($user->name)->toBe('Test User')
+        ->and($user->phone)->toBe('5512345678');
 });
 
-test('email verification status is unchanged when the email address is unchanged', function () {
+test('el teléfono es obligatorio y de 10 a 15 dígitos', function (?string $telefono) {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->patch('/profile', [
-            'name' => 'Test User',
-            'email' => $user->email,
-        ]);
+    $this->actingAs($user)->from('/profile')
+        ->patch('/profile', ['name' => 'Test User', 'phone' => $telefono])
+        ->assertSessionHasErrors('phone');
+})->with([null, '', '12345', '55-1234', '+1234567890123456']);
 
-    $response
-        ->assertSessionHasNoErrors()
-        ->assertRedirect('/profile');
+test('acepta lada internacional con +', function () {
+    $user = User::factory()->create();
 
-    $this->assertNotNull($user->refresh()->email_verified_at);
+    $this->actingAs($user)->patch('/profile', ['name' => 'Test User', 'phone' => '+1 (415) 555-0100'])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->phone)->toBe('+14155550100');
 });
 
-test('user can delete their account', function () {
+test('el correo no se puede cambiar desde el perfil', function () {
     $user = User::factory()->create();
+    $original = $user->email;
 
-    $response = $this
-        ->actingAs($user)
-        ->delete('/profile', [
-            'password' => 'password',
-        ]);
+    $this->actingAs($user)
+        ->patch('/profile', ['name' => 'Test User', 'email' => 'otro@example.com', 'phone' => '5512345678'])
+        ->assertSessionHasNoErrors();
 
-    $response
-        ->assertSessionHasNoErrors()
-        ->assertRedirect('/');
-
-    $this->assertGuest();
-    $this->assertNull($user->fresh());
+    $user->refresh();
+    expect($user->email)->toBe($original)
+        ->and($user->email_verified_at)->not->toBeNull();
 });
 
-test('correct password must be provided to delete account', function () {
+test('la cuenta no se puede borrar', function () {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->from('/profile')
-        ->delete('/profile', [
-            'password' => 'wrong-password',
-        ]);
+    $this->actingAs($user)->delete('/profile', ['password' => 'password'])->assertStatus(405);
 
-    $response
-        ->assertSessionHasErrors('password')
-        ->assertRedirect('/profile');
-
-    $this->assertNotNull($user->fresh());
+    expect($user->fresh())->not->toBeNull();
+    $this->assertAuthenticated();
 });

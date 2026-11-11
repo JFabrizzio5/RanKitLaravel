@@ -6,6 +6,7 @@ interface UserItem {
     id: number
     name: string
     email: string
+    phone?: string | null
     role: string
     created_at: string
     plan: {
@@ -174,7 +175,7 @@ function formatDate(dateStr: string) {
                     v-model="searchQuery"
                     @keydown.enter="doSearch"
                     type="text"
-                    placeholder="Buscar por nombre o email…"
+                    placeholder="Buscar por nombre, email o teléfono…"
                     class="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-white/5 border border-gray-300 dark:border-white/10 rounded outline-none focus:border-yellow-500 transition text-black dark:text-white"
                 />
                 <button @click="doSearch" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase text-yellow-500 hover:text-yellow-400">
@@ -206,7 +207,12 @@ function formatDate(dateStr: string) {
                             :key="u.id"
                             class="border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-gray-50 dark:hover:bg-white/5 transition">
                             <td class="px-4 py-3 font-medium">{{ u.name }}</td>
-                            <td class="px-4 py-3 text-gray-500 text-xs">{{ u.email }}</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs">
+                                {{ u.email }}
+                                <a v-if="u.phone" :href="`https://wa.me/${u.phone.startsWith('+') ? u.phone.slice(1) : '52' + u.phone}`" target="_blank" rel="noopener" class="mt-0.5 flex items-center gap-1 hover:text-[var(--rankit-neon)]">
+                                    <i class="ph ph-whatsapp-logo"></i> {{ u.phone }}
+                                </a>
+                            </td>
                             <td class="px-4 py-3">
                                 <span :class="roleBadgeClass(u.role)" class="px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                                     {{ roleLabel(u.role) }}

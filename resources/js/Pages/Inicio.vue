@@ -592,11 +592,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Head title="Rankit - The Competitive Ecosystem">
-    <!-- Meta Tags SEO -->
-    <meta name="description" content="La plataforma definitiva para gestionar torneos de Esports y Deportes. Automatiza brackets, cobros y estadísticas en tiempo real." />
-    <meta name="keywords" content="torneos, esports, brackets, league manager, futbol 7, padel, gaming, competencia, software deportivo" />
-    <meta name="author" content="Rankit Systems" />
+  <!-- Título y metas SEO los pinta el servidor (prop `seo`, App\Support\Seo):
+       aquí se duplicaban y el título no coincidía con el del servidor. -->
+  <Head>
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Archivo:wght@300;400;600;800&display=swap" rel="stylesheet" />
   </Head>
@@ -619,7 +617,12 @@ onUnmounted(() => {
       <!-- Links Desktop: 4 entradas en vez de 7. Lo jugable vive en "Competencias". -->
       <div class="items-center hidden gap-7 text-sm font-bold tracking-widest text-gray-500 uppercase md:flex dark:text-gray-400" data-nav>
         <!-- Competencias (desplegable) -->
-        <div class="relative" @mouseenter="menuCompetencias = true" @mouseleave="menuCompetencias = false">
+        <!-- Hover solo con mouse: en touch (tablet ≥ md) el mouseenter emulado abría y el click lo volvía a cerrar -->
+        <div
+          class="relative"
+          @pointerenter="(e: PointerEvent) => { if (e.pointerType === 'mouse') menuCompetencias = true }"
+          @pointerleave="(e: PointerEvent) => { if (e.pointerType === 'mouse') menuCompetencias = false }"
+        >
           <button
             type="button"
             class="flex items-center gap-1.5 transition hover:text-neon"
@@ -715,12 +718,15 @@ onUnmounted(() => {
               <i class="ph-bold ph-sliders"></i>
               <span>{{ t.menu.admin }}</span>
             </Link>
-            <Link
-              :href="route('dashboard')"
-              class="hidden px-5 py-2 text-xs font-bold tracking-wider uppercase sm:inline-flex btn-skew"
-            >
-              <span class="btn-content">Lobby</span>
-            </Link>
+            <!-- El wrapper oculta en móvil: .btn-skew fuerza display:inline-flex y anulaba a "hidden" (la barra se salía en 375 px) -->
+            <span class="hidden sm:inline-flex">
+              <Link
+                :href="route('dashboard')"
+                class="px-5 py-2 text-xs font-bold tracking-wider uppercase btn-skew"
+              >
+                <span class="btn-content">Lobby</span>
+              </Link>
+            </span>
           </template>
 
           <template v-else>
@@ -731,13 +737,14 @@ onUnmounted(() => {
               {{ t.nav.login }}
             </Link>
 
-            <Link
-              v-if="props.canRegister"
-              :href="route('register')"
-              class="hidden px-5 py-2 text-xs font-bold tracking-wider uppercase sm:inline-flex btn-skew"
-            >
-              <span class="btn-content">{{ t.nav.create }}</span>
-            </Link>
+            <span v-if="props.canRegister" class="hidden sm:inline-flex">
+              <Link
+                :href="route('register')"
+                class="px-5 py-2 text-xs font-bold tracking-wider uppercase btn-skew"
+              >
+                <span class="btn-content">{{ t.nav.create }}</span>
+              </Link>
+            </span>
           </template>
         </template>
 
@@ -754,7 +761,7 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <!-- Panel móvil -->
+    <!-- Panel móvil (fondo /95: el /98 de antes no existe en Tailwind 3 y el panel salía transparente) -->
     <transition
       enter-active-class="transition duration-200 ease-out"
       enter-from-class="opacity-0 -translate-y-2"
@@ -764,7 +771,7 @@ onUnmounted(() => {
       <div
         v-show="menuMovil"
         data-nav
-        class="fixed inset-x-0 z-40 border-b border-gray-200 top-20 md:hidden bg-white/98 dark:bg-[#050505]/98 dark:border-white/10 backdrop-blur-md max-h-[calc(100vh-5rem)] overflow-y-auto"
+        class="fixed inset-x-0 z-40 border-b border-gray-200 top-20 md:hidden bg-white/95 dark:bg-[#050505]/95 dark:border-white/10 backdrop-blur-md max-h-[calc(100vh-5rem)] overflow-y-auto"
       >
         <div class="px-6 py-6 space-y-6">
           <div>

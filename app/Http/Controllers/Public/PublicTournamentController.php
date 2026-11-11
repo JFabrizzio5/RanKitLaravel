@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
+use App\Support\Seo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -47,6 +48,9 @@ class PublicTournamentController extends Controller
         $expected = $tournament->expected_matches ?? 5;
         $tournament->progress = "Partida $matchesProcessed / {$expected}";
 
+        // Antes de que banner_image se vuelva URL completa (Seo arma la suya).
+        $seo = Seo::torneo($tournament);
+
         if (!empty($tournament->banner_image)) {
             $tournament->banner_image = asset('public/' . $tournament->banner_image);
         }
@@ -85,6 +89,10 @@ class PublicTournamentController extends Controller
 
         $attemptsLeft = 3 - (int) session("t_attempts_{$tournament->id}", 0);
 
+        // La fila va completa al HTML (data-page): el código de acceso de un
+        // torneo privado no puede viajar ahí. Se valida en verifyCode().
+        unset($tournament->access_code);
+
         return Inertia::render('Public/TournamentLive', [
             'tournament'         => $tournament,
             'accessCode'         => $request->query('code'),
@@ -94,6 +102,7 @@ class PublicTournamentController extends Controller
             'registrationStatus' => $registrationStatus, // null, none, pending, paid, rejected
             'attemptsLeft'       => max(0, $attemptsLeft),
             'qualifiers'         => $qualifiers,
+            'seo'                => $seo,
         ]);
     }
 
@@ -253,15 +262,44 @@ class PublicTournamentController extends Controller
 
     public function widgetGlobal($id)
     {
-        return Inertia::render('Widgets/ObsGlobal', ['tournamentId' => (int)$id]);
+        return Inertia::render('Widgets/ObsGlobal', ['tournamentId' => (int)$id, 'torneo' => $this->datosWidget($id)]);
     }
 
     public function widgetPlayer($id, $playerName)
     {
-        return Inertia::render('Widgets/ObsGlobal', [ 
-            'tournamentId' => (int)$id, 
-            'defaultSearch' => $playerName 
+        return Inertia::render('Widgets/ObsGlobal', [
+            'tournamentId' => (int)$id,
+            'defaultSearch' => $playerName,
+            'torneo' => $this->datosWidget($id),
         ]);
+    }
+
+    /** Página para armar el widget con vista previa (no guarda nada: todo va en el link). */
+    public function widgetPersonalizar($id)
+    {
+        $torneo = $this->datosWidget($id);
+        if (!$torneo) abort(404);
+
+        return Inertia::render('Widgets/Personalizar', ['tournamentId' => (int)$id, 'torneo' => $torneo]);
+    }
+
+    /**
+     * Nombre y logo del torneo para el pie del widget. Antes el widget ponía
+     * el logo de BellzCup en TODOS los torneos; ahora sale el del torneo
+     * (logo_image) y, si no tiene, su nombre. BellzCup conserva su logo
+     * aunque no lo haya subido, para no cambiarle el stream de golpe.
+     */
+    protected function datosWidget($id): ?array
+    {
+        $t = DB::table('tournaments')->where('id', $id)->first();
+        if (!$t) return null;
+
+        $logo = !empty($t->logo_image ?? null) ? asset('public/' . $t->logo_image) : null;
+        if (!$logo && stripos((string) $t->name, 'bellz') !== false) {
+            $logo = asset('public/BellzCup.png');
+        }
+
+        return ['id' => (int) $t->id, 'nombre' => (string) $t->name, 'logo' => $logo];
     }
 
     public function getWidgetStats(Request $request, $id)

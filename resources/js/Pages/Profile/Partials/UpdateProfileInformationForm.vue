@@ -14,19 +14,21 @@ const user = usePage().props.auth.user;
 
 const form = useForm({
     name: user.name,
-    email: user.email,
+    phone: user.phone ?? '',
 });
+
+const waSoporte = 'https://wa.me/525532351392?text=' + encodeURIComponent(`Hola Rankit, necesito cambiar el correo de mi cuenta (${user.email}).`);
 </script>
 
 <template>
     <section>
         <header>
             <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
-                Profile Information
+                Datos de la cuenta
             </h2>
 
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                Update your account's profile information and email address.
+                Tu nombre y un teléfono para poder contactarte.
             </p>
         </header>
 
@@ -35,7 +37,7 @@ const form = useForm({
             class="mt-6 space-y-6"
         >
             <div>
-                <InputLabel for="name" value="Name" />
+                <InputLabel for="name" value="Nombre" />
 
                 <TextInput
                     id="name"
@@ -51,30 +53,50 @@ const form = useForm({
             </div>
 
             <div>
-                <InputLabel for="email" value="Email" />
+                <InputLabel for="email" value="Correo" />
 
                 <TextInput
                     id="email"
                     type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
+                    class="mt-1 block w-full cursor-not-allowed opacity-60"
+                    :model-value="user.email"
+                    disabled
                 />
 
-                <InputError class="mt-2" :message="form.errors.email" />
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Es con el que entras y al que llegan tus recibos, por eso no se cambia aquí.
+                    Si lo necesitas, <a :href="waSoporte" target="_blank" rel="noopener" class="underline hover:text-[var(--rankit-neon)]">escríbenos</a>.
+                </p>
+            </div>
+
+            <div>
+                <InputLabel for="phone" value="Teléfono de contacto" />
+
+                <TextInput
+                    id="phone"
+                    type="tel"
+                    class="mt-1 block w-full"
+                    v-model="form.phone"
+                    required
+                    inputmode="tel"
+                    autocomplete="tel"
+                    placeholder="55 1234 5678"
+                />
+
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">10 dígitos. Lo usamos solo para avisos de tu cuenta y tus torneos.</p>
+                <InputError class="mt-2" :message="form.errors.phone" />
             </div>
 
             <div v-if="mustVerifyEmail && user.email_verified_at === null">
                 <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">
-                    Your email address is unverified.
+                    Tu correo no está verificado.
                     <Link
                         :href="route('verification.send')"
                         method="post"
                         as="button"
                         class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:text-gray-400 dark:hover:text-gray-100 dark:focus:ring-offset-gray-800"
                     >
-                        Click here to re-send the verification email.
+                        Reenviar el correo de verificación.
                     </Link>
                 </p>
 
@@ -82,12 +104,12 @@ const form = useForm({
                     v-show="status === 'verification-link-sent'"
                     class="mt-2 text-sm font-medium text-green-600 dark:text-green-400"
                 >
-                    A new verification link has been sent to your email address.
+                    Te enviamos un nuevo enlace de verificación.
                 </div>
             </div>
 
             <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
+                <PrimaryButton :disabled="form.processing">Guardar</PrimaryButton>
 
                 <Transition
                     enter-active-class="transition ease-in-out"
@@ -99,7 +121,7 @@ const form = useForm({
                         v-if="form.recentlySuccessful"
                         class="text-sm text-gray-600 dark:text-gray-400"
                     >
-                        Saved.
+                        Guardado.
                     </p>
                 </Transition>
             </div>

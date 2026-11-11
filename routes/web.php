@@ -14,6 +14,8 @@ use App\Http\Controllers\LolTournamentController; // LoL / Valorant
 use App\Http\Controllers\FootballController; // Futbol
 use App\Http\Controllers\PlanesController; // Planes de organizador
 use App\Http\Controllers\MercadoPagoWebhookController;
+use App\Http\Controllers\SitemapController;
+use App\Support\Seo;
 
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -43,26 +45,39 @@ Route::get('/debug-role', function (\Illuminate\Http\Request $request) {
 });
 
 // --- PAGINA DE INICIO ---
+// La landing de ventas (propuesta K, elegida el 2026-11-11). La anterior sigue en Pages/Inicio.vue.
 Route::get('/', function () {
     $catalogo = app(\App\Services\Planes\CatalogoPlanes::class);
+    // Sin el prefetch global (AppServiceProvider): al cargar bajaba los ~100 archivos de
+    // TODA la app (panel, torneos, three.js…) y en celular le quitaba red a la landing.
+    \Illuminate\Support\Facades\Vite::usePrefetchStrategy(null);
 
-    return Inertia::render('Inicio', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-        'precios' => ['base' => $catalogo->precio('base'), 'pro' => $catalogo->precio('pro')],
+    return Inertia::render('Propuestas/LandingK', [
+        'precioBase' => $catalogo->precio('base'),
+        'precioPro' => $catalogo->precio('pro'),
+        'eventos' => app(\App\Services\Landing\EventosAbiertos::class)->obtener(),
+        'seo' => Seo::pagina('inicio'),
     ]);
 })->name('Inicio');
 
+// --- SEO: sitemap dinámico y robots.txt ---
+// En el hosting la raíz del sitio es el proyecto, no public/: public/robots.txt
+// no se ve en /robots.txt, así que esta ruta lo sirve (en local gana el archivo).
+Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
+Route::get('/robots.txt', fn () => response(file_get_contents(public_path('robots.txt')), 200, [
+    'Content-Type' => 'text/plain; charset=UTF-8',
+]))->name('robots');
+
 // --- RANKIT.PRO LEAGUE LANDING ---
+// Estaba registrada dos veces (aquí como rankit.league y abajo como league);
+// la segunda pisaba a la primera y route('rankit.league') no existía.
 Route::get('/league', function () {
-    return Inertia::render('RankitLeague');
-})->name('rankit.league');
+    return Inertia::render('RankitLeague', ['seo' => Seo::pagina('league')]);
+})->name('league');
 
 // --- MUNDIAL 2026 STATS ---
 Route::get('/mundial', function () {
-    return Inertia::render('WorldCup');
+    return Inertia::render('WorldCup', ['seo' => Seo::pagina('mundial')]);
 })->name('worldcup.index');
 
 // --- SEMANALES (apartado promocional, NO es Rankit League) ---
@@ -80,7 +95,7 @@ Route::post('/semanales/{id}/aviso-recorrido', [SemanalesController::class, 'not
 
 // --- 1V1 / WAGERS (landing "coming soon" para organizadores y streamers) ---
 Route::get('/duels', function () {
-    return Inertia::render('Duels/Index');
+    return Inertia::render('Duels/Index', ['seo' => Seo::pagina('duels')]);
 })->name('duels.index');
 
 // --- AUTH SOCIAL ---
@@ -89,17 +104,10 @@ Route::get('/auth/google-callback', [GoogleController::class, 'callback'])->name
 
 // --- DASHBOARD USUARIO ---
 Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
-    $email = $request->user()->email;
-    
-    // Obtener torneos donde el usuario está registrado
-    $misTorneosIds = \Illuminate\Support\Facades\DB::table('tournament_registrations')
-        ->where('email', $email)
-        ->pluck('tournament_id');
-        
-    $misTorneos = \Illuminate\Support\Facades\DB::table('tournaments')
-        ->whereIn('id', $misTorneosIds)
-        ->get();
-        
+    // Torneos donde el jugador está inscrito: por su cuenta (user_id) o por su
+    // correo. Es la misma lista de /mis-torneos; el dashboard muestra solo el inicio.
+    $misTorneos = app(\App\Services\Inscripciones\MisInscripciones::class)->de($request->user());
+
     // Obtener todos los torneos públicos
     $torneosPublicos = \Illuminate\Support\Facades\DB::table('tournaments')
         ->where('is_private', false)
@@ -111,6 +119,11 @@ Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
     ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 
+// --- MIS TORNEOS (jugador): todas sus inscripciones en un solo lugar ---
+Route::get('/mis-torneos', \App\Http\Controllers\MisTorneosController::class)
+    ->middleware('auth')
+    ->name('mis-torneos');
+
 // --- RUTAS RESTAURADAS ---
 
 // 1. Perfil Rankit
@@ -118,10 +131,11 @@ Route::get('/profile/rankit', [ProfilePageController::class, 'show'])->name('ran
 
 // 2. Copa Bellz
 Route::get('/BellzCup', function () {
-    return Inertia::render('BellzCup/Index');
+    return Inertia::render('BellzCup/Index', ['seo' => Seo::pagina('bellzcup')]);
 })->name('bellzcup.index');
 
-// 3. Listado Público de Torneos (Original)
+// 3. Listado Público de Torneos: /torneos (el /tournaments viejo redirige ahí)
+Route::get('/torneos', [TournamentsController::class, 'lista'])->name('torneos.lista');
 Route::get('/tournaments', [TournamentsController::class, 'index'])->name('tournaments.index');
 
 // 4. Detalle de Torneo (Original)
@@ -146,6 +160,19 @@ Route::get('/game-selector', function () {
 })->middleware(['auth', 'plan.organizador'])->name('game.selector');
 
 // --- PLANES DE ORGANIZADOR (cobro en línea) ---
+// Botón "Contratar" de la landing: con sesión va directo a /planes con la tarjeta
+// resaltada; sin sesión manda a crear cuenta y, al terminar, regresa a /planes
+// (RegisteredUserController usa redirect()->intended).
+Route::get('/contratar/{plan}', function (\Illuminate\Http\Request $request, string $plan) {
+    $destino = '/planes?quiero='.($plan === 'pro' ? 'pro' : 'mas');
+    if ($request->user()) {
+        return redirect($destino);
+    }
+    $request->session()->put('url.intended', url($destino));
+
+    return redirect()->route('register');
+})->whereIn('plan', ['base', 'pro'])->name('contratar');
+
 // Sin plan vigente no se entra a los paneles (middleware plan.organizador).
 Route::middleware('auth')->prefix('planes')->name('planes.')->group(function () {
     Route::get('/', [PlanesController::class, 'index'])->name('index');
@@ -165,10 +192,6 @@ Route::post('/mercadopago/webhook', MercadoPagoWebhookController::class)
     ->name('mercadopago.webhook');
 
 // --- LoL / VALORANT TORNEOS ---
-Route::get('/league', function () {
-    return Inertia::render('RankitLeague');
-})->name('league');
-
 Route::middleware(['auth', 'plan.organizador'])->prefix('lol')->name('lol.')->group(function () {
     Route::get('/',                               [LolTournamentController::class, 'index'])->name('index');
     Route::post('/',                              [LolTournamentController::class, 'store'])->name('store');
@@ -230,6 +253,8 @@ Route::get('/api/live/{id}/data', [PublicTournamentController::class, 'getPublic
 
 // 2. Widgets OBS Nuevos
 Route::get('/widget/obs/global/{id}', [PublicTournamentController::class, 'widgetGlobal'])->name('widget.obs.global');
+// Armar el widget (tema, color, filas, logos) con vista previa y copiar el link para OBS.
+Route::get('/widget/obs/{id}/personalizar', [PublicTournamentController::class, 'widgetPersonalizar'])->whereNumber('id')->name('widget.obs.personalizar');
 Route::get('/widget/obs/player/{id}/{playerName}', [PublicTournamentController::class, 'widgetPlayer'])->name('widget.obs.player');
 Route::get('/api/widget/{id}/stats', [PublicTournamentController::class, 'getWidgetStats'])->name('api.widget.stats');
 
@@ -239,7 +264,7 @@ Route::middleware('auth')->group(function () {
     // Perfil
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    // Sin DELETE /profile: la cuenta no se puede borrar desde la app.
 
     // --- PANEL ADMIN JANGEL ---
     // Solo con plan vigente (o exentos: superadmin y config planes.exentos).
@@ -256,6 +281,9 @@ Route::middleware('auth')->group(function () {
 
         // Subir imagen de banner del torneo
         Route::post('/tournaments/{id}/banner', [TournamentParserController::class, 'uploadBanner'])->name('jangel.tournament.banner');
+
+        // Subir logo del torneo (sale en el widget de OBS)
+        Route::post('/tournaments/{id}/logo', [TournamentParserController::class, 'uploadLogo'])->name('jangel.tournament.logo');
         
         // Crear Slot (Código)
         Route::post('/matches/schedule/{tournamentId}', [TournamentParserController::class, 'storeScheduledMatch'])->name('jangel.match.schedule');
@@ -343,3 +371,22 @@ Route::post('/t/{id}/verify-code', [PublicTournamentController::class, 'verifyCo
 Route::get('/api/tournaments/{id}/registration-status', [PublicTournamentController::class, 'getRegistrationStatus']);
 
 require __DIR__.'/auth.php';Route::get('/api/league/standings', [App\Http\Controllers\Admin\TournamentParserController::class, 'getSerializedStandings']);
+
+
+// --- PROPUESTAS DE LANDING (solo local, para revisar antes de elegir) ---
+if (app()->environment('local')) {
+    Route::get('/propuestas/ver-objetos', fn () => Inertia::render('Propuestas/VerObjetos'));
+
+    Route::get('/propuestas/landing/{v?}', function (string $v = 'a') {
+        $catalogo = app(\App\Services\Planes\CatalogoPlanes::class);
+        // Sin el prefetch global (AppServiceProvider): al cargar bajaba los ~100 archivos de
+        // TODA la app (panel, torneos, three.js…) y en celular le quitaba red a la landing.
+        \Illuminate\Support\Facades\Vite::usePrefetchStrategy(null);
+
+        return Inertia::render('Propuestas/Landing'.strtoupper($v), [
+            'precioBase' => $catalogo->precio('base'),
+            'precioPro' => $catalogo->precio('pro'),
+            'eventos' => app(\App\Services\Landing\EventosAbiertos::class)->obtener(),
+        ]);
+    })->whereIn('v', ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'k'])->name('propuestas.landing');
+}
