@@ -206,10 +206,26 @@ function pintarRecorrido() {
   if (i !== activo.value) activo.value = i
   pintarObjetos(avance.t)
 }
+/**
+ * El logo 3D se desvanece entre 0.55 y 1.0 del scroll del hero (cuando la cámara ya entró) y
+ * deja de dibujarse. Se calcula del tiempo actual del timeline, no en el onUpdate de un tween:
+ * en cada refresh() ScrollTrigger regresa el timeline a 0 (ahí el logo se prendía) y luego lo
+ * devuelve a donde iba SIN disparar los onUpdate, así que el logo gigante se quedaba encima
+ * del recorrido (bug visto en producción al cambiar el tamaño de la ventana o llegar las fuentes).
+ */
+function aplicarSalidaLogo() {
+  if (!scrollTl) return
+  const o = 1 - Math.min(1, Math.max(0, (scrollTl.time() - 0.55) / 0.45))
+  const texto = String(o)
+  if (lienzo3d.value && lienzo3d.value.style.opacity !== texto) lienzo3d.value.style.opacity = texto
+  if (brillo.value && brillo.value.style.opacity !== texto) brillo.value.style.opacity = texto
+  escena3d?.pausar(o < 0.01)
+}
 function alRecalcular() {
   if (!scrollTl) Object.assign(enc, enHero())
   pintarLogo()
   pintarRecorrido()
+  aplicarSalidaLogo()
 }
 
 // Inclinación con el mouse (solo escritorio): variables CSS en el hueco de los objetos.
@@ -226,8 +242,8 @@ function listo(e: Escena3D) {
   e.forma('logo')
   alRecalcular()
   // Si ya va bajando, el logo queda como lo pide el scroll (sin armarse ni dibujar si ya no se ve).
-  const bajando = (scrollTl?.scrollTrigger?.progress ?? 0) > 0.001
-  if (bajando) e.pausar(Number(lienzo3d.value?.style.opacity || '1') < 0.01)
+  const bajando = (scrollTl?.time() ?? 0) > 0.001
+  if (bajando) aplicarSalidaLogo()
   else if (heroArrancado) e.armar()
   modo.value = '3d'
 }
@@ -254,7 +270,6 @@ function hero(despues: Despues) {
 
   // Scroll: el hero se fija, la cámara entra al logo y empieza el recorrido.
   const alDesplazar = () => {
-    const logo = { o: 1 }
     scrollTl = gsap.timeline({
       scrollTrigger: {
         trigger: heroEl.value, start: 'top top', end: () => `+=${window.innerHeight * (0.55 + n * 0.65)}`,
@@ -270,29 +285,23 @@ function hero(despues: Despues) {
         },
       },
       defaults: { ease: 'none' },
+      onUpdate: aplicarSalidaLogo,
     })
       .fromTo(palabra1.value, { yPercent: 0, opacity: 1 }, { yPercent: -160, opacity: 0, duration: 0.8, immediateRender: false }, 0)
       .fromTo([palabra2.value, deMexico.value], { yPercent: 0, opacity: 1 }, { yPercent: 160, opacity: 0, duration: 0.8, immediateRender: false }, 0)
       .fromTo([kicker.value, esquinaIzq.value, esquinaDer.value], { opacity: 1 }, { opacity: 0, duration: 0.4, immediateRender: false }, 0)
       // El logo plano (mientras llega el 3D) también se va hacia la cámara.
       .fromTo(logoPlano.value, { scale: 1, opacity: 1 }, { scale: 3, opacity: 0, duration: 0.6, ease: 'power2.in', immediateRender: false }, 0)
-      // La cámara entra al logo: crece mucho y se desvanece; luego el 3D deja de dibujar.
+      // La cámara entra al logo: crece mucho (se desvanece y deja de dibujar en aplicarSalidaLogo).
       .fromTo(enc,
         { cx: () => enHero().cx, cy: () => enHero().cy, alto: () => enHero().alto },
         { cx: () => enHero().cx, cy: () => enHero().cy, alto: () => enHero().alto * 7, duration: 1, ease: 'power2.in', onUpdate: pintarLogo }, 0)
-      .to(logo, {
-        o: 0, duration: 0.45,
-        onUpdate: () => {
-          if (lienzo3d.value) lienzo3d.value.style.opacity = String(logo.o)
-          if (brillo.value) brillo.value.style.opacity = String(logo.o)
-          escena3d?.pausar(logo.o < 0.01)
-        },
-      }, 0.55)
       .to(velo.value, { opacity: 0.15, duration: 1 }, 0)
       .to(adornos.value, { opacity: 0, duration: 0.6 }, 0)
       .to(degradados.value, { opacity: 1, duration: 0.5 }, 0.6)
       .to(historia.value, { autoAlpha: 1, duration: 0.4 }, 0.75)
-      .to(avance, { t: n, duration: n, onUpdate: pintarRecorrido }, 1)
+      // fromTo: con invalidateOnRefresh un .to volvería a tomar como inicio el valor que tenga al refrescar.
+      .fromTo(avance, { t: 0 }, { t: n, duration: n, immediateRender: false, onUpdate: pintarRecorrido }, 1)
       .to({}, { duration: 0.2 })
   }
   // El scroll queda listo desde el inicio. Los fromTo con immediateRender: false no guardan

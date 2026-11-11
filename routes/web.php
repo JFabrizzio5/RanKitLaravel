@@ -67,6 +67,11 @@ Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 Route::get('/robots.txt', fn () => response(file_get_contents(public_path('robots.txt')), 200, [
     'Content-Type' => 'text/plain; charset=UTF-8',
 ]))->name('robots');
+// Igual con el ícono: los navegadores (y Lighthouse) piden /favicon.ico y daba 404 en el hosting.
+Route::get('/favicon.ico', fn () => response()->file(public_path('favicon.ico'), [
+    'Content-Type' => 'image/x-icon',
+    'Cache-Control' => 'public, max-age=604800',
+]))->name('favicon');
 
 // --- RANKIT.PRO LEAGUE LANDING ---
 // Estaba registrada dos veces (aquí como rankit.league y abajo como league);
