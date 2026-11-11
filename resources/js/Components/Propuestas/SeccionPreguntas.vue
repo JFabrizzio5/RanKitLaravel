@@ -17,7 +17,8 @@ const abierta = ref<number | null>(0)
 <template>
   <section class="mx-auto grid max-w-[1600px] gap-12 px-5 py-24 sm:px-8 lg:grid-cols-[1fr_1.4fr] lg:py-32">
     <div>
-      <h2 data-anim="letras" class="titular text-[13vw] sm:text-8xl lg:text-[110px]">Preguntas</h2>
+      <!-- Una sola palabra de 9 letras: el tamaño va con el ancho para que quepa completa desde 320 px. -->
+      <h2 data-anim="letras" class="titular text-[min(10.5vw,110px)]">Preguntas</h2>
       <p data-anim="subir" class="mt-4 text-xl text-[var(--gris)]">Respuestas claras, sin letras chiquitas.</p>
     </div>
     <ul data-anim="escalonar" class="border-t border-[var(--linea)]">

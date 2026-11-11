@@ -256,7 +256,7 @@ function hero(despues: Despues) {
   alRecalcular()
   escena3d?.armar(0.1)
   gsap.set(brillo.value, { xPercent: -50, yPercent: -50 })
-  const letras = (el: HTMLElement) => SplitText.create(el, { type: 'lines,chars', mask: 'lines', linesClass: 'linea' }).chars
+  const letras = (el: HTMLElement) => SplitText.create(el, { type: 'lines,words,chars', mask: 'lines', linesClass: 'linea' }).chars
 
   // Entrada corta (~1 s). Antes eran ~2 s y el scroll no respondía hasta que terminaba.
   gsap.timeline({ defaults: { ease: 'expo.out' } })
