@@ -9,7 +9,7 @@ import { Head, Link } from '@inertiajs/vue3'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import TablaWidget from '@/Components/Widget/TablaWidget.vue'
-import { ACENTO_RANKIT, armarQuery, configBase, tamanoSugerido, type FilaWidget, type Tema } from '@/Components/Widget/configWidget'
+import { ACENTO_RANKIT, armarQuery, configBase, normalizarFilas, tamanoSugerido, type FilaWidget, type Tema } from '@/Components/Widget/configWidget'
 import { fondos } from '@/Components/Propuestas/medios'
 
 const props = defineProps<{ tournamentId: number; torneo: { nombre: string; logo: string | null } }>()
@@ -37,7 +37,7 @@ async function cargar() {
     const r = await axios.get(route('api.widget.stats', props.tournamentId), {
       params: { type: config.tipo, sort: config.orden, limit: config.buscar ? 1 : config.filas, search: config.buscar || undefined },
     })
-    filas.value = r.data
+    filas.value = normalizarFilas(r.data)
   } catch {
     filas.value = []
   } finally {

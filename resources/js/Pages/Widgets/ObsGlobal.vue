@@ -7,7 +7,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
 import TablaWidget from '@/Components/Widget/TablaWidget.vue'
-import { leerConfig, type FilaWidget } from '@/Components/Widget/configWidget'
+import { leerConfig, normalizarFilas, type FilaWidget } from '@/Components/Widget/configWidget'
 
 const props = withDefaults(defineProps<{
   tournamentId: number
@@ -28,7 +28,7 @@ async function actualizar() {
     const r = await axios.get(route('api.widget.stats', props.tournamentId), {
       params: { type: config.tipo, sort: config.orden, mode: config.modo, limit: config.filas, search: config.buscar || undefined },
     })
-    filas.value = r.data
+    filas.value = normalizarFilas(r.data)
     fallos = 0
   } catch {
     fallos++
