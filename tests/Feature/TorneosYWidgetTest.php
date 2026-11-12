@@ -91,3 +91,33 @@ it('la página de inicio es la landing de ventas, sin el prefetch de toda la app
     // Vite::prefetch bajaría los chunks de toda la app al cargar la landing.
     expect($respuesta->getContent())->not->toContain('rel":"prefetch"');
 });
+
+it('la API del widget manda la posición real y los totales como números', function () {
+    (new \App\Http\Controllers\Admin\TournamentParserController())->ensureDatabaseIsReady();
+    $id = torneoPublico();
+    // Tres jugadores en dos partidas: Ana 2 kills, Beto 5, Caro 9 (con sus puntos).
+    foreach (['m1', 'm2'] as $m) {
+        $partida = DB::table('tournament_matches')->insertGetId([
+            'tournament_id' => $id, 'match_id' => "w-{$m}", 'game_mode' => 'solo', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        foreach ([['Ana', 1, 10.25], ['Beto', 2, 20], ['Caro', 4, 30]] as [$nombre, $kills, $pts]) {
+            DB::table('player_match_stats')->insert([
+                'tournament_match_id' => $partida, 'player_name' => $nombre, 'placement' => 3, 'kills' => $kills,
+                'extra_stats' => json_encode(['totalPoints' => $pts]), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+    }
+
+    $filas = $this->getJson("/api/widget/{$id}/stats?type=players&sort=points&limit=10")->assertOk()->json();
+    expect(array_column($filas, 'player_name'))->toBe(['Caro', 'Beto', 'Ana'])
+        ->and(array_column($filas, 'rank'))->toBe([1, 2, 3])
+        ->and($filas[2]['total_points'])->toBe(20.5)
+        ->and($filas[2]['total_kills'])->toBe(2)
+        ->and($filas[2]['games_played'])->toBe(2);
+
+    // En seguimiento el puesto es el del ranking completo, no un 1.
+    $uno = $this->getJson("/api/widget/{$id}/stats?type=players&sort=points&search=ana")->assertOk()->json();
+    expect($uno)->toHaveCount(1)
+        ->and($uno[0]['player_name'])->toBe('Ana')
+        ->and($uno[0]['rank'])->toBe(3);
+});

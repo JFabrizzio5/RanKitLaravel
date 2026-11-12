@@ -26,7 +26,11 @@ const titulo = computed(() => {
   return (props.config.tipo === 'teams' ? 'Top equipos' : 'Top jugadores') + (props.config.orden === 'kills' ? ' · kills' : '')
 })
 const uno = computed(() => props.filas[0])
-const fmt = (n: number) => (Number.isInteger(n) ? n : Number(n.toFixed(2))).toLocaleString('es-MX')
+// Number() por si alguna fila llega con texto: un "65.00" ya tumbó la tabla en OBS.
+const fmt = (v: number | string) => {
+  const n = Number(v) || 0
+  return (Number.isInteger(n) ? n : Number(n.toFixed(2))).toLocaleString('es-MX')
+}
 </script>
 
 <template>

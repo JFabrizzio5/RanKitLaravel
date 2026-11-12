@@ -310,7 +310,11 @@ class PublicTournamentController extends Controller
         $limit = $request->query('limit', 10); 
         $search = $request->query('search'); 
         
-        $ranking = $this->getFullRanking($id, $mode, $type, null, $sortBy);
+        // La posición se calcula sobre el ranking completo: en seguimiento (search)
+        // es el lugar real del jugador, no el 1 de una lista de uno.
+        $ranking = $this->getFullRanking($id, $mode, $type, null, $sortBy)
+            ->values()
+            ->map(fn ($fila, $i) => $this->filaWidget($fila, $i + 1));
 
         if ($search) {
             $found = $ranking->first(function($item) use ($search, $type) {
@@ -327,6 +331,23 @@ class PublicTournamentController extends Controller
         }
         
         return response()->json($ranking->take((int)$limit)->values());
+    }
+
+    /**
+     * MySQL devuelve SUM/AVG/DECIMAL como texto ("65.00"); el widget hace cuentas
+     * con esos valores, así que salen como números. Los null se quedan null.
+     */
+    private function filaWidget(object $fila, int $posicion): object
+    {
+        $fila->rank = $posicion;
+        foreach (['games_played', 'total_kills', 'best_placement'] as $campo) {
+            if (isset($fila->$campo)) $fila->$campo = (int) $fila->$campo;
+        }
+        foreach (['total_points', 'total_kill_points', 'total_placement_points', 'avg_kills', 'avg_placement', 'avg_points', 'avg_kill_points', 'avg_placement_points'] as $campo) {
+            if (isset($fila->$campo)) $fila->$campo = (float) $fila->$campo;
+        }
+
+        return $fila;
     }
 
     // --- LÓGICA CENTRAL DE CÁLCULO (REFERENCIA DE VERDAD) ---

@@ -89,3 +89,24 @@ export type FilaWidget = {
   total_kills: number
   games_played: number
 }
+
+const numero = (v: unknown) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Lo que llega de /api/widget/{id}/stats. Con MySQL los SUM/AVG pueden venir
+ * como texto ("65.00"); aquí se vuelven números para que la tabla no truene.
+ * Si una respuesta vieja no trae la posición, se toma del orden.
+ */
+export function normalizarFilas(datos: unknown): FilaWidget[] {
+  if (!Array.isArray(datos)) return []
+  return datos.map((f, i) => ({
+    ...f,
+    rank: numero(f?.rank) || i + 1,
+    total_points: numero(f?.total_points),
+    total_kills: numero(f?.total_kills),
+    games_played: numero(f?.games_played),
+  }))
+}
